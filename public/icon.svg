@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="50%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="url(#goldGrad)" stroke-width="6" opacity="0.35"/>
+
+  <!-- Cash register / POS Terminal Body -->
+  <!-- Base -->
+  <rect x="96" y="320" width="320" height="96" rx="20" fill="#1e293b" stroke="url(#goldGrad)" stroke-width="8" />
+  
+  <!-- Cash drawer line & keyhole -->
+  <line x1="120" y1="368" x2="392" y2="368" stroke="#334155" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="256" cy="388" r="6" fill="#f59e0b" />
+
+  <!-- Main POS Screen -->
+  <rect x="128" y="120" width="256" height="176" rx="16" fill="url(#screenGrad)" stroke="url(#goldGrad)" stroke-width="8"/>
+  
+  <!-- Screen content: Header bar -->
+  <rect x="144" y="136" width="224" height="24" rx="6" fill="#312e81"/>
+  <circle cx="160" cy="148" r="4" fill="#22c55e"/>
+  <circle cx="174" cy="148" r="4" fill="#eab308"/>
+  <circle cx="188" cy="148" r="4" fill="#ef4444"/>
+
+  <!-- Screen content: Price display -->
+  <rect x="144" y="172" width="224" height="48" rx="8" fill="#0f172a" stroke="#4338ca" stroke-width="2"/>
+  <text x="350" y="206" fill="#fbbf24" font-family="system-ui, sans-serif" font-size="28" font-weight="900" text-anchor="end">KIAN POS</text>
+
+  <!-- Screen keypad buttons -->
+  <rect x="144" y="232" width="36" height="20" rx="4" fill="#475569"/>
+  <rect x="190" y="232" width="36" height="20" rx="4" fill="#475569"/>
+  <rect x="236" y="232" width="36" height="20" rx="4" fill="#475569"/>
+  <rect x="282" y="232" width="86" height="20" rx="4" fill="url(#goldGrad)"/>
+
+  <!-- Receipt paper emerging -->
+  <path d="M 200 120 L 200 70 Q 200 60 210 60 L 302 60 Q 312 60 312 70 L 312 120 Z" fill="#ffffff" opacity="0.95"/>
+  <line x1="216" y1="78" x2="296" y2="78" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+  <line x1="216" y1="92" x2="276" y2="92" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+  <line x1="216" y1="106" x2="288" y2="106" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- WiFi / Wireless sync waves on top right -->
+  <path d="M 370 70 A 40 40 0 0 1 430 70" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 382 85 A 25 25 0 0 1 418 85" fill="none" stroke="#fbbf24" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="400" cy="100" r="5" fill="#f59e0b"/>
+</svg>

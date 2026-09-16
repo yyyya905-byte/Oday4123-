@@ -1,0 +1,52 @@
+{
+  "id": "/",
+  "name": "KIAN CASHIER — كيان كاشير",
+  "short_name": "كيان كاشير",
+  "description": "نظام كاشير ونقاط بيع متقدم يعمل أوفلاين مع مزامنة خلفية تلقائية ونقل بيانات عبر كود الربط",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#f59e0b",
+  "background_color": "#090d16",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "نقطة البيع (POS)",
+      "short_name": "كاشير",
+      "url": "/?tab=pos",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "ربط ونقل الأجهزة",
+      "short_name": "الأجهزة",
+      "url": "/?tab=devices",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
+  ]
+}

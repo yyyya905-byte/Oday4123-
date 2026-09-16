@@ -1,0 +1,10 @@
+{
+  "name": "Remix Remix Kian Cashier (كيان كاشير)",
+  "description": "نظام كاشير ونقاط بيع احترافي متقدم مع تخصيص شكل الفاتورة ومزامنة تلقائية وحفظ الأجهزة ومشاركة المبيعات والمستندات أوفلاين وسحابياً.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

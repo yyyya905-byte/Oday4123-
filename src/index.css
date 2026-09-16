@@ -1,0 +1,427 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-cairo: 'Cairo', 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    /* Eye-friendly, soothing, calm palette */
+    --bg-light-canvas: #f8fafc;
+    --bg-light-card: #ffffff;
+    --border-light-subtle: #e2e8f0;
+    --text-light-primary: #0f172a;
+    --text-light-secondary: #334155;
+    --text-light-muted: #64748b;
+    --ps-brightness: 0.85;
+  }
+
+  /* Subtle cross-fade transition on body and elements */
+  body {
+    font-family: var(--font-cairo);
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    background-color: var(--bg-light-canvas);
+    color: var(--text-light-primary);
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: -0.01em;
+  }
+
+  /* Smooth cross-fade transition class for theme toggle */
+  html.theme-cross-fade,
+  html.theme-cross-fade *,
+  html.theme-cross-fade *::before,
+  html.theme-cross-fade *::after {
+    transition: background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                fill 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                stroke 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition-delay: 0s !important;
+  }
+
+  /* Native View Transitions animation */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.35s;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Harmonious, eye-friendly light mode palette */
+  :root:not(.dark) {
+    color-scheme: light;
+  }
+
+  :root:not(.dark) .bg-slate-50 {
+    background-color: #f8fafc;
+  }
+
+  :root:not(.dark) .bg-white {
+    background-color: #ffffff;
+  }
+
+  :root:not(.dark) .text-slate-900 {
+    color: #0f172a;
+  }
+
+  :root:not(.dark) .text-slate-800 {
+    color: #1e293b;
+  }
+
+  :root:not(.dark) .text-slate-700 {
+    color: #334155;
+  }
+
+  :root:not(.dark) .text-slate-600 {
+    color: #475569;
+  }
+
+  :root:not(.dark) .border-slate-200 {
+    border-color: #e2e8f0;
+  }
+
+  :root:not(.dark) .border-slate-100 {
+    border-color: #f1f5f9;
+  }
+
+  /* Soft, non-glare card shadows in light mode */
+  :root:not(.dark) .shadow-xs,
+  :root:not(.dark) .shadow-2xs {
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
+  }
+
+  :root:not(.dark) .shadow-sm {
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  }
+
+  :root:not(.dark) .shadow-md {
+    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+  }
+
+  /* Soft harmonious focus state in light mode */
+  :root:not(.dark) input:focus,
+  :root:not(.dark) select:focus,
+  :root:not(.dark) textarea:focus {
+    border-color: #d97706;
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.12);
+  }
+
+  /* Calm alternating table row highlights */
+  :root:not(.dark) table tbody tr:hover {
+    background-color: #f8fafc;
+  }
+
+  /* Eye-friendly dark mode with adjustable contrast intensity */
+  :root {
+    --dark-bg-canvas: #0b0f19;
+    --dark-bg-card: #111827;
+    --dark-bg-elevated: #1e293b;
+    --dark-border-subtle: #1e293b;
+    --dark-border-strong: #334155;
+    --dark-text-primary: #f8fafc;
+    --dark-text-secondary: #cbd5e1;
+    --dark-text-muted: #94a3b8;
+  }
+
+  /* 1. Soft Contrast (تباين هادئ مريح للعين) */
+  html.dark[data-dark-contrast="soft"],
+  .dark[data-dark-contrast="soft"] {
+    --dark-bg-canvas: #0f172a;
+    --dark-bg-card: #182234;
+    --dark-bg-elevated: #243247;
+    --dark-border-subtle: #243247;
+    --dark-border-strong: #334155;
+    --dark-text-primary: #f1f5f9;
+    --dark-text-secondary: #cbd5e1;
+    --dark-text-muted: #94a3b8;
+  }
+
+  /* 2. Normal / Balanced Contrast (متوازن قياسي) */
+  html.dark[data-dark-contrast="normal"],
+  html.dark:not([data-dark-contrast]),
+  .dark[data-dark-contrast="normal"] {
+    --dark-bg-canvas: #0b0f19;
+    --dark-bg-card: #111827;
+    --dark-bg-elevated: #1e293b;
+    --dark-border-subtle: #1e293b;
+    --dark-border-strong: #334155;
+    --dark-text-primary: #f8fafc;
+    --dark-text-secondary: #cbd5e1;
+    --dark-text-muted: #94a3b8;
+  }
+
+  /* 3. High Contrast (عالي التباين - مخصص لبيئات العمل المظلمة والخافتة) */
+  html.dark[data-dark-contrast="high"],
+  .dark[data-dark-contrast="high"] {
+    --dark-bg-canvas: #040711;
+    --dark-bg-card: #0c1220;
+    --dark-bg-elevated: #162032;
+    --dark-border-subtle: #2f3e58;
+    --dark-border-strong: #475a7c;
+    --dark-text-primary: #ffffff;
+    --dark-text-secondary: #f1f5f9;
+    --dark-text-muted: #cbd5e1;
+  }
+
+  /* 4. Ultra / True Black OLED (أقصى حدة - أسود نقي 100% للشاشات المظلمة) */
+  html.dark[data-dark-contrast="ultra"],
+  .dark[data-dark-contrast="ultra"] {
+    --dark-bg-canvas: #000000;
+    --dark-bg-card: #0a0a0a;
+    --dark-bg-elevated: #161616;
+    --dark-border-subtle: #3a3a3a;
+    --dark-border-strong: #545454;
+    --dark-text-primary: #ffffff;
+    --dark-text-secondary: #f5f5f5;
+    --dark-text-muted: #d4d4d4;
+  }
+
+  .dark body {
+    background-color: var(--dark-bg-canvas);
+    color: var(--dark-text-primary);
+  }
+
+  .dark .bg-slate-900 {
+    background-color: var(--dark-bg-card);
+  }
+
+  .dark .bg-slate-950 {
+    background-color: var(--dark-bg-canvas);
+  }
+
+  .dark .bg-slate-800 {
+    background-color: var(--dark-bg-elevated);
+  }
+
+  .dark .border-slate-800 {
+    border-color: var(--dark-border-subtle);
+  }
+
+  .dark .border-slate-700 {
+    border-color: var(--dark-border-strong);
+  }
+
+  /* Text readability improvements for high & ultra contrast in dim environments */
+  html.dark[data-dark-contrast="high"] .text-slate-400,
+  .dark[data-dark-contrast="high"] .text-slate-400 {
+    color: var(--dark-text-muted);
+  }
+  html.dark[data-dark-contrast="high"] .text-slate-300,
+  .dark[data-dark-contrast="high"] .text-slate-300 {
+    color: var(--dark-text-secondary);
+  }
+
+  html.dark[data-dark-contrast="ultra"] .text-slate-400,
+  .dark[data-dark-contrast="ultra"] .text-slate-400 {
+    color: var(--dark-text-muted);
+  }
+  html.dark[data-dark-contrast="ultra"] .text-slate-300,
+  .dark[data-dark-contrast="ultra"] .text-slate-300 {
+    color: var(--dark-text-secondary);
+  }
+
+  /* High-visibility borders in dim workspaces */
+  html.dark.dark-high-borders .border-slate-800,
+  html.dark.dark-high-borders .border-slate-700,
+  html.dark.dark-high-borders .dark\:border-slate-800,
+  html.dark.dark-high-borders .dark\:border-slate-700,
+  .dark.dark-high-borders .border-slate-800,
+  .dark.dark-high-borders .border-slate-700 {
+    border-color: #4b5d7d !important;
+    box-shadow: 0 0 0 1px rgba(100, 116, 139, 0.15);
+  }
+
+  html.dark.dark-high-borders input,
+  html.dark.dark-high-borders select,
+  html.dark.dark-high-borders textarea,
+  .dark.dark-high-borders input,
+  .dark.dark-high-borders select,
+  .dark.dark-high-borders textarea {
+    border-color: #64748b !important;
+  }
+
+  input, textarea, [contenteditable="true"] {
+    user-select: text;
+  }
+}
+
+/* =========================================================
+   Power Saving & Eco Battery Saver Mode
+   Reduces screen backlight power and halts GPU/CPU rendering
+   ========================================================= */
+.power-saving-active {
+  /* Screen dimming to conserve LCD/OLED backlight energy */
+  filter: brightness(var(--ps-brightness, 0.85)) contrast(0.96);
+  transition: filter 0.3s ease;
+}
+
+/* Standby deep dimming when idle */
+.power-saving-standby {
+  filter: brightness(0.42) contrast(0.90) !important;
+  transition: filter 0.4s ease;
+}
+
+/* Disable expensive animations, transitions, and pulsing badges in Power Saving */
+.power-saving-active *,
+.power-saving-active *::before,
+.power-saving-active *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Disable GPU-heavy backdrop filters in Power Saving */
+.power-saving-active .backdrop-blur-md,
+.power-saving-active .backdrop-blur-sm,
+.power-saving-active .backdrop-blur-lg,
+.power-saving-active .backdrop-blur-xl,
+.power-saving-active .backdrop-blur-xs {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Custom Scrollbar for POS */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.5);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Print Stylesheet for Receipts, Invoices & Label Alignment Calibration */
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-receipt, #printable-receipt *,
+  #printable-return-voucher, #printable-return-voucher *,
+  #printable-calibration-sheet, #printable-calibration-sheet *,
+  #printable-test-label, #printable-test-label * {
+    visibility: visible;
+  }
+
+  #printable-receipt,
+  #printable-return-voucher,
+  #printable-calibration-sheet,
+  #printable-test-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* =========================================================
+   Responsive Layout Media Queries & Viewport Sizing
+   Ensures seamless fit on Mobile, Tablets, Laptops & POS Screens
+   ========================================================= */
+
+/* Root Viewport Isolation */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Fluid responsive sidebar on laptops and standard desktops */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .app-sidebar {
+    width: 13.5rem !important; /* 216px provides comfortable room for POS and tables */
+  }
+}
+
+@media (min-width: 1280px) and (max-width: 1535px) {
+  .app-sidebar {
+    width: 15rem !important; /* 240px */
+  }
+}
+
+@media (min-width: 1536px) {
+  .app-sidebar {
+    width: 16.5rem !important; /* 264px */
+  }
+}
+
+/* Short height screens (POS terminals, netbooks, laptops 1366x768, landscape tablets) */
+@media (max-height: 768px) {
+  .app-header {
+    height: 3.25rem !important; /* 52px */
+  }
+}
+
+/* Content area containment to prevent layout blowout */
+.app-content-wrapper {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-main-viewport {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile & Tablet spacing adjustments to prevent bottom navigation overlap */
+@media (max-width: 1023px) {
+  .app-main-viewport {
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Safe-area insets for modern mobile devices (iOS Home Bar / Android Navigation) */
+.app-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 640px) {
+  .app-bottom-nav {
+    height: calc(3.75rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
