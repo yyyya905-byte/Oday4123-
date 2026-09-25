@@ -8,6 +8,7 @@ declare global {
 }
 
 const STORAGE_KEY_GOOGLE_SESSION = 'kian_pos_google_session';
+export const STORAGE_KEY_GOOGLE_CLIENT_ID = 'kian_pos_google_client_id';
 const DEFAULT_GOOGLE_CLIENT_ID = '538339038261-95j5nr06ias30duu24hm3lfu27049u41.apps.googleusercontent.com';
 export const USER_METADATA_EMAIL = 'yyyya901@gmail.com';
 
@@ -18,6 +19,14 @@ export class GoogleAuthService {
 
   private constructor() {
     this.loadStoredSession();
+    try {
+      const savedClientId = localStorage.getItem(STORAGE_KEY_GOOGLE_CLIENT_ID);
+      if (savedClientId && savedClientId.trim()) {
+        this.clientId = savedClientId.trim();
+      }
+    } catch {
+      // ignore
+    }
   }
 
   public static getInstance(): GoogleAuthService {
@@ -57,6 +66,11 @@ export class GoogleAuthService {
   public setClientId(id: string): void {
     if (id && id.trim()) {
       this.clientId = id.trim();
+      try {
+        localStorage.setItem(STORAGE_KEY_GOOGLE_CLIENT_ID, this.clientId);
+      } catch {
+        // ignore
+      }
     }
   }
 

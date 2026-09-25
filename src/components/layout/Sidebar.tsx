@@ -264,11 +264,11 @@ export const Sidebar: React.FC = () => {
   ];
 
   return (
-    <aside className="app-sidebar hidden lg:flex flex-col w-60 bg-white dark:bg-slate-900 border-e border-slate-200/80 dark:border-slate-800/80 shrink-0 select-none z-20 transition-colors">
+    <aside className="app-sidebar hidden lg:flex flex-col w-60 material-sidebar shrink-0 select-none z-20 transition-colors">
       {/* Brand Header */}
       <div className="p-3.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black text-sm shadow-xs">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-slate-950 flex items-center justify-center font-black text-sm shadow-xs">
             K
           </div>
           <div>
@@ -316,7 +316,7 @@ export const Sidebar: React.FC = () => {
                       onClick={() => setActiveTab(item.id)}
                       data-longpress-title={tooltip.title}
                       data-longpress-desc={tooltip.desc}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer btn-tactile ${
                         isActive
                           ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100'

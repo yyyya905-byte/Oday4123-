@@ -110,17 +110,17 @@ export const Header: React.FC = () => {
 
   return (
     <>
-      <header className="app-header h-15 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800/80 px-2 sm:px-4 flex items-center justify-between sticky top-0 z-30 shadow-xs transition-colors select-none">
+      <header className="app-header h-15 material-header px-2.5 sm:px-4 flex items-center justify-between sticky top-0 z-30 transition-colors select-none shadow-xs">
         {/* Start / Left Section: Brand, Mode & Sections Navigator */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* Brand Logo & Store Name */}
           <div
             onClick={() => setActiveTab('pos')}
-            className="flex items-center gap-2 cursor-pointer group"
+            className="flex items-center gap-2 cursor-pointer group btn-tactile"
             id="header-brand-logo"
             title={language === 'ar' ? 'نقطة البيع الرئيسية (POS)' : 'Main POS'}
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black text-base shadow-xs group-hover:scale-105 transition-transform shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 text-slate-950 flex items-center justify-center font-black text-base shadow-sm group-hover:scale-105 transition-transform shrink-0">
               K
             </div>
             <div className="hidden sm:block leading-tight">
@@ -138,7 +138,7 @@ export const Header: React.FC = () => {
             id="btn-header-operating-mode"
             type="button"
             onClick={() => setIsModeModalOpen(true)}
-            className={`flex items-center gap-1 px-2 py-1 rounded-xl border text-[11px] font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer ${modeBadge.color}`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer btn-tactile ${modeBadge.color}`}
             title={language === 'ar' ? 'تبديل وضع التشغيل' : 'Switch Mode'}
           >
             <ModeIcon className="w-3 h-3" />
@@ -150,7 +150,7 @@ export const Header: React.FC = () => {
             id="btn-header-sections-nav"
             type="button"
             onClick={() => setIsSectionsModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer border border-slate-200/80 dark:border-slate-700/80 shadow-2xs"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer border border-slate-200/80 dark:border-slate-700/80 shadow-2xs btn-tactile"
             title={language === 'ar' ? 'استعراض كافة أقسام النظام' : 'Browse All Sections'}
           >
             <Grid className="w-3.5 h-3.5 text-amber-500" />

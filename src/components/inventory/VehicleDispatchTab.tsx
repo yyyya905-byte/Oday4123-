@@ -21,12 +21,15 @@ import {
   Trash2,
   FileText,
   FileSpreadsheet,
-  Layers
+  Layers,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { NewVehicleManifestModal } from './NewVehicleManifestModal';
 import { VehicleReconcileModal } from './VehicleReconcileModal';
 import { PrintableManifestModal } from './PrintableManifestModal';
 import { AddEditVehicleModal } from './AddEditVehicleModal';
+import { DateRangePicker } from '../ui/DateRangePicker';
+import { CivilDateRange, isCivilDateInRange } from '../../utils/civilDate';
 
 export const VehicleDispatchTab: React.FC = () => {
   const {
@@ -55,6 +58,10 @@ export const VehicleDispatchTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterWarehouse, setFilterWarehouse] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [manifestDateRange, setManifestDateRange] = useState<CivilDateRange>({
+    from: undefined,
+    to: undefined,
+  });
 
   // Active loaded manifests (currently in transit / loaded)
   const activeManifests = vehicleManifests.filter(
@@ -90,6 +97,11 @@ export const VehicleDispatchTab: React.FC = () => {
 
   // Filtered Manifests
   const filteredManifests = vehicleManifests.filter((m) => {
+    // Civil date range check
+    if (!isCivilDateInRange(m.dispatchedAt || m.loadedAt, manifestDateRange)) {
+      return false;
+    }
+
     const matchesSearch =
       m.manifestNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.vehiclePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -304,7 +316,7 @@ export const VehicleDispatchTab: React.FC = () => {
         </div>
 
         {/* Filter & Search Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div className={`grid grid-cols-1 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 ${activeSubTab === 'manifests' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {/* Search Box */}
           <div className="relative">
             <Search className="w-4 h-4 absolute top-3 right-3 text-slate-400" />
@@ -316,6 +328,18 @@ export const VehicleDispatchTab: React.FC = () => {
               className="w-full pl-3 pr-9 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-xs font-medium text-slate-900 dark:text-white outline-hidden focus:ring-2 focus:ring-amber-500"
             />
           </div>
+
+          {/* Date Range Picker (Shown for Manifests Archive) */}
+          {activeSubTab === 'manifests' && (
+            <div className="w-full">
+              <DateRangePicker
+                value={manifestDateRange}
+                onChange={(newRange) => setManifestDateRange(newRange)}
+                placeholder="تاريخ سند الإخراج..."
+                buttonClassName="w-full py-2 rounded-xl"
+              />
+            </div>
+          )}
 
           {/* Warehouse Filter */}
           <select

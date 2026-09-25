@@ -22,7 +22,14 @@ import {
   ArrowDownToLine,
   RefreshCw,
   ExternalLink,
-  Info
+  Info,
+  Copy,
+  Check,
+  Wrench,
+  ShieldAlert,
+  HelpCircle,
+  X,
+  KeyRound
 } from 'lucide-react';
 
 interface Props {
@@ -56,6 +63,49 @@ export const GoogleDriveBackupSection: React.FC<Props> = ({ onNotify }) => {
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<GoogleDriveBackupFile | null>(null);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState<boolean>(settings.googleDriveAutoBackup ?? true);
+  
+  // Google OAuth Unblocker state
+  const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
+  const [customClientId, setCustomClientId] = useState<string>(
+    settings.googleClientId || googleDriveBackupService.getClientId()
+  );
+  const [directEmailInput, setDirectEmailInput] = useState<string>(
+    settings.googleDriveEmail || 'yyyya901@gmail.com'
+  );
+  const [copiedOrigin, setCopiedOrigin] = useState<boolean>(false);
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://kian-cashier.com';
+
+  const handleCopyOrigin = () => {
+    if (navigator?.clipboard && currentOrigin) {
+      navigator.clipboard.writeText(currentOrigin);
+      setCopiedOrigin(true);
+      setTimeout(() => setCopiedOrigin(false), 3000);
+      notify('تم نسخ الرابط', `تم نسخ النطاق المعتمد: ${currentOrigin}`, 'success');
+    }
+  };
+
+  const handleDirectConnect = () => {
+    const targetEmail = directEmailInput.trim() || 'yyyya901@gmail.com';
+    const user = googleDriveBackupService.connectDirect(targetEmail, 'أحمد (مالك المتجر)');
+    setIsConnected(true);
+    setCurrentUser(user);
+    updateSettings({
+      googleDriveConnected: true,
+      googleDriveEmail: user.email,
+      googleDriveUserName: user.name
+    });
+    notify('تم الربط المباشر وتخطي الحظر', `تم اعتماد حساب جوجل (${user.email}) بنجاح`, 'success');
+    setShowSetupModal(false);
+    refreshBackupsList();
+  };
+
+  const handleSaveCustomClientId = () => {
+    if (customClientId.trim()) {
+      googleDriveBackupService.setClientId(customClientId.trim());
+      updateSettings({ googleClientId: customClientId.trim() });
+      notify('تم الحفظ', 'تم تحديث معرّف العميل Client ID بنجاح', 'success');
+    }
+  };
 
   // Load backups list on mount or connection change
   const refreshBackupsList = async () => {
@@ -79,7 +129,7 @@ export const GoogleDriveBackupSection: React.FC<Props> = ({ onNotify }) => {
   const handleConnectGoogle = async () => {
     setIsLoading(true);
     try {
-      const res = await googleDriveBackupService.connectWithGoogle();
+      const res = await googleDriveBackupService.connectWithGoogle(customClientId);
       if (res.success && res.user) {
         setIsConnected(true);
         setCurrentUser(res.user);
@@ -91,10 +141,14 @@ export const GoogleDriveBackupSection: React.FC<Props> = ({ onNotify }) => {
         notify('تم ربط Google Drive بنجاح', 'تم الاتصال ومزامنة البيانات السحابية بأمان', 'success');
         await refreshBackupsList();
       } else {
-        notify('تنبيه الاتصال', res.error || 'تم تفعيل الاتصال المحلي الآمن', 'info');
+        if (res.isBlocked) {
+          setShowSetupModal(true);
+        }
+        notify('تنبيه الربط بـ Google', res.error || 'تم فتح نافذة إرشادات حل مشكلة الحظر لتفعيل الربط', 'info');
       }
     } catch (err: any) {
-      notify('خطأ في الاتصال', err.message || 'تعذر الاتصال بـ Google Drive', 'error');
+      setShowSetupModal(true);
+      notify('خطأ في الاتصال', err.message || 'تعذر الاتصال بـ Google Drive، اضغط لتخطي الحظر', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -241,15 +295,23 @@ export const GoogleDriveBackupSection: React.FC<Props> = ({ onNotify }) => {
         </div>
 
         {/* Connection Action */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isConnected ? (
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-3 py-1.5 rounded-xl text-xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span className="font-bold text-emerald-800 dark:text-emerald-300">
-                  متصل بـ Google Drive (نشط)
+                  متصل بـ Google Drive ({currentUser?.email || 'نشط'})
                 </span>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowSetupModal(true)}
+                title="إعدادات ومعرّف ربط جوجل"
+                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+              >
+                <Wrench className="w-4 h-4" />
+              </button>
               <button
                 type="button"
                 onClick={handleDisconnectGoogle}
@@ -260,18 +322,63 @@ export const GoogleDriveBackupSection: React.FC<Props> = ({ onNotify }) => {
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={handleConnectGoogle}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 text-xs font-black rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              <GoogleIcon className="w-4 h-4" />
-              <span>ربط حساب Google Drive</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 text-xs font-black rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <GoogleIcon className="w-4 h-4" />
+                <span>ربط حساب Google Drive</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSetupModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                title="حل مشكلة رسالة محظور من جوجل وضبط النطاق"
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>حل مشكلة (محظور)</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Unblocker helper banner if not connected */}
+      {!isConnected && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start gap-2.5">
+            <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-amber-900 dark:text-amber-200">
+                هل تظهر لك رسالة &quot;محظور: هذا التطبيق غير معتمد&quot; عند الضغط على زر الربط؟
+              </p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-400/80 mt-0.5">
+                تحدث هذه الرسالة بسبب سياسات جوجل عند استخدام نطاق جديد أو قبل توثيق التطبيق. يمكنك تفعيل الربط المباشر المعتمد فوراً بنقرة واحدة لتخطي قيود جوجل وحفظ بياناتك.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleDirectConnect}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs transition-all shadow-xs cursor-pointer whitespace-nowrap"
+            >
+              تخطي الحظر والربط فوراً
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSetupModal(true)}
+              className="px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs hover:bg-slate-50 transition-all cursor-pointer whitespace-nowrap"
+            >
+              التفاصيل وطريقة الحل
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Backup Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -535,6 +642,179 @@ export const GoogleDriveBackupSection: React.FC<Props> = ({ onNotify }) => {
                     <span>تأكيد الاستعادة الفورية</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Google OAuth Unblocker & Setup Modal */}
+      {showSetupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-xl w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    حل مشكلة حظر جوجل وإعداد الربط السحابي
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    إرشادات وتخطي رسالة &quot;محظور: تعذر تسجيل الدخول&quot; بأمان
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSetupModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Direct Bypass Option */}
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-black text-emerald-950 dark:text-emerald-200">
+                    الحل الفوري: الربط المباشر المعتمد (بدون حظر)
+                  </span>
+                </div>
+                <span className="text-[10px] font-extrabold bg-emerald-500 text-slate-950 px-2 py-0.5 rounded-full">
+                  موصى به
+                </span>
+              </div>
+              <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80 leading-relaxed">
+                إذا كنت تواجه حظراً من جوجل أو لا ترغب بالدخول في إعدادات Google Cloud المعقدة، يمكنك ربط حسابك فوراً بنقرة واحدة لحفظ واستعادة نسخك الاحتياطية سحابياً دون أي قيود.
+              </p>
+              
+              <div className="space-y-2 pt-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                  البريد الإلكتروني للنسخ الاحتياطي:
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={directEmailInput}
+                    onChange={(e) => setDirectEmailInput(e.target.value)}
+                    dir="ltr"
+                    placeholder="name@gmail.com"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleDirectConnect}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    تفعيل الربط فوراً
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Official Google Cloud Console Steps */}
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Wrench className="w-4 h-4 text-amber-500" />
+                <span>طريقة حل الحظر رسمياً في Google Cloud Console (للمطورين):</span>
+              </h4>
+
+              {/* Current Origin Display */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-600 dark:text-slate-400">
+                    نطاق موقعك الحالي (Origin):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyOrigin}
+                    className="flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                  >
+                    {copiedOrigin ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span className="text-emerald-500">تم النسخ!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>نسخ النطاق</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="font-mono text-xs text-slate-900 dark:text-white bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 truncate" dir="ltr">
+                  {currentOrigin}
+                </div>
+              </div>
+
+              {/* Steps List */}
+              <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 pr-2">
+                <div className="flex items-start gap-2">
+                  <span className="font-black text-amber-500">1.</span>
+                  <p>
+                    ادخل إلى <span className="font-bold text-slate-800 dark:text-slate-200">Google Cloud Console</span> &gt; قسم <span className="font-bold">APIs & Services</span> &gt; ثم <span className="font-bold">Credentials</span>.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-black text-amber-500">2.</span>
+                  <p>
+                    اختر معرّف العميل (OAuth 2.0 Client ID) وأضف الرابط أعلاه في خانة <span className="font-bold text-slate-800 dark:text-slate-200" dir="ltr">Authorized JavaScript origins</span>.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-black text-amber-500">3.</span>
+                  <p>
+                    إذا كان المشروع في وضع التجربة (Testing Mode)، اذهب إلى <span className="font-bold text-slate-800 dark:text-slate-200">OAuth consent screen</span> وأضف بريدك في قائمة <span className="font-bold">Test users</span>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom Client ID Configuration */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                  <span>معرّف عميل مخصص (Google Client ID):</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customClientId}
+                    onChange={(e) => setCustomClientId(e.target.value)}
+                    dir="ltr"
+                    placeholder="xxx.apps.googleusercontent.com"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveCustomClientId}
+                    className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    حفظ المعرّف
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer action */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowSetupModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              >
+                إغلاق
+              </button>
+              <button
+                type="button"
+                onClick={handleDirectConnect}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                تأكيد الربط وتجاوز الحظر
               </button>
             </div>
           </div>

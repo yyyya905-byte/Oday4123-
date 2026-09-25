@@ -425,3 +425,97 @@ html, body, #root {
     height: calc(3.75rem + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+
+/* =========================================================
+   Apple Semantic Materials & Modern Design System Tokens
+   ========================================================= */
+
+.material-header {
+  background-color: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+.dark .material-header {
+  background-color: rgba(15, 23, 42, 0.82);
+  border-bottom-color: rgba(30, 41, 59, 0.8);
+}
+
+.material-sidebar {
+  background-color: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border-inline-end: 1px solid rgba(226, 232, 240, 0.7);
+}
+.dark .material-sidebar {
+  background-color: rgba(11, 15, 25, 0.88);
+  border-inline-end-color: rgba(30, 41, 59, 0.7);
+}
+
+.material-panel {
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.dark .material-panel {
+  background-color: rgba(17, 24, 39, 0.92);
+}
+
+/* Realistic Thermal Receipt Paper Styling & Authentic Jagged Serrated Tear Edge */
+.receipt-paper-roll {
+  background: #ffffff;
+  color: #0f172a;
+  position: relative;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.05));
+}
+
+.receipt-zigzag-top {
+  position: relative;
+}
+.receipt-zigzag-top::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background:
+    linear-gradient(135deg, transparent 4px, #ffffff 0) 0 0,
+    linear-gradient(225deg, transparent 4px, #ffffff 0) 0 0;
+  background-repeat: repeat-x;
+  background-size: 8px 8px;
+}
+
+.receipt-zigzag-bottom {
+  position: relative;
+}
+.receipt-zigzag-bottom::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background:
+    linear-gradient(45deg, transparent 4px, #ffffff 0) 0 0,
+    linear-gradient(-45deg, transparent 4px, #ffffff 0) 0 0;
+  background-repeat: repeat-x;
+  background-size: 8px 8px;
+}
+
+/* Subtle tactile touch response for buttons */
+.btn-tactile {
+  transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-tactile:active {
+  transform: scale(0.97);
+}
+
+/* Crisp unboxed metadata separator dot */
+.meta-dot::before {
+  content: '·';
+  margin: 0 0.35rem;
+  opacity: 0.5;
+}
+

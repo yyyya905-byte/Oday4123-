@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Sale } from '../../types';
 import QRCode from 'qrcode';
-import { Printer, CheckCircle, X, Barcode as BarcodeIcon, ZoomIn, ZoomOut, Sliders, Scissors, Bluetooth, RefreshCw } from 'lucide-react';
+import { Printer, CheckCircle, X, Barcode as BarcodeIcon, ZoomIn, ZoomOut, Sliders, Scissors, Bluetooth, RefreshCw, Palette } from 'lucide-react';
 import { generateBarcodeSvg } from '../../utils/barcodeUtils';
 import { soundEffects } from '../../services/audio';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
 import { bluetoothPrinter, BluetoothPrinterStatus } from '../../services/bluetoothPrinter';
 import { BluetoothPrinterModal } from './BluetoothPrinterModal';
+import { ReceiptCustomizerModal } from '../modals/ReceiptCustomizerModal';
 
 interface PrintableReceiptModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
   const [isBtPrinting, setIsBtPrinting] = useState<boolean>(false);
   const [btProgress, setBtProgress] = useState<number>(0);
   const [isBtModalOpen, setIsBtModalOpen] = useState<boolean>(false);
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const unsub = bluetoothPrinter.subscribe(status => {
@@ -131,6 +133,8 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
   const showTax = settings.receiptShowTaxNumber ?? settings.printTaxDetails ?? true;
   const showCashier = settings.receiptShowCashierName ?? settings.printCashierDetails ?? true;
   const showCustomer = settings.receiptShowCustomerInfo ?? true;
+  const showCustomerNotes = settings.receiptShowCustomerNotes ?? true;
+  const showFooterMessage = settings.receiptShowFooterMessage ?? true;
   const showBarcode = settings.receiptShowBarcode ?? settings.printBarcodeOnReceipt ?? true;
   const showQr = settings.receiptShowQrCode ?? true;
   const showItemCount = settings.receiptShowItemCount ?? true;
@@ -140,6 +144,7 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
   const totalQuantity = sale.items.reduce((acc, it) => acc + (it.quantity || 0), 0);
 
   return (
+    <>
     <DraggableModalWrapper
       isOpen={isOpen}
       onClose={onClose}
@@ -150,6 +155,19 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
       className="max-h-[92vh] flex flex-col"
       headerExtra={
         <div className="flex items-center gap-1.5">
+          {/* Quick Receipt Customizer Button */}
+          <button
+            type="button"
+            onClick={() => setIsCustomizerOpen(true)}
+            data-longpress-title="تخصيص شكل وحقول الفاتورة"
+            data-longpress-desc="تعديل الشعار، الرقم الضريبي، ملاحظات العميل، ورسالة التذييل فورياً."
+            className="flex items-center gap-1 px-2.5 py-2 font-bold text-xs rounded-xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 transition-all cursor-pointer active:scale-95 shadow-2xs"
+            title="تخصيص حقول وشكل الفاتورة"
+          >
+            <Sliders className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span className="hidden sm:inline">تخصيص الفاتورة</span>
+          </button>
+
           {/* Zoom Controls */}
           <div className="hidden sm:flex items-center gap-1 bg-white dark:bg-slate-700 p-1 rounded-xl border border-slate-200 dark:border-slate-600">
             <button
@@ -344,6 +362,14 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
                 </div>
               )}
 
+              {/* Customer Notes (Toggled via receiptShowCustomerNotes) */}
+              {showCustomerNotes && sale.notes && (
+                <div className="my-1.5 p-1.5 bg-slate-50 border border-dashed border-slate-300 rounded text-start text-[10px]">
+                  <div className="font-bold text-slate-800">ملاحظات العميل / الطلب:</div>
+                  <div className="text-slate-600 italic">{sale.notes}</div>
+                </div>
+              )}
+
               {showCustomer && sale.customerName && (
                 <div className="flex justify-between">
                   <span>العميل:</span>
@@ -376,7 +402,7 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
                       {it.wholesaleUnit && (
                         <div className="text-[9px] text-amber-700 font-bold">({it.wholesaleUnit})</div>
                       )}
-                      {it.kitchenNotes && (
+                      {showCustomerNotes && it.kitchenNotes && (
                         <div className="text-[9px] text-slate-500 italic font-mono">ملاحظة: {it.kitchenNotes}</div>
                       )}
                     </td>
@@ -530,8 +556,8 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
               </div>
             )}
 
-            {/* Footer Message */}
-            {settings.receiptFooter && (
+            {/* Footer Message (Toggled via receiptShowFooterMessage) */}
+            {showFooterMessage && settings.receiptFooter && (
               <div className="border-t border-dashed border-slate-300 pt-2 text-[9.5px] text-slate-500">
                 <p>{settings.receiptFooter}</p>
                 <p className="font-bold mt-1 text-[8.5px]">نظام كيان كاشير الذكي لإدارة نقاط البيع</p>
@@ -625,7 +651,13 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
         isOpen={isBtModalOpen}
         onClose={() => setIsBtModalOpen(false)}
       />
+
+      <ReceiptCustomizerModal
+        isOpen={isCustomizerOpen}
+        onClose={() => setIsCustomizerOpen(false)}
+      />
     </DraggableModalWrapper>
+    </>
   );
 };
 

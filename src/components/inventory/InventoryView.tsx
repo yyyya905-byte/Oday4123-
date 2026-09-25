@@ -22,11 +22,25 @@ import {
   AlertOctagon,
   Sparkles,
   Filter,
-  Search
+  Search,
+  Calendar as CalendarIcon,
+  Download,
+  Printer,
+  TrendingUp,
+  TrendingDown,
+  RefreshCw
 } from 'lucide-react';
 import { VehicleDispatchTab } from './VehicleDispatchTab';
 import { WholesaleWarehousesTab } from './WholesaleWarehousesTab';
 import { LowStockAlertsCenter } from './LowStockAlertsCenter';
+import { DateRangePicker } from '../ui/DateRangePicker';
+import {
+  CivilDateRange,
+  isCivilDateInRange,
+  getCivilToday,
+  getCivilDaysAgo,
+  formatCivilDateRangeDisplay,
+} from '../../utils/civilDate';
 
 export const InventoryView: React.FC = () => {
   const {
@@ -56,6 +70,14 @@ export const InventoryView: React.FC = () => {
   // Table filtering and search for stock levels
   const [stockFilter, setStockFilter] = useState<'all' | 'low_stock' | 'out_of_stock' | 'healthy'>('all');
   const [tableSearch, setTableSearch] = useState<string>('');
+
+  // Audit Ledger filtering state with civil date range
+  const [auditDateRange, setAuditDateRange] = useState<CivilDateRange>({
+    from: getCivilDaysAgo(29),
+    to: getCivilToday(),
+  });
+  const [auditMovementTypeFilter, setAuditMovementTypeFilter] = useState<string>('all');
+  const [auditSearchQuery, setAuditSearchQuery] = useState<string>('');
 
   // Total Inventory Valuation (at cost & at retail)
   const totalValuationCost = products.reduce((sum, p) => sum + p.costPrice * p.stock, 0);
@@ -652,108 +674,419 @@ export const InventoryView: React.FC = () => {
       )}
 
       {/* TAB 5: Stock Movement & Audit Ledger History */}
-      {activeTab === 'audit_ledger' && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <History className="w-4 h-4 text-amber-500" />
-              <span>سجل الحركات المخزنية والتحويلات والإخراجات الشامل</span>
-            </h3>
-            <span className="text-xs text-slate-400 font-mono">
-              {(stockMovements || []).length} حركة مسجلة
-            </span>
-          </div>
+      {activeTab === 'audit_ledger' && (() => {
+        // Filtered Stock Movements for Audit Ledger
+        const filteredStockMovements = (stockMovements || []).filter((m: any) => {
+          // 1. Civil date range filter
+          if (!isCivilDateInRange(m.createdAt, auditDateRange)) {
+            return false;
+          }
+          // 2. Movement Type filter
+          if (auditMovementTypeFilter !== 'all') {
+            if (auditMovementTypeFilter === 'inward') {
+              const isInward =
+                m.type === 'purchase' ||
+                m.type === 'restock' ||
+                m.type === 'return' ||
+                m.type === 'vehicle_return';
+              if (!isInward) return false;
+            } else if (auditMovementTypeFilter === 'outward') {
+              const isOutward =
+                m.type === 'sale' ||
+                m.type === 'damage' ||
+                m.type === 'vehicle_dispatch';
+              if (!isOutward) return false;
+            } else if (m.type !== auditMovementTypeFilter) {
+              return false;
+            }
+          }
+          // 3. Search query
+          if (auditSearchQuery.trim()) {
+            const q = auditSearchQuery.toLowerCase();
+            const pName = (m.productNameAr || m.productName || '').toLowerCase();
+            const reasonText = (m.reason || '').toLowerCase();
+            const userText = (m.createdByName || m.userName || '').toLowerCase();
+            return pName.includes(q) || reasonText.includes(q) || userText.includes(q);
+          }
+          return true;
+        });
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-start text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 font-bold">
-                  <th className="pb-2 text-start">المنتج</th>
-                  <th className="pb-2 text-start">نوع الحركة</th>
-                  <th className="pb-2 text-center">الكمية</th>
-                  <th className="pb-2 text-center">المخزون (قبل / بعد)</th>
-                  <th className="pb-2 text-start">السبب / بيان السند</th>
-                  <th className="pb-2 text-start">المسؤول</th>
-                  <th className="pb-2 text-end">التاريخ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {!stockMovements || stockMovements.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-6 text-center text-slate-400">
-                      لا توجد حركات مخزنية مسجلة
-                    </td>
+        // Calculate stats for the selected date range
+        const auditTotalMovements = filteredStockMovements.length;
+        const auditInwardQty = filteredStockMovements.reduce((sum: number, m: any) => {
+          if (
+            m.type === 'purchase' ||
+            m.type === 'restock' ||
+            m.type === 'return' ||
+            m.type === 'vehicle_return'
+          ) {
+            return sum + Math.abs(Number(m.quantity) || 0);
+          }
+          return sum;
+        }, 0);
+        const auditOutwardQty = filteredStockMovements.reduce((sum: number, m: any) => {
+          if (
+            m.type === 'sale' ||
+            m.type === 'damage' ||
+            m.type === 'vehicle_dispatch'
+          ) {
+            return sum + Math.abs(Number(m.quantity) || 0);
+          }
+          return sum;
+        }, 0);
+        const auditNetQty = auditInwardQty - auditOutwardQty;
+
+        const handleExportAuditCSV = () => {
+          if (filteredStockMovements.length === 0) {
+            notify('لا توجد حركات للتصدير في هذه الفترة', 'info');
+            return;
+          }
+          const headers = ['المنتج', 'نوع الحركة', 'الكمية', 'قبل', 'بعد', 'البيان', 'المسؤول', 'التاريخ'];
+          const rows = filteredStockMovements.map((m: any) => [
+            `"${m.productNameAr || m.productName || 'صنف'}"`,
+            `"${m.type}"`,
+            m.quantity,
+            m.previousStock,
+            m.newStock,
+            `"${m.reason || ''}"`,
+            `"${m.createdByName || m.userName || 'النظام'}"`,
+            `"${m.createdAt ? new Date(m.createdAt).toISOString() : ''}"`,
+          ]);
+          const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.setAttribute('href', url);
+          link.setAttribute(
+            'download',
+            `inventory-audit-${auditDateRange.from || 'start'}_to_${auditDateRange.to || 'end'}.csv`
+          );
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          notify('تم تصدير تقرير حركات الجرد بنجاح', 'success');
+        };
+
+        return (
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs p-4 sm:p-6 space-y-5">
+            {/* Top Toolbar: Date Picker & Search & Export */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      سجل تدقيق وحركات المخزون الدوري
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      تصفية دقيقة للحركات والتحويلات حسب النطاق الزمني المدني لمنع أخطاء توقيت UTC
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Date Range Picker with Shadcn Popover + Calendar Pattern */}
+                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/60 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/60">
+                  <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
+                    <CalendarIcon className="w-3.5 h-3.5 text-amber-500" />
+                    <span>الفترة:</span>
+                  </span>
+                  <DateRangePicker
+                    value={auditDateRange}
+                    onChange={(newRange) => setAuditDateRange(newRange)}
+                    language={language === 'en' ? 'en' : 'ar'}
+                    placeholder="اختر نطاق تاريخ الجرد..."
+                    align="end"
+                  />
+                </div>
+
+                {/* Export CSV */}
+                <button
+                  type="button"
+                  onClick={handleExportAuditCSV}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                  title="تصدير جدول الحركات إلى ملف CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>تصدير CSV</span>
+                </button>
+
+                {/* Print */}
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                  title="طباعة التقرير"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>طباعة</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Summary KPIs for the Selected Civil Date Range */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-1">
+                <span className="text-[11px] font-bold text-slate-400">إجمالي الحركات بالفترة</span>
+                <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                  {auditTotalMovements} <span className="text-xs font-normal text-slate-400">حركة</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">إجمالي الوارد 📥</span>
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 font-mono">
+                  +{auditInwardQty} <span className="text-xs font-normal text-emerald-600/70">قطعة</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-rose-700 dark:text-rose-400">إجمالي الصادر 📤</span>
+                  <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div className="text-xl font-black text-rose-700 dark:text-rose-300 font-mono">
+                  -{auditOutwardQty} <span className="text-xs font-normal text-rose-600/70">قطعة</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 space-y-1">
+                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400">صافي التغير المخزني</span>
+                <div className="text-xl font-black font-mono text-slate-900 dark:text-white">
+                  {auditNetQty > 0 ? `+${auditNetQty}` : auditNetQty} <span className="text-xs font-normal text-slate-400">قطعة</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Bar: Search & Movement Types */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-1">
+              {/* Search */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="بحث باسم الصنف، بيان السند، أو المسؤول..."
+                  value={auditSearchQuery}
+                  onChange={(e) => setAuditSearchQuery(e.target.value)}
+                  className="w-full ps-9 pe-3 py-2 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/50"
+                />
+                {auditSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setAuditSearchQuery('')}
+                    className="absolute end-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Movement Type Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                <button
+                  type="button"
+                  onClick={() => setAuditMovementTypeFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    auditMovementTypeFilter === 'all'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                  }`}
+                >
+                  جميع العمليات
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditMovementTypeFilter('inward')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    auditMovementTypeFilter === 'inward'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100'
+                  }`}
+                >
+                  الوارد 📥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditMovementTypeFilter('outward')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    auditMovementTypeFilter === 'outward'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 hover:bg-rose-100'
+                  }`}
+                >
+                  الصادر 📤
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditMovementTypeFilter('vehicle_dispatch')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    auditMovementTypeFilter === 'vehicle_dispatch'
+                      ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 hover:bg-amber-100'
+                  }`}
+                >
+                  سيارات النقل 🚛
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditMovementTypeFilter('warehouse_transfer')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    auditMovementTypeFilter === 'warehouse_transfer'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 hover:bg-purple-100'
+                  }`}
+                >
+                  تحويل مستودعات 🏢
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditMovementTypeFilter('adjustment')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    auditMovementTypeFilter === 'adjustment'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 hover:bg-blue-100'
+                  }`}
+                >
+                  تعديلات جردية
+                </button>
+              </div>
+            </div>
+
+            {/* Movements Table */}
+            <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
+              <table className="w-full text-start text-xs">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold">
+                    <th className="py-3 px-3 text-start">المنتج</th>
+                    <th className="py-3 px-3 text-start">نوع الحركة المخزنية</th>
+                    <th className="py-3 px-3 text-center">الكمية</th>
+                    <th className="py-3 px-3 text-center">المخزون (قبل ➔ بعد)</th>
+                    <th className="py-3 px-3 text-start">السبب / بيان السند</th>
+                    <th className="py-3 px-3 text-start">المسؤول</th>
+                    <th className="py-3 px-3 text-end">التاريخ والوقت</th>
                   </tr>
-                ) : (
-                  (stockMovements || []).map((m: any) => (
-                    <tr
-                      key={m.id}
-                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="py-2.5 font-bold text-slate-900 dark:text-white">
-                        {m.productNameAr || m.productName || 'صنف'}
-                      </td>
-                      <td className="py-2.5">
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            m.type === 'purchase' ||
-                            m.type === 'restock' ||
-                            m.type === 'return' ||
-                            m.type === 'vehicle_return'
-                              ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-                              : m.type === 'vehicle_dispatch'
-                              ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
-                              : m.type === 'warehouse_transfer'
-                              ? 'bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-400'
-                              : m.type === 'sale'
-                              ? 'bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400'
-                              : 'bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
-                          }`}
-                        >
-                          {m.type === 'vehicle_dispatch'
-                            ? 'إخراج لسيارة نقل 🚛'
-                            : m.type === 'vehicle_return'
-                            ? 'مرتجع من سيارة نقل 🔄'
-                            : m.type === 'warehouse_transfer'
-                            ? 'تحويل بين مستودعات 🏢'
-                            : m.type === 'purchase' || m.type === 'restock'
-                            ? 'توريد مشتريات'
-                            : m.type === 'sale'
-                            ? 'بيع للعميل'
-                            : m.type === 'damage'
-                            ? 'تالف / هالك'
-                            : m.type === 'return'
-                            ? 'مرتجع بيع'
-                            : 'تعديل جردي'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-center font-mono font-bold">
-                        {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
-                      </td>
-                      <td className="py-2.5 text-center font-mono text-slate-500">
-                        {m.previousStock} ➔ {m.newStock}
-                      </td>
-                      <td className="py-2.5 text-slate-600 dark:text-slate-400">
-                        {m.reason || '—'}
-                      </td>
-                      <td className="py-2.5 text-slate-700 dark:text-slate-300 font-medium">
-                        {m.createdByName || m.userName || 'النظام'}
-                      </td>
-                      <td className="py-2.5 text-end text-slate-400 font-mono">
-                        {m.createdAt
-                          ? new Date(m.createdAt).toLocaleString(
-                              language === 'ar' ? 'ar-SY' : 'en-US'
-                            )
-                          : '—'}
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredStockMovements.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-10 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <History className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                          <p className="font-bold text-slate-600 dark:text-slate-400">
+                            لا توجد حركات مخزنية تطابق الفترة أو الفلاتر المحددة
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            الفترة الحالية: {formatCivilDateRangeDisplay(auditDateRange, language === 'en' ? 'en' : 'ar')}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAuditDateRange({ from: undefined, to: undefined });
+                              setAuditMovementTypeFilter('all');
+                              setAuditSearchQuery('');
+                            }}
+                            className="mt-2 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold hover:bg-amber-500/20 cursor-pointer"
+                          >
+                            عرض جميع التواريخ
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredStockMovements.map((m: any) => (
+                      <tr
+                        key={m.id}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
+                          {m.productNameAr || m.productName || 'صنف'}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                              m.type === 'purchase' ||
+                              m.type === 'restock' ||
+                              m.type === 'return' ||
+                              m.type === 'vehicle_return'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/50'
+                                : m.type === 'vehicle_dispatch'
+                                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200/50 dark:border-amber-800/50'
+                                : m.type === 'warehouse_transfer'
+                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/50 dark:border-purple-800/50'
+                                : m.type === 'sale'
+                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-800/50'
+                                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/50'
+                            }`}
+                          >
+                            {m.type === 'vehicle_dispatch'
+                              ? 'إخراج لسيارة نقل 🚛'
+                              : m.type === 'vehicle_return'
+                              ? 'مرتجع من سيارة نقل 🔄'
+                              : m.type === 'warehouse_transfer'
+                              ? 'تحويل بين مستودعات 🏢'
+                              : m.type === 'purchase' || m.type === 'restock'
+                              ? 'توريد مشتريات 📥'
+                              : m.type === 'sale'
+                              ? 'بيع للعميل 🛍️'
+                              : m.type === 'damage'
+                              ? 'تالف / هالك ⚠️'
+                              : m.type === 'return'
+                              ? 'مرتجع بيع ↩️'
+                              : 'تعديل جردي 📝'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-black text-sm">
+                          <span
+                            className={
+                              m.quantity > 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                            }
+                          >
+                            {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-xs text-slate-500 dark:text-slate-400">
+                          <span className="font-bold text-slate-700 dark:text-slate-300">{m.previousStock}</span>
+                          <span className="mx-1 text-slate-400">➔</span>
+                          <span className="font-bold text-slate-900 dark:text-white">{m.newStock}</span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 dark:text-slate-300 max-w-[220px] truncate">
+                          {m.reason || '—'}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 dark:text-slate-300 font-medium">
+                          {m.createdByName || m.userName || 'النظام'}
+                        </td>
+                        <td className="py-3 px-3 text-end text-slate-500 dark:text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                          {m.createdAt
+                            ? new Date(m.createdAt).toLocaleString(
+                                language === 'ar' ? 'ar-SY' : 'en-US',
+                                {
+                                  year: 'numeric',
+                                  month: '2-digit',
+                                  day: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                }
+                              )
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Adjust Modal */}
       {isAdjustModalOpen && selectedProduct && (

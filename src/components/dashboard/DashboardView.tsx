@@ -25,13 +25,27 @@ import {
   ArrowRight,
   Calendar,
   BarChart3,
-  LineChart
+  LineChart as LineChartIcon,
+  Target,
+  Clock,
+  CheckCircle2,
+  TrendingDown,
+  Info,
+  SlidersHorizontal,
+  Download,
+  Copy,
+  Check,
+  Flame,
+  ArrowUpDown
 } from 'lucide-react';
 import {
   AreaChart,
   Area,
   BarChart,
   Bar,
+  LineChart,
+  Line,
+  ComposedChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -58,7 +72,8 @@ export const DashboardView: React.FC = () => {
     currentUser,
     setCurrentUser,
     users = [],
-    setIsPinModalOpen
+    setIsPinModalOpen,
+    notify
   } = useApp();
 
   const roleInfo = getRoleInfo(currentUser.role);
@@ -103,41 +118,175 @@ export const DashboardView: React.FC = () => {
   const lowStockProducts = safeProducts.filter(p => p.stock <= p.minStock && p.status === 'active');
 
   // Interactive Sales Trends View State
-  const [salesTrendPeriod, setSalesTrendPeriod] = useState<'daily' | 'monthly'>('daily');
+  const [salesTrendPeriod, setSalesTrendPeriod] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   const [dailyDaysRange, setDailyDaysRange] = useState<7 | 14 | 30>(7);
-  const [salesChartType, setSalesChartType] = useState<'area' | 'bar'>('area');
-  const [salesMetric, setSalesMetric] = useState<'sales' | 'invoices' | 'both'>('both');
+  const [weeklyWeeksRange, setWeeklyWeeksRange] = useState<4 | 8 | 12>(4);
+  const [salesChartType, setSalesChartType] = useState<'area' | 'bar' | 'composed'>('area');
+  const [salesMetric, setSalesMetric] = useState<'sales' | 'profit' | 'invoices'>('sales');
+  const [sideTab, setSideTab] = useState<'payments' | 'rushHours' | 'goal'>('payments');
+  const [copiedReport, setCopiedReport] = useState<boolean>(false);
 
-  // Chart data: Daily Sales for selectable range (7, 14, 30 days)
+  // Daily Sales Target Tracker
+  const [dailyGoal, setDailyGoal] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('kian_daily_sales_target');
+      if (saved) return Number(saved);
+    } catch {}
+    return 50000;
+  });
+  const [isEditingGoal, setIsEditingGoal] = useState<boolean>(false);
+  const [tempGoalInput, setTempGoalInput] = useState<string>('');
+
+  // Handle saving goal
+  const handleSaveGoal = () => {
+    const val = parseFloat(tempGoalInput);
+    if (!isNaN(val) && val > 0) {
+      setDailyGoal(val);
+      try {
+        localStorage.setItem('kian_daily_sales_target', val.toString());
+      } catch {}
+      if (notify) notify('success', 'تم تحديث هدف المبيعات اليومي بنجاح');
+    }
+    setIsEditingGoal(false);
+  };
+
+  // 1. Chart data: Daily Sales for selectable range (7, 14, 30 days)
   const dailyTrendsData = useMemo(() => {
     const days = [];
+    const now = new Date();
     for (let i = dailyDaysRange - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
-      const dayName = d.toLocaleDateString(language === 'ar' ? 'ar-SY' : 'en-US', {
-        weekday: dailyDaysRange > 14 ? undefined : 'short',
-        month: 'numeric',
-        day: 'numeric'
-      });
+      const isToday = i === 0;
+      const isYesterday = i === 1;
+
+      let dayName = '';
+      if (isToday) {
+        dayName = language === 'ar' ? 'اليوم' : 'Today';
+      } else if (isYesterday) {
+        dayName = language === 'ar' ? 'أمس' : 'Yesterday';
+      } else {
+        dayName = d.toLocaleDateString(language === 'ar' ? 'ar-SY' : 'en-US', {
+          weekday: dailyDaysRange > 14 ? undefined : 'short',
+          month: 'numeric',
+          day: 'numeric'
+        });
+      }
 
       const daySales = safeSales.filter(s => s.createdAt.startsWith(dateStr) && s.status === 'completed');
       const dayTotal = daySales.reduce((sum, s) => sum + s.total, 0);
       const dayCount = daySales.length;
       const avgBasket = dayCount > 0 ? Math.round(dayTotal / dayCount) : 0;
 
+      // COGS & Net Profit
+      const dayCost = daySales.reduce((acc, sale) => {
+        const saleCost = (sale.items || []).reduce((itemAcc, item) => {
+          const prod = safeProducts.find(p => p.id === item.productId);
+          const cost = prod ? prod.costPrice : item.unitPrice * 0.7;
+          return itemAcc + (cost * item.quantity);
+        }, 0);
+        return acc + saleCost;
+      }, 0);
+      const dayProfit = Math.round(dayTotal - dayCost);
+
       days.push({
         name: dayName,
         date: dateStr,
         sales: dayTotal,
         invoices: dayCount,
+        profit: dayProfit,
         avgBasket,
+        growthRate: 0
       });
     }
-    return days;
-  }, [safeSales, language, dailyDaysRange]);
 
-  // Chart data: Monthly Sales for the past 12 months
+    // Compute day-over-day growth
+    for (let idx = 0; idx < days.length; idx++) {
+      if (idx > 0 && days[idx - 1].sales > 0) {
+        const prev = days[idx - 1].sales;
+        const curr = days[idx].sales;
+        days[idx].growthRate = Number((((curr - prev) / prev) * 100).toFixed(1));
+      }
+    }
+
+    return days;
+  }, [safeSales, safeProducts, language, dailyDaysRange]);
+
+  // 2. Chart data: Weekly Sales for selectable range (4, 8, 12 weeks)
+  const weeklyTrendsData = useMemo(() => {
+    const weeks = [];
+    const now = new Date();
+
+    for (let i = weeklyWeeksRange - 1; i >= 0; i--) {
+      // 7-day rolling window
+      const endD = new Date(now);
+      endD.setDate(now.getDate() - (i * 7));
+      endD.setHours(23, 59, 59, 999);
+
+      const startD = new Date(endD);
+      startD.setDate(endD.getDate() - 6);
+      startD.setHours(0, 0, 0, 0);
+
+      const startStr = startD.toLocaleDateString(language === 'ar' ? 'ar-SY' : 'en-US', { month: 'numeric', day: 'numeric' });
+      const endStr = endD.toLocaleDateString(language === 'ar' ? 'ar-SY' : 'en-US', { month: 'numeric', day: 'numeric' });
+
+      let name = '';
+      if (i === 0) {
+        name = language === 'ar' ? 'هذا الأسبوع' : 'This Week';
+      } else if (i === 1) {
+        name = language === 'ar' ? 'الأسبوع الماضي' : 'Last Week';
+      } else {
+        name = language === 'ar' ? `أسبوع ${weeklyWeeksRange - i}` : `Week ${weeklyWeeksRange - i}`;
+      }
+
+      const weekSales = safeSales.filter(s => {
+        if (s.status !== 'completed') return false;
+        const d = new Date(s.createdAt);
+        return d >= startD && d <= endD;
+      });
+
+      const weekTotal = weekSales.reduce((sum, s) => sum + s.total, 0);
+      const weekCount = weekSales.length;
+      const avgBasket = weekCount > 0 ? Math.round(weekTotal / weekCount) : 0;
+      const dailyAvg = Math.round(weekTotal / 7);
+
+      // COGS & Profit
+      const weekCost = weekSales.reduce((acc, sale) => {
+        const saleCost = (sale.items || []).reduce((itemAcc, item) => {
+          const prod = safeProducts.find(p => p.id === item.productId);
+          const cost = prod ? prod.costPrice : item.unitPrice * 0.7;
+          return itemAcc + (cost * item.quantity);
+        }, 0);
+        return acc + saleCost;
+      }, 0);
+      const weekProfit = Math.round(weekTotal - weekCost);
+
+      weeks.push({
+        name,
+        date: `${startStr} - ${endStr}`,
+        sales: weekTotal,
+        invoices: weekCount,
+        profit: weekProfit,
+        avgBasket,
+        dailyAvg,
+        growthRate: 0
+      });
+    }
+
+    // Compute week-over-week growth
+    for (let idx = 0; idx < weeks.length; idx++) {
+      if (idx > 0 && weeks[idx - 1].sales > 0) {
+        const prev = weeks[idx - 1].sales;
+        const curr = weeks[idx].sales;
+        weeks[idx].growthRate = Number((((curr - prev) / prev) * 100).toFixed(1));
+      }
+    }
+
+    return weeks;
+  }, [safeSales, safeProducts, language, weeklyWeeksRange]);
+
+  // 3. Chart data: Monthly Sales for past 12 months
   const monthlyTrendsData = useMemo(() => {
     const months = [];
     const now = new Date();
@@ -162,33 +311,177 @@ export const DashboardView: React.FC = () => {
       const monthCount = monthSales.length;
       const avgBasket = monthCount > 0 ? Math.round(monthTotal / monthCount) : 0;
 
+      const monthCost = monthSales.reduce((acc, sale) => {
+        const saleCost = (sale.items || []).reduce((itemAcc, item) => {
+          const prod = safeProducts.find(p => p.id === item.productId);
+          const cost = prod ? prod.costPrice : item.unitPrice * 0.7;
+          return itemAcc + (cost * item.quantity);
+        }, 0);
+        return acc + saleCost;
+      }, 0);
+      const monthProfit = Math.round(monthTotal - monthCost);
+
       months.push({
         name: monthName,
         date: monthKey,
         sales: monthTotal,
         invoices: monthCount,
+        profit: monthProfit,
         avgBasket,
+        growthRate: 0
       });
     }
-    return months;
-  }, [safeSales, language]);
 
-  // Active trend metrics
-  const activeTrendData = salesTrendPeriod === 'daily' ? dailyTrendsData : monthlyTrendsData;
-  const activePeriodTotal = activeTrendData.reduce((sum, item) => sum + item.sales, 0);
-  const activePeriodInvoices = activeTrendData.reduce((sum, item) => sum + item.invoices, 0);
-  const activePeriodAvg = activeTrendData.length > 0 ? Math.round(activePeriodTotal / activeTrendData.length) : 0;
+    // Compute month-over-month growth
+    for (let idx = 0; idx < months.length; idx++) {
+      if (idx > 0 && months[idx - 1].sales > 0) {
+        const prev = months[idx - 1].sales;
+        const curr = months[idx].sales;
+        months[idx].growthRate = Number((((curr - prev) / prev) * 100).toFixed(1));
+      }
+    }
+
+    return months;
+  }, [safeSales, safeProducts, language]);
+
+  // Active trend metrics selection
+  const activeTrendData = useMemo(() => {
+    if (salesTrendPeriod === 'daily') return dailyTrendsData;
+    if (salesTrendPeriod === 'weekly') return weeklyTrendsData;
+    return monthlyTrendsData;
+  }, [salesTrendPeriod, dailyTrendsData, weeklyTrendsData, monthlyTrendsData]);
+
+  const activePeriodTotal = useMemo(() => activeTrendData.reduce((sum, item) => sum + item.sales, 0), [activeTrendData]);
+  const activePeriodProfit = useMemo(() => activeTrendData.reduce((sum, item) => sum + item.profit, 0), [activeTrendData]);
+  const activePeriodInvoices = useMemo(() => activeTrendData.reduce((sum, item) => sum + item.invoices, 0), [activeTrendData]);
+  const activePeriodAvg = useMemo(() => activeTrendData.length > 0 ? Math.round(activePeriodTotal / activeTrendData.length) : 0, [activePeriodTotal, activeTrendData]);
+  
   const peakPeriodItem = useMemo(() => {
     if (activeTrendData.length === 0) return null;
     return activeTrendData.reduce((max, curr) => curr.sales > max.sales ? curr : max, activeTrendData[0]);
   }, [activeTrendData]);
 
+  // Growth rate for the current/most recent period vs prior
+  const latestGrowthRate = useMemo(() => {
+    if (activeTrendData.length < 2) return 0;
+    const lastItem = activeTrendData[activeTrendData.length - 1];
+    return lastItem.growthRate || 0;
+  }, [activeTrendData]);
+
+  // Executive Week-over-Week comparison (This Week vs Last Week)
+  const wowComparison = useMemo(() => {
+    const now = new Date();
+    // This week (last 7 days)
+    const thisWeekStart = new Date(now);
+    thisWeekStart.setDate(now.getDate() - 6);
+    thisWeekStart.setHours(0, 0, 0, 0);
+
+    // Last week (prior 7 days)
+    const lastWeekEnd = new Date(thisWeekStart);
+    lastWeekEnd.setMilliseconds(-1);
+    const lastWeekStart = new Date(lastWeekEnd);
+    lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
+    lastWeekStart.setHours(0, 0, 0, 0);
+
+    const thisWeekSales = safeSales.filter(s => {
+      if (s.status !== 'completed') return false;
+      const d = new Date(s.createdAt);
+      return d >= thisWeekStart && d <= now;
+    });
+
+    const lastWeekSales = safeSales.filter(s => {
+      if (s.status !== 'completed') return false;
+      const d = new Date(s.createdAt);
+      return d >= lastWeekStart && d <= lastWeekEnd;
+    });
+
+    const thisWeekRevenue = thisWeekSales.reduce((sum, s) => sum + s.total, 0);
+    const lastWeekRevenue = lastWeekSales.reduce((sum, s) => sum + s.total, 0);
+    const diffRevenue = thisWeekRevenue - lastWeekRevenue;
+    const percentChange = lastWeekRevenue > 0
+      ? Number(((diffRevenue / lastWeekRevenue) * 100).toFixed(1))
+      : (thisWeekRevenue > 0 ? 100 : 0);
+
+    return {
+      thisWeekRevenue,
+      lastWeekRevenue,
+      diffRevenue,
+      percentChange,
+      thisWeekInvoices: thisWeekSales.length,
+      lastWeekInvoices: lastWeekSales.length,
+    };
+  }, [safeSales]);
+
+  // Today Hourly Rush Hours Data (from 08:00 to 23:00)
+  const todayHourlyData = useMemo(() => {
+    const hours = [];
+    const hourCounts: { [h: number]: { sales: number; invoices: number } } = {};
+    for (let h = 8; h <= 23; h++) {
+      hourCounts[h] = { sales: 0, invoices: 0 };
+    }
+
+    todaySales.forEach(s => {
+      const d = new Date(s.createdAt);
+      const h = d.getHours();
+      if (hourCounts[h]) {
+        hourCounts[h].sales += s.total;
+        hourCounts[h].invoices += 1;
+      }
+    });
+
+    for (let h = 8; h <= 23; h++) {
+      const label = language === 'ar' 
+        ? (h < 12 ? `${h} ص` : h === 12 ? '12 م' : `${h - 12} م`)
+        : (h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`);
+      hours.push({
+        hour: `${String(h).padStart(2, '0')}:00`,
+        label,
+        sales: hourCounts[h].sales,
+        invoices: hourCounts[h].invoices
+      });
+    }
+
+    return hours;
+  }, [todaySales, language]);
+
+  const peakHourItem = useMemo(() => {
+    if (todayHourlyData.length === 0) return null;
+    return todayHourlyData.reduce((max, curr) => curr.sales > max.sales ? curr : max, todayHourlyData[0]);
+  }, [todayHourlyData]);
+
+  // Goal progress percentage
+  const goalProgress = Math.min(100, Math.round((todayRevenue / (dailyGoal || 1)) * 100));
+
   // Payment methods chart data
   const paymentChartData = [
-    { name: 'نقدي (Cash)', value: cashSalesTotal || 1, color: '#F59E0B' },
-    { name: 'بطاقة (Card)', value: cardSalesTotal || 1, color: '#3B82F6' },
-    { name: 'تحويل (Transfer)', value: transferSalesTotal || 0, color: '#10B981' },
+    { name: language === 'ar' ? 'نقدي (Cash)' : 'Cash', value: cashSalesTotal || 1, color: '#F59E0B' },
+    { name: language === 'ar' ? 'بطاقة (Card)' : 'Card', value: cardSalesTotal || 1, color: '#3B82F6' },
+    { name: language === 'ar' ? 'تحويل (Transfer)' : 'Transfer', value: transferSalesTotal || 0, color: '#10B981' },
   ];
+
+  // Copy Trend Summary to Clipboard
+  const handleCopyTrendSummary = () => {
+    const periodName = salesTrendPeriod === 'daily' 
+      ? `يومي (${dailyDaysRange} يوماً)` 
+      : salesTrendPeriod === 'weekly' 
+        ? `أسبوعي (${weeklyWeeksRange} أسابيع)` 
+        : 'شهري (12 شهراً)';
+    
+    const text = `📊 ملخص اتجاهات المبيعات (${periodName}):\n` +
+      `• إجمالي المبيعات: ${formatCurrency(activePeriodTotal)}\n` +
+      (canViewNetProfit ? `• صافي الأرباح: ${formatCurrency(activePeriodProfit)}\n` : '') +
+      `• عدد الفواتير: ${activePeriodInvoices} عملية\n` +
+      `• متوسط الفترة: ${formatCurrency(activePeriodAvg)}\n` +
+      (peakPeriodItem ? `• ذروة المبيعات: ${peakPeriodItem.name} (${formatCurrency(peakPeriodItem.sales)})\n` : '') +
+      `• مؤشر النمو الأخير: ${latestGrowthRate >= 0 ? '+' : ''}${latestGrowthRate}%\n` +
+      `تم التصدير من نظام كاشير كيان الذكي POS`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedReport(true);
+      if (notify) notify('success', 'تم نسخ ملخص اتجاهات المبيعات إلى الحافظة');
+      setTimeout(() => setCopiedReport(false), 2500);
+    });
+  };
 
   return (
     <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6 bg-slate-50/50 dark:bg-slate-950">
@@ -512,9 +805,60 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
+      {/* Week-over-Week Executive Performance Comparison Banner */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-4 sm:p-5 rounded-3xl border border-amber-500/20 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shrink-0 shadow-md shadow-amber-500/20">
+            <ArrowUpDown className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                مقارنة أداء الأسبوع: هذا الأسبوع مقابل الأسبوع الماضي
+              </h4>
+              <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                wowComparison.percentChange >= 0
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                  : 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+              }`}>
+                {wowComparison.percentChange >= 0 ? (
+                  <>
+                    <ArrowUpRight className="w-3 h-3" />
+                    <span>+{wowComparison.percentChange}% نمو أسبوعي</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowDownRight className="w-3 h-3" />
+                    <span>{wowComparison.percentChange}% انخفاض</span>
+                  </>
+                )}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              مبيعات آخر 7 أيام ({formatCurrency(wowComparison.thisWeekRevenue)}) مقارنة بـ 7 أيام السابقة ({formatCurrency(wowComparison.lastWeekRevenue)}). الفرق: {formatCurrency(Math.abs(wowComparison.diffRevenue))}.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
+          <div className="text-center px-3 py-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+            <span className="text-[10px] text-slate-400 font-bold block">فواتير هذا الأسبوع</span>
+            <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white font-mono">
+              {wowComparison.thisWeekInvoices}
+            </span>
+          </div>
+          <div className="text-center px-3 py-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+            <span className="text-[10px] text-slate-400 font-bold block">فواتير الأسبوع الماضي</span>
+            <span className="text-xs sm:text-sm font-black text-slate-500 dark:text-slate-400 font-mono">
+              {wowComparison.lastWeekInvoices}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Visual Analytics Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Interactive Sales Trends Visual Tool (Daily & Monthly) */}
+        {/* Interactive Sales Trends Visual Tool (Daily, Weekly, Monthly) */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
           {/* Header & Controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
@@ -527,13 +871,19 @@ export const DashboardView: React.FC = () => {
                   <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
                     <span>اتجاهات المبيعات وتحليلات الأداء التفاعلية</span>
                     <span className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold px-2 py-0.5 rounded-full">
-                      {salesTrendPeriod === 'daily' ? `يومي (${dailyDaysRange} يوماً)` : 'شهري (12 شهراً)'}
+                      {salesTrendPeriod === 'daily'
+                        ? `يومي (${dailyDaysRange} يوماً)`
+                        : salesTrendPeriod === 'weekly'
+                          ? `أسبوعي (${weeklyWeeksRange} أسابيع)`
+                          : 'شهري (12 شهراً)'}
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-400">
                     {salesTrendPeriod === 'daily'
-                      ? 'متابعة حركة المبيعات وتكرار الفواتير يوماً بيوم'
-                      : 'تحليل الأداء المالي والنمو الشهري الشامل على مدار العام'}
+                      ? 'متابعة حركة المبيعات وتكرار الفواتير يوماً بيوم مع المقارنة اللحظية'
+                      : salesTrendPeriod === 'weekly'
+                        ? 'مقارنة أداء الأسابيع المتتالية ومعدل النمو الأسبوعي وحجم السلة'
+                        : 'تحليل الأداء المالي والنمو الشهري الشامل على مدار العام'}
                   </p>
                 </div>
               </div>
@@ -541,12 +891,12 @@ export const DashboardView: React.FC = () => {
 
             {/* Interactive Mode Switches */}
             <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-              {/* Daily / Monthly Toggle */}
+              {/* Daily / Weekly / Monthly Toggle */}
               <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
                 <button
                   type="button"
                   onClick={() => setSalesTrendPeriod('daily')}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     salesTrendPeriod === 'daily'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -557,19 +907,31 @@ export const DashboardView: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setSalesTrendPeriod('weekly')}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    salesTrendPeriod === 'weekly'
+                      ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>أسبوعي</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setSalesTrendPeriod('monthly')}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     salesTrendPeriod === 'monthly'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  <TrendingUp className="w-3.5 h-3.5" />
+                  <BarChart3 className="w-3.5 h-3.5" />
                   <span>شهري</span>
                 </button>
               </div>
 
-              {/* Sub-range for daily view */}
+              {/* Sub-range options for Daily */}
               {salesTrendPeriod === 'daily' && (
                 <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
                   {[7, 14, 30].map((days) => (
@@ -589,7 +951,67 @@ export const DashboardView: React.FC = () => {
                 </div>
               )}
 
-              {/* Chart Type Toggle: Area vs Bar */}
+              {/* Sub-range options for Weekly */}
+              {salesTrendPeriod === 'weekly' && (
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+                  {[4, 8, 12].map((weeks) => (
+                    <button
+                      key={weeks}
+                      type="button"
+                      onClick={() => setWeeklyWeeksRange(weeks as 4 | 8 | 12)}
+                      className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        weeklyWeeksRange === weeks
+                          ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                      title={`${weeks} أسابيع`}
+                    >
+                      {weeks}أ
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Metric Mode Filter */}
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setSalesMetric('sales')}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    salesMetric === 'sales'
+                      ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                  }`}
+                >
+                  المبيعات
+                </button>
+                {canViewNetProfit && (
+                  <button
+                    type="button"
+                    onClick={() => setSalesMetric('profit')}
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      salesMetric === 'profit'
+                        ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs font-black'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                  >
+                    الأرباح
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSalesMetric('invoices')}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    salesMetric === 'invoices'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                  }`}
+                >
+                  الفواتير
+                </button>
+              </div>
+
+              {/* Chart Type Toggle: Area vs Bar vs Composed */}
               <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
                 <button
                   type="button"
@@ -601,7 +1023,7 @@ export const DashboardView: React.FC = () => {
                   }`}
                   title="مخطط مساحي انسيابي"
                 >
-                  <LineChart className="w-3.5 h-3.5" />
+                  <LineChartIcon className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
@@ -615,7 +1037,29 @@ export const DashboardView: React.FC = () => {
                 >
                   <BarChart3 className="w-3.5 h-3.5" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSalesChartType('composed')}
+                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
+                    salesChartType === 'composed'
+                      ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'
+                  }`}
+                  title="مخطط مركب مزدوج (مبيعات + خط ترند)"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                </button>
               </div>
+
+              {/* Copy Summary Button */}
+              <button
+                type="button"
+                onClick={handleCopyTrendSummary}
+                className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all cursor-pointer"
+                title="نسخ تقرير الاتجاهات إلى الحافظة"
+              >
+                {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
             </div>
           </div>
 
@@ -628,29 +1072,44 @@ export const DashboardView: React.FC = () => {
               </span>
             </div>
             <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold block">عدد العمليات</span>
+              <span className="text-[10px] text-slate-400 font-bold block">
+                {salesMetric === 'profit' && canViewNetProfit ? 'صافي الربح للفترة' : 'عدد العمليات'}
+              </span>
               <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono">
-                {activePeriodInvoices} فاتورة
+                {salesMetric === 'profit' && canViewNetProfit 
+                  ? formatCurrency(activePeriodProfit)
+                  : `${activePeriodInvoices} فاتورة`}
               </span>
             </div>
             <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
               <span className="text-[10px] text-slate-400 font-bold block">
-                {salesTrendPeriod === 'daily' ? 'المتوسط اليومي' : 'المتوسط الشهري'}
+                {salesTrendPeriod === 'daily'
+                  ? 'المتوسط اليومي'
+                  : salesTrendPeriod === 'weekly'
+                    ? 'المتوسط الأسبوعي'
+                    : 'المتوسط الشهري'}
               </span>
               <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
                 {formatCurrency(activePeriodAvg)}
               </span>
             </div>
             <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold block">ذروة الأداء (الأعلى)</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold block">مؤشر النمو الأخير</span>
+                {latestGrowthRate !== 0 && (
+                  <span className={`text-[10px] font-black ${latestGrowthRate > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {latestGrowthRate > 0 ? `+${latestGrowthRate}%` : `${latestGrowthRate}%`}
+                  </span>
+                )}
+              </div>
               <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white font-mono truncate block" title={peakPeriodItem ? `${peakPeriodItem.name}: ${formatCurrency(peakPeriodItem.sales)}` : '-'}>
-                {peakPeriodItem && peakPeriodItem.sales > 0 ? `${peakPeriodItem.name}` : 'لا توجد بيانات'}
+                {peakPeriodItem && peakPeriodItem.sales > 0 ? `ذروة: ${peakPeriodItem.name}` : 'لا توجد بيانات'}
               </span>
             </div>
           </div>
 
           {/* Interactive Recharts Canvas */}
-          <div className="h-64 sm:h-72 w-full pt-2">
+          <div className="h-64 sm:h-76 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
               {salesChartType === 'area' ? (
                 <AreaChart data={activeTrendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -659,34 +1118,30 @@ export const DashboardView: React.FC = () => {
                       <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.45} />
                       <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.0} />
                     </linearGradient>
-                    <linearGradient id="invoicesGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366F1" stopOpacity={0.3} />
+                    <linearGradient id="profitGradInteractive" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="invoicesGradInteractive" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366F1" stopOpacity={0.35} />
                       <stop offset="95%" stopColor="#6366F1" stopOpacity={0.0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
                   <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
                   <YAxis
-                    yAxisId="revenueAxis"
+                    yAxisId="mainAxis"
                     stroke="#94a3b8"
                     fontSize={11}
                     tickLine={false}
                     tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                  />
-                  <YAxis
-                    yAxisId="invoicesAxis"
-                    orientation="left"
-                    stroke="#818CF8"
-                    fontSize={10}
-                    tickLine={false}
-                    hide={true}
                   />
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload || !payload.length) return null;
                       const dataPoint = payload[0]?.payload;
                       return (
-                        <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-xl border border-slate-800 text-xs space-y-1.5 min-w-[160px]">
+                        <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-xl border border-slate-800 text-xs space-y-1.5 min-w-[170px]">
                           <div className="font-bold border-b border-slate-800 pb-1 text-amber-400 flex items-center justify-between">
                             <span>{label}</span>
                             <span className="text-[10px] text-slate-400 font-mono">{dataPoint?.date}</span>
@@ -700,13 +1155,24 @@ export const DashboardView: React.FC = () => {
                               {formatCurrency(dataPoint?.sales || 0)}
                             </span>
                           </div>
+                          {canViewNetProfit && dataPoint?.profit !== undefined && (
+                            <div className="flex items-center justify-between gap-3 text-slate-200">
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                <span>صافي الربح:</span>
+                              </span>
+                              <span className="font-mono font-bold text-emerald-400">
+                                {formatCurrency(dataPoint?.profit || 0)}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center justify-between gap-3 text-slate-200">
                             <span className="flex items-center gap-1">
                               <span className="w-2 h-2 rounded-full bg-indigo-400" />
                               <span>الفواتير:</span>
                             </span>
                             <span className="font-mono font-bold text-indigo-300">
-                              {dataPoint?.invoices || 0} فاتورة
+                              {dataPoint?.invoices || 0} عملية
                             </span>
                           </div>
                           {dataPoint?.avgBasket > 0 && (
@@ -717,22 +1183,56 @@ export const DashboardView: React.FC = () => {
                               </span>
                             </div>
                           )}
+                          {dataPoint?.growthRate !== 0 && dataPoint?.growthRate !== undefined && (
+                            <div className="flex items-center justify-between gap-3 text-[10px] pt-1 text-slate-400">
+                              <span>النمو عن السابق:</span>
+                              <span className={`font-mono font-bold ${dataPoint.growthRate > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {dataPoint.growthRate > 0 ? `+${dataPoint.growthRate}%` : `${dataPoint.growthRate}%`}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     }}
                   />
-                  <Area
-                    yAxisId="revenueAxis"
-                    type="monotone"
-                    dataKey="sales"
-                    name="المبيعات"
-                    stroke="#F59E0B"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#salesGradInteractive)"
-                  />
+                  {salesMetric === 'sales' && (
+                    <Area
+                      yAxisId="mainAxis"
+                      type="monotone"
+                      dataKey="sales"
+                      name="المبيعات"
+                      stroke="#F59E0B"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#salesGradInteractive)"
+                    />
+                  )}
+                  {salesMetric === 'profit' && canViewNetProfit && (
+                    <Area
+                      yAxisId="mainAxis"
+                      type="monotone"
+                      dataKey="profit"
+                      name="صافي الربح"
+                      stroke="#10B981"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#profitGradInteractive)"
+                    />
+                  )}
+                  {salesMetric === 'invoices' && (
+                    <Area
+                      yAxisId="mainAxis"
+                      type="monotone"
+                      dataKey="invoices"
+                      name="عدد الفواتير"
+                      stroke="#6366F1"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#invoicesGradInteractive)"
+                    />
+                  )}
                 </AreaChart>
-              ) : (
+              ) : salesChartType === 'bar' ? (
                 <BarChart data={activeTrendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
                   <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
@@ -775,65 +1275,323 @@ export const DashboardView: React.FC = () => {
                     }}
                   />
                   <Bar
+                    dataKey={salesMetric === 'profit' && canViewNetProfit ? 'profit' : salesMetric === 'invoices' ? 'invoices' : 'sales'}
+                    name={salesMetric === 'profit' ? 'الربح' : salesMetric === 'invoices' ? 'الفواتير' : 'المبيعات'}
+                    fill={salesMetric === 'profit' ? '#10B981' : salesMetric === 'invoices' ? '#6366F1' : '#F59E0B'}
+                    radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              ) : (
+                <ComposedChart data={activeTrendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis
+                    yAxisId="salesAxis"
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickLine={false}
+                    tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                  />
+                  <YAxis
+                    yAxisId="secondaryAxis"
+                    orientation="left"
+                    stroke="#818CF8"
+                    fontSize={10}
+                    tickLine={false}
+                    hide={true}
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const dataPoint = payload[0]?.payload;
+                      return (
+                        <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-xl border border-slate-800 text-xs space-y-1.5 min-w-[160px]">
+                          <div className="font-bold border-b border-slate-800 pb-1 text-amber-400 flex items-center justify-between">
+                            <span>{label}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{dataPoint?.date}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 text-slate-200">
+                            <span>المبيعات:</span>
+                            <span className="font-mono font-bold text-amber-400">{formatCurrency(dataPoint?.sales || 0)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 text-slate-200">
+                            <span>متوسط السلة:</span>
+                            <span className="font-mono font-bold text-emerald-400">{formatCurrency(dataPoint?.avgBasket || 0)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 text-slate-200">
+                            <span>العمليات:</span>
+                            <span className="font-mono font-bold text-indigo-300">{dataPoint?.invoices || 0} فاتورة</span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar
+                    yAxisId="salesAxis"
                     dataKey="sales"
                     name="المبيعات"
                     fill="#F59E0B"
                     radius={[6, 6, 0, 0]}
                   />
-                </BarChart>
+                  <Line
+                    yAxisId="salesAxis"
+                    type="monotone"
+                    dataKey={canViewNetProfit ? 'profit' : 'avgBasket'}
+                    name={canViewNetProfit ? 'صافي الربح' : 'متوسط السلة'}
+                    stroke="#10B981"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, fill: '#10B981' }}
+                  />
+                </ComposedChart>
               )}
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Payment Methods Breakdown */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+        {/* Right-Hand Multi-Widget: Payment Methods / Rush Hours / Goal Tracker */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4 flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              توزيع طرق الدفع
-            </h3>
-            <p className="text-xs text-slate-400">نسبة التحصيل النقدي والبطاقات</p>
-          </div>
-
-          <div className="h-48 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={paymentChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={75}
-                  paddingAngle={5}
-                  dataKey="value"
+            {/* Widget Tabs */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-full">
+                <button
+                  type="button"
+                  onClick={() => setSideTab('payments')}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all text-center cursor-pointer ${
+                    sideTab === 'payments'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                  }`}
                 >
-                  {paymentChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(val: any) => [formatCurrency(Number(val)), 'القيمة']}
-                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '12px' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+                  طرق الدفع
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSideTab('rushHours')}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all text-center cursor-pointer ${
+                    sideTab === 'rushHours'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                  }`}
+                >
+                  أوقات الذروة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSideTab('goal')}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all text-center cursor-pointer ${
+                    sideTab === 'goal'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                  }`}
+                >
+                  هدف اليوم
+                </button>
+              </div>
+            </div>
 
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                <span className="w-3 h-3 rounded-full bg-amber-500" />
-                نقداً (Cash):
-              </span>
-              <span className="font-mono font-bold">{formatCurrency(cashSalesTotal)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                <span className="w-3 h-3 rounded-full bg-blue-500" />
-                بطاقة (Card):
-              </span>
-              <span className="font-mono font-bold">{formatCurrency(cardSalesTotal)}</span>
-            </div>
+            {/* Tab 1: Payment Methods Breakdown */}
+            {sideTab === 'payments' && (
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                    توزيع التحصيل المالي
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    الإجمالي: {formatCurrency(totalRevenue)}
+                  </span>
+                </div>
+
+                <div className="h-44 w-full flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={paymentChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={72}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {paymentChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any) => [formatCurrency(Number(val)), 'القيمة']}
+                        contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '12px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <span className="w-3 h-3 rounded-full bg-amber-500" />
+                      نقداً (Cash):
+                    </span>
+                    <span className="font-mono font-bold">{formatCurrency(cashSalesTotal)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <span className="w-3 h-3 rounded-full bg-blue-500" />
+                      بطاقة (Card):
+                    </span>
+                    <span className="font-mono font-bold">{formatCurrency(cardSalesTotal)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500" />
+                      تحويل (Transfer):
+                    </span>
+                    <span className="font-mono font-bold">{formatCurrency(transferSalesTotal)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Today Rush Hours Hourly Velocity */}
+            {sideTab === 'rushHours' && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>حركة المبيعات حسب الساعة</span>
+                  </h4>
+                  {peakHourItem && peakHourItem.sales > 0 && (
+                    <span className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold px-2 py-0.5 rounded-full">
+                      ذروة: {peakHourItem.label}
+                    </span>
+                  )}
+                </div>
+
+                <div className="h-44 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={todayHourlyData} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" opacity={0.2} vertical={false} />
+                      <XAxis dataKey="label" stroke="#94a3b8" fontSize={9} tickLine={false} interval={2} />
+                      <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const d = payload[0]?.payload;
+                          return (
+                            <div className="bg-slate-900 text-white p-2 rounded-xl text-[11px] shadow-lg border border-slate-800 space-y-1">
+                              <div className="font-bold text-amber-400">{d.hour} ({d.label})</div>
+                              <div>المبيعات: <span className="font-mono font-bold">{formatCurrency(d.sales)}</span></div>
+                              <div>العمليات: <span className="font-mono font-bold">{d.invoices} فواتير</span></div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Bar dataKey="sales" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                  تساعدك أوقات الذروة على تنظيم مناوبات الكاشير وتجهيز الصندوق خلال فترات الازدحام.
+                </p>
+              </div>
+            )}
+
+            {/* Tab 3: Daily Sales Goal Tracker */}
+            {sideTab === 'goal' && (
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Target className="w-3.5 h-3.5 text-amber-500" />
+                    <span>مؤشر هدف المبيعات اليومي</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempGoalInput(dailyGoal.toString());
+                      setIsEditingGoal(!isEditingGoal);
+                    }}
+                    className="text-[11px] text-amber-600 dark:text-amber-400 font-bold hover:underline cursor-pointer"
+                  >
+                    {isEditingGoal ? 'إلغاء' : 'تعديل الهدف'}
+                  </button>
+                </div>
+
+                {isEditingGoal ? (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl space-y-2">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                      حدد هدف مبيعات اليوم:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={tempGoalInput}
+                        onChange={(e) => setTempGoalInput(e.target.value)}
+                        placeholder="50000"
+                        className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveGoal}
+                        className="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
+                      >
+                        حفظ
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-bold">المحقق اليوم</span>
+                        <span className="text-lg font-black text-amber-600 dark:text-amber-400 font-mono">
+                          {formatCurrency(todayRevenue)}
+                        </span>
+                      </div>
+                      <div className="text-end">
+                        <span className="text-[10px] text-slate-400 block font-bold">الهدف المحدد</span>
+                        <span className="text-sm font-bold text-slate-600 dark:text-slate-300 font-mono">
+                          {formatCurrency(dailyGoal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5">
+                      <div className="h-3.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            goalProgress >= 100
+                              ? 'bg-emerald-500'
+                              : goalProgress >= 70
+                                ? 'bg-amber-500'
+                                : 'bg-indigo-500'
+                          }`}
+                          style={{ width: `${goalProgress}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-slate-500">
+                          {goalProgress >= 100 ? 'تم تجاوز الهدف اليومي بنجاح!' : `متبقي: ${formatCurrency(Math.max(0, dailyGoal - todayRevenue))}`}
+                        </span>
+                        <span className="font-mono text-amber-600 dark:text-amber-400">
+                          {goalProgress}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                      <Flame className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>
+                        {goalProgress >= 100
+                          ? 'أداء استثنائي اليوم! استمر على نفس الوتيرة.'
+                          : 'يمكنك زيادة متوسط السلة عبر عروض الجملة وتخفيضات الكاشير.'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

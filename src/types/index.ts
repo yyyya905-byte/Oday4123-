@@ -516,6 +516,7 @@ export interface StoreSettings {
   googleDriveBackupIntervalHours?: number;
   googleDriveLastBackupAt?: string;
   googleDriveLastBackupStatus?: 'success' | 'failed' | 'in_progress';
+  googleClientId?: string;
   // Automated WhatsApp Debt Collection & Reminder System
   autoSendDebtInvoiceWhatsApp?: boolean; // Send WhatsApp immediately when credit sale is issued
   autoSendDebtPaymentWhatsApp?: boolean; // Send WhatsApp receipt immediately when debt payment is received
@@ -552,6 +553,10 @@ export interface StoreSettings {
   receiptShowCustomerPhone?: boolean;
   receiptShowOrderDiningType?: boolean;
   receiptShowItemNotes?: boolean;
+  receiptShowCustomerNotes?: boolean; // Toggle visibility for Customer Notes
+  receiptShowFooterMessage?: boolean; // Toggle visibility for Footer Message
+  receiptSampleCustomerNote?: string; // Sample customer note for live preview
+  receiptLogoSize?: 'sm' | 'md' | 'lg'; // Logo sizing in receipt
   receiptShowItemSku?: boolean;
   receiptShowItemUnit?: boolean;
   receiptShowSubtotal?: boolean;

@@ -51,6 +51,7 @@ import { soundEffects } from '../../services/audio';
 import { GoogleDriveBackupSection } from '../backup/GoogleDriveBackupSection';
 import { WhatsAppDebtAutomationDashboard } from '../debts/WhatsAppDebtAutomationDashboard';
 import { PrintSettingsPanel } from './PrintSettingsPanel';
+import { ReceiptCustomizerPanel } from './ReceiptCustomizerPanel';
 import { CURRENCY_PRESETS, fetchLiveSyrianLiraRates } from '../../utils/currencyUtils';
 import { testWhatsAppCloudApiConnection } from '../../services/debtCollectionService';
 import { isAuthorizedToGenerateCodes } from '../../utils/licenseUtils';
@@ -162,7 +163,7 @@ export const SettingsView: React.FC = () => {
 
   const isAuthorizedToGenerate = isAuthorizedToGenerateCodes(activeEmail);
 
-  const [activeSubTab, setActiveSubTab] = useState<'appearance' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'printer' | 'license'>('appearance');
+  const [activeSubTab, setActiveSubTab] = useState<'appearance' | 'receipt_design' | 'printer' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'license'>('receipt_design');
   const [formData, setFormData] = useState({ ...settings });
   const [fileInputKey, setFileInputKey] = useState(Date.now());
 
@@ -427,6 +428,23 @@ export const SettingsView: React.FC = () => {
         >
           <ShoppingBag className="w-4 h-4" />
           <span>إعدادات قسم المفرق والتجزئة (POS)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('receipt_design')}
+          id="btn-settings-subtab-receipt-design"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'receipt_design'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Receipt className="w-4 h-4 text-amber-500" />
+          <span>تخصيص شكل وقالب الفاتورة</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold border border-amber-500/30">
+            معاينة حية
+          </span>
         </button>
 
         <button
@@ -2236,6 +2254,11 @@ export const SettingsView: React.FC = () => {
             </div>
           </form>
         </div>
+      )}
+
+      {/* TAB: Receipt Customization Studio (Real-Time Live Preview) */}
+      {activeSubTab === 'receipt_design' && (
+        <ReceiptCustomizerPanel />
       )}
 
       {/* TAB: Printer & Label Alignment Studio */}
