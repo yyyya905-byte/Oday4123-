@@ -94,6 +94,18 @@ export const ExchangeBulletinModal: React.FC<ExchangeBulletinModalProps> = ({ is
     }
   };
 
+  const handleApplyLebaneseRates = () => {
+    setUsdBuyRate(89000);
+    setUsdSellRate(89500);
+    setEurBuyRate(96500);
+    setEurSellRate(97200);
+    setGoldGram21(6850000);
+    setCentralBankOfficialRate(89500);
+    setSourceLabel('سوق بيروت المالي ومصرف لبنان (BDL / Sayrafa)');
+    setLastFetchStatus('تم تطبيق أسعار السوق اللبناني (1$ = 89,500 ل.ل)');
+    notify('تم ضبط أسعار لبنان', 'تم تعيين أسعار الصرف وفق منصة صيرفة والسوق المالي في بيروت (1$ = 89,500 ل.ل)', 'success');
+  };
+
   const handleSave = () => {
     updateExchangeBulletin({
       usdBuyRate,
@@ -181,16 +193,29 @@ export const ExchangeBulletinModal: React.FC<ExchangeBulletinModalProps> = ({ is
               </div>
             </div>
 
-            <button
-              type="button"
-              id="btn-fetch-live-rates-sp-today"
-              onClick={handleFetchFromSpToday}
-              disabled={isFetchingLive}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetchingLive ? 'animate-spin' : ''}`} />
-              <span>{isFetchingLive ? 'جارِ جلب الأسعار...' : 'تحديث فوري من sp-today'}</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                id="btn-apply-lebanese-rates"
+                onClick={handleApplyLebaneseRates}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                title="تطبيق أسعار صرف السوق اللبناني المعتمدة (1$ = 89,500 ل.ل)"
+              >
+                <span>🇱🇧</span>
+                <span>أسعار لبنان (89,500 ل.ل/$)</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-fetch-live-rates-sp-today"
+                onClick={handleFetchFromSpToday}
+                disabled={isFetchingLive}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isFetchingLive ? 'animate-spin' : ''}`} />
+                <span>{isFetchingLive ? 'جارِ جلب الأسعار...' : 'تحديث فوري من sp-today'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Quick Rates Input Cards */}

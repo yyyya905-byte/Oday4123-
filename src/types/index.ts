@@ -446,6 +446,23 @@ export interface LabelAlignmentConfig {
   showDate: boolean;
 }
 
+export type POSCartPosition = 'right' | 'left';
+export type POSPayButtonAlignment = 'split' | 'full' | 'reversed';
+export type FloatingActionPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'hidden';
+export type ButtonLayoutPreset = 'standard' | 'left_handed' | 'touchscreen' | 'compact' | 'custom';
+
+export interface ButtonLayoutConfig {
+  posCartPosition: POSCartPosition;
+  posActionButtonsOrder: string[]; // ['numpad', 'barcode', 'customerQr', 'bluetoothPrinter', 'priceEdit', 'favorites', 'customizeButtons']
+  posActionButtonsVisibility: Record<string, boolean>;
+  posPayButtonAlignment: POSPayButtonAlignment;
+  headerButtonsOrder: string[]; // ['operatingMode', 'sectionsNav', 'search', 'toolsHub', 'quickNewSale', 'networkStatus', 'battery', 'notifications', 'themeToggle', 'langToggle', 'staffProfile']
+  headerButtonsVisibility: Record<string, boolean>;
+  floatingActionPosition: FloatingActionPosition;
+  floatingActionEnabled: boolean;
+  activePreset?: ButtonLayoutPreset;
+}
+
 export interface StoreSettings {
   storeId: string;
   storeNameAr: string;
@@ -460,6 +477,7 @@ export interface StoreSettings {
   commercialRecord: string;
   currency: CurrencyConfig;
   exchangeBulletin?: ExchangeRateBulletin;
+  buttonLayout?: ButtonLayoutConfig;
   // Theme & Night Mode (Cashier Eye Comfort & Dark Work Environment Contrast)
   themeMode?: ThemeMode;
   nightModeStartHour?: number; // e.g. 18 (6:00 PM)
@@ -473,6 +491,7 @@ export interface StoreSettings {
   powerSavingAutoDimTimeout?: number; // Inactivity timeout in minutes (0 = always dim, 1, 2, 3, 5 mins, default 1)
   powerSavingThrottleUpdates?: boolean; // Slow down background intervals & UI refresh rates (default true)
   powerSavingDisableAnimations?: boolean; // Turn off GPU transitions, blurs, and animations (default true)
+  autoEnablePowerSavingOnLowBattery?: boolean; // Auto enable power saving when battery reaches <= 20%
   enableTax: boolean;
   defaultTaxRate: number; // percentage
   enableDiscounts: boolean;

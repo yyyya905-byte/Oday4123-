@@ -140,15 +140,19 @@ export function buildDebtInvoiceMessage(params: {
     itemsText = `(تم شراء ${sale.items.length} أصناف)`;
   }
 
-  // Multi-currency calculation if Syrian Pound / Bulletin available
+  // Multi-currency calculation if Syrian Pound / Lebanese Pound / Bulletin available
   let exchangeNote = '';
   let usdRateStr = '';
-  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س'))) {
+  const isLbp = storeSettings.currency.code === 'LBP' || currencySymbol.includes('ل.ل');
+  const isSyp = storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س');
+  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (isSyp || isLbp)) {
     if (bulletin.usdSellRate > 0) {
       const usdTotalDebt = (customer.currentDebt / bulletin.usdSellRate).toFixed(2);
       const usdInvoiceDebt = (remainingDebt / bulletin.usdSellRate).toFixed(2);
-      usdRateStr = `${bulletin.usdSellRate.toLocaleString()} ل.س/$`;
-      exchangeNote = `\n💱 *المعادل التقريبي بسعر صرف الليرة اليوم (${bulletin.usdSellRate.toLocaleString()} ل.س/$):*\n💵 قيمة دين هذه الفاتورة: حوالي *$${usdInvoiceDebt}*\n💵 إجمالي ذممك بالدولار: حوالي *$${usdTotalDebt}* (موقع الليرة اليوم)\n`;
+      const rateLabel = isLbp ? 'ل.ل/$' : 'ل.س/$';
+      const sourceName = isLbp ? 'سعر صرف السوق اللبناني' : 'موقع الليرة اليوم';
+      usdRateStr = `${bulletin.usdSellRate.toLocaleString()} ${rateLabel}`;
+      exchangeNote = `\n💱 *المعادل التقريبي بالدولار (${bulletin.usdSellRate.toLocaleString()} ${rateLabel}):*\n💵 قيمة دين هذه الفاتورة: حوالي *$${usdInvoiceDebt}*\n💵 إجمالي ذممك بالدولار: حوالي *$${usdTotalDebt}* (${sourceName})\n`;
     }
   }
 
@@ -193,11 +197,15 @@ export function buildDebtPeriodicReminderMessage(params: {
 
   let exchangeNote = '';
   let usdRateStr = '';
-  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س'))) {
+  const isLbp = storeSettings.currency.code === 'LBP' || currencySymbol.includes('ل.ل');
+  const isSyp = storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س');
+  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (isSyp || isLbp)) {
     if (bulletin.usdSellRate > 0) {
       const usdTotalDebt = (totalDebt / bulletin.usdSellRate).toFixed(2);
-      usdRateStr = `${bulletin.usdSellRate.toLocaleString()} ل.س/$`;
-      exchangeNote = `\n💱 *المعادل بسعر صرف الليرة اليوم (${bulletin.usdSellRate.toLocaleString()} ل.س/$):*\n💵 إجمالي الذمة بالدولار: *$${usdTotalDebt}* (وفق نشرة الليرة اليوم)\n`;
+      const rateLabel = isLbp ? 'ل.ل/$' : 'ل.س/$';
+      const sourceName = isLbp ? 'سعر صرف السوق اللبناني' : 'موقع الليرة اليوم';
+      usdRateStr = `${bulletin.usdSellRate.toLocaleString()} ${rateLabel}`;
+      exchangeNote = `\n💱 *المعادل بسعر صرف العملة اليوم (${bulletin.usdSellRate.toLocaleString()} ${rateLabel}):*\n💵 إجمالي الذمة بالدولار: *$${usdTotalDebt}* (وفق ${sourceName})\n`;
     }
   }
 
@@ -234,10 +242,13 @@ export function buildDebtOverdueMessage(params: {
   const totalDebt = customer.currentDebt || 0;
 
   let exchangeNote = '';
-  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س'))) {
+  const isLbp = storeSettings.currency.code === 'LBP' || currencySymbol.includes('ل.ل');
+  const isSyp = storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س');
+  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (isSyp || isLbp)) {
     if (bulletin.usdSellRate > 0) {
       const usdTotalDebt = (totalDebt / bulletin.usdSellRate).toFixed(2);
-      exchangeNote = `\n💱 *المعادل بالدولار:* *$${usdTotalDebt}* (وفق نشرة الليرة اليوم)\n`;
+      const sourceName = isLbp ? 'سوق بيروت وصيرفة' : 'نشرة الليرة اليوم';
+      exchangeNote = `\n💱 *المعادل بالدولار:* *$${usdTotalDebt}* (وفق ${sourceName})\n`;
     }
   }
 

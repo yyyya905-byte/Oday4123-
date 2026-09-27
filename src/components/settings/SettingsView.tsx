@@ -52,7 +52,7 @@ import { GoogleDriveBackupSection } from '../backup/GoogleDriveBackupSection';
 import { WhatsAppDebtAutomationDashboard } from '../debts/WhatsAppDebtAutomationDashboard';
 import { PrintSettingsPanel } from './PrintSettingsPanel';
 import { ReceiptCustomizerPanel } from './ReceiptCustomizerPanel';
-import { CURRENCY_PRESETS, fetchLiveSyrianLiraRates } from '../../utils/currencyUtils';
+import { CURRENCY_PRESETS, fetchLiveSyrianLiraRates, calculateConversionMultiplier, isLebaneseCurrency, defaultLebaneseExchangeBulletin } from '../../utils/currencyUtils';
 import { testWhatsAppCloudApiConnection } from '../../services/debtCollectionService';
 import { isAuthorizedToGenerateCodes } from '../../utils/licenseUtils';
 import { StoreLogoUploader } from './StoreLogoUploader';
@@ -182,6 +182,7 @@ export const SettingsView: React.FC = () => {
   const [conversionMultiplier, setConversionMultiplier] = useState<number>(1);
   const [recalculateData, setRecalculateData] = useState<boolean>(true);
   const [isChangingCurrency, setIsChangingCurrency] = useState<boolean>(false);
+  const [currencyCategoryFilter, setCurrencyCategoryFilter] = useState<string>('ALL');
 
   // Exchange Bulletin State
   const [bulletinState, setBulletinState] = useState({
@@ -297,9 +298,10 @@ export const SettingsView: React.FC = () => {
     if (confirm(confirmMsg)) {
       setIsChangingCurrency(true);
       setTimeout(() => {
-        changeBaseCurrency(selectedPreset, recalculateData ? conversionMultiplier : undefined);
+        changeBaseCurrency(selectedPreset, recalculateData ? conversionMultiplier : undefined, recalculateData);
         setFormData(prev => ({ ...prev, currency: selectedPreset }));
         setIsChangingCurrency(false);
+        notify('تم تغيير العملة', `تم تعيين ${selectedPreset.nameAr} كعملة أساسية للنظام بنجاح`, 'success');
       }, 100);
     }
   };
@@ -307,22 +309,45 @@ export const SettingsView: React.FC = () => {
   const handlePresetSelect = (code: string) => {
     setTargetCurrencyCode(code);
     const curr = settings.currency.code;
-    // Suggest intelligent auto-conversion multiplier if switching between common pairs
-    if (curr === 'SYP' && code === 'USD') {
-      const rate = settings.exchangeBulletin?.usdSellRate || 14800;
-      setConversionMultiplier(Number((1 / rate).toFixed(8)));
-    } else if (curr === 'USD' && code === 'SYP') {
-      const rate = settings.exchangeBulletin?.usdSellRate || 14800;
-      setConversionMultiplier(rate);
-    } else if (curr === 'SYP' && code === 'EUR') {
-      const rate = settings.exchangeBulletin?.eurSellRate || 16100;
-      setConversionMultiplier(Number((1 / rate).toFixed(8)));
-    } else if (curr === 'EUR' && code === 'SYP') {
-      const rate = settings.exchangeBulletin?.eurSellRate || 16100;
-      setConversionMultiplier(rate);
-    } else if (curr === code) {
-      setConversionMultiplier(1);
+    const mult = calculateConversionMultiplier(curr, code, settings.exchangeBulletin);
+    setConversionMultiplier(mult);
+  };
+
+  const handleQuickSwitchToLebaneseCurrency = (recalculate: boolean) => {
+    const lbpPreset = CURRENCY_PRESETS.find(c => c.code === 'LBP');
+    if (!lbpPreset) return;
+
+    const mult = calculateConversionMultiplier(settings.currency.code, 'LBP', settings.exchangeBulletin);
+
+    const confirmMsg = recalculate
+      ? `هل ترغب باعتماد الليرة اللبنانية كعملة أساسية للنظام وتحديث جميع أسعار المنتجات (${products.length}) وقيم الفواتير (${sales.length}) بمعامل تحويل ${mult}؟`
+      : `هل ترغب باعتماد الليرة اللبنانية (LBP) كعملة أساسية للنظام دون تعديل القيم الرقمية الحالية؟`;
+
+    if (confirm(confirmMsg)) {
+      setIsChangingCurrency(true);
+      setTimeout(() => {
+        changeBaseCurrency(lbpPreset, recalculate ? mult : undefined, recalculate);
+        setFormData(prev => ({ ...prev, currency: lbpPreset }));
+        setTargetCurrencyCode('LBP');
+        setConversionMultiplier(1);
+        setIsChangingCurrency(false);
+        notify('تم اعتماد العملة اللبنانية', 'تم تحويل العملة الأساسية للمتجر إلى الليرة اللبنانية (ل.ل 🇱🇧) وتحديث نشرة الصرف بنجاح', 'success');
+      }, 100);
     }
+  };
+
+  const handleApplyLebaneseBulletinRates = () => {
+    setBulletinState({
+      ...bulletinState,
+      usdBuyRate: 89000,
+      usdSellRate: 89500,
+      eurBuyRate: 96500,
+      eurSellRate: 97200,
+      goldGram21: 6850000,
+      centralBankOfficialRate: 89500,
+      sourceLabel: 'سوق بيروت المالي ومصرف لبنان (BDL / Sayrafa)',
+    });
+    notify('تم ضبط أسعار السوق اللبناني', 'تم تعيين أسعار الصرف (1$ = 89,500 ل.ل | 1€ = 97,200 ل.ل)', 'success');
   };
 
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -556,30 +581,144 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
+            {/* DEDICATED LEBANESE CURRENCY OPTION CARD (خيار العملة اللبنانية) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-amber-500/5 to-rose-500/10 border-2 border-emerald-500/30 dark:border-emerald-500/20 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 shadow-md flex items-center justify-center text-2xl border border-emerald-300 dark:border-emerald-800">
+                    🇱🇧
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                        خيار العملة اللبنانية (الليرة اللبنانية — LBP / ل.ل)
+                      </h4>
+                      <span className="text-[10px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded-full shadow-xs">
+                        معتمد للمتاجر في لبنان 🇱🇧
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      اعتماد الليرة اللبنانية مع نشرة الصرف (1$ = 89,500 ل.ل) والدفع المزدوج بالدولار والليرة.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {settings.currency.code === 'LBP' ? (
+                    <span className="px-3.5 py-1.5 bg-emerald-600 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-sm">
+                      <Check className="w-4 h-4" />
+                      <span>الليرة اللبنانية هي العملة الحالية</span>
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handlePresetSelect('LBP')}
+                        className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 rounded-xl text-xs font-black transition-all cursor-pointer"
+                      >
+                        تحديد واحتساب المعامل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickSwitchToLebaneseCurrency(false)}
+                        disabled={isChangingCurrency}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <span>🇱🇧 تفعيل الليرة اللبنانية فوراً</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Lebanese Highlights Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-emerald-200/50 dark:border-emerald-800/40 text-xs">
+                <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-emerald-100 dark:border-emerald-900/40">
+                  <span className="text-[10px] text-slate-400 block font-bold">رمز العملة الرسمي</span>
+                  <span className="font-mono font-black text-slate-800 dark:text-slate-100">ل.ل (LBP)</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-emerald-100 dark:border-emerald-900/40">
+                  <span className="text-[10px] text-slate-400 block font-bold">سعر الصرف المعتمد</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">1$ = 89,500 ل.ل</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-emerald-100 dark:border-emerald-900/40">
+                  <span className="text-[10px] text-slate-400 block font-bold">الفئات النقدية السريعة</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-200">50 ألف إلى 2 مليون</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-emerald-100 dark:border-emerald-900/40">
+                  <span className="text-[10px] text-slate-400 block font-bold">الدفع المزدوج بالدولار</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">استلام $ واحتساب الباقي</span>
+                </div>
+              </div>
+            </div>
+
             {/* Currency Presets Grid */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
-                اختر العملة الأساسية المطلوبة:
-              </label>
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  اختر العملة الأساسية المطلوبة:
+                </label>
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
+                  {[
+                    { id: 'ALL', label: 'الكل (15)' },
+                    { id: 'LBP', label: '🇱🇧 لبنان' },
+                    { id: 'SYP', label: '🇸🇾 سوريا' },
+                    { id: 'USD', label: '🇺🇸 دولار' },
+                    { id: 'EUR', label: '🇪🇺 يورو' },
+                    { id: 'GULF', label: '🇸🇦 الخليج' },
+                    { id: 'IQD', label: '🇮🇶 العراق' },
+                    { id: 'EGP', label: '🇪🇬 مصر' }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setCurrencyCategoryFilter(f.id)}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-[11px] whitespace-nowrap transition-all cursor-pointer ${
+                        currencyCategoryFilter === f.id
+                          ? 'bg-amber-500 text-slate-950 shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                {CURRENCY_PRESETS.map(preset => {
+                {CURRENCY_PRESETS.filter(preset => {
+                  if (currencyCategoryFilter === 'ALL') return true;
+                  if (currencyCategoryFilter === 'LBP') return preset.code === 'LBP';
+                  if (currencyCategoryFilter === 'SYP') return preset.code === 'SYP';
+                  if (currencyCategoryFilter === 'USD') return preset.code === 'USD';
+                  if (currencyCategoryFilter === 'EUR') return preset.code === 'EUR';
+                  if (currencyCategoryFilter === 'IQD') return preset.code === 'IQD';
+                  if (currencyCategoryFilter === 'EGP') return preset.code === 'EGP';
+                  if (currencyCategoryFilter === 'GULF') return ['SAR', 'AED', 'KWD', 'QAR', 'OMR', 'BHD'].includes(preset.code);
+                  return true;
+                }).map(preset => {
                   const isSelected = targetCurrencyCode === preset.code;
                   const isCurrent = settings.currency.code === preset.code;
+                  const isLbp = preset.code === 'LBP';
 
                   return (
                     <button
                       key={preset.code}
                       type="button"
                       onClick={() => handlePresetSelect(preset.code)}
-                      className={`p-3 rounded-2xl border text-start transition-all cursor-pointer ${
+                      className={`p-3 rounded-2xl border text-start transition-all cursor-pointer relative ${
                         isSelected
                           ? 'border-amber-500 bg-amber-50/60 dark:bg-amber-950/40 ring-2 ring-amber-400'
+                          : isLbp
+                          ? 'border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/30 dark:bg-emerald-950/20 hover:bg-emerald-50/60'
                           : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono font-black text-slate-900 dark:text-white">
-                          {preset.code}
+                        <span className="text-xs font-mono font-black text-slate-900 dark:text-white flex items-center gap-1">
+                          <span>{preset.flag}</span>
+                          <span>{preset.code}</span>
                         </span>
                         <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
                           {preset.symbolNative || preset.symbol}
@@ -695,7 +834,17 @@ export const SettingsView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleApplyLebaneseBulletinRates}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
+                  title="تطبيق أسعار السوق اللبناني المعتمدة (1$ = 89,500 ل.ل)"
+                >
+                  <span>🇱🇧</span>
+                  <span>أسعار لبنان (89,500 ل.ل/$)</span>
+                </button>
+
                 <button
                   type="button"
                   disabled={isFetchingLiveRates}
@@ -704,7 +853,7 @@ export const SettingsView: React.FC = () => {
                   title="جلب أسعار الصرف الحية من موقع (الليرة اليوم sp-today)"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isFetchingLiveRates ? 'animate-spin' : ''}`} />
-                  <span>تحديث حي من موقع الليرة اليوم</span>
+                  <span>تحديث حي من sp-today</span>
                 </button>
 
                 {liveFetchSuccessTime && (

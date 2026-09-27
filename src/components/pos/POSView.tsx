@@ -43,7 +43,8 @@ import {
   RotateCcw,
   Folder,
   Edit3,
-  Bluetooth
+  Bluetooth,
+  Sliders
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { CustomerQRScannerModal } from './CustomerQRScannerModal';
@@ -95,6 +96,7 @@ export const POSView: React.FC = () => {
     notify,
     sales,
     navigateToReturnWithInvoice,
+    setIsButtonCustomizerModalOpen,
   } = useApp();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('cat_all');
@@ -526,6 +528,196 @@ export const POSView: React.FC = () => {
     addToCart(product, packsCount * multiplier, true);
   };
 
+  // User button layout configurations
+  const isRTL = language === 'ar';
+  const cartOnRight = (settings.buttonLayout?.posCartPosition || 'right') === 'right';
+  const cartOrderClass = cartOnRight
+    ? (isRTL ? 'lg:order-first lg:border-e' : 'lg:order-last lg:border-s')
+    : (isRTL ? 'lg:order-last lg:border-s' : 'lg:order-first lg:border-e');
+
+  const buttonLayout = settings.buttonLayout;
+  const posActionButtonsOrder = buttonLayout?.posActionButtonsOrder || [
+    'numpad',
+    'barcode',
+    'customerQr',
+    'bluetoothPrinter',
+    'priceEdit',
+    'favorites',
+    'customizeButtons'
+  ];
+  const posActionButtonsVisibility = buttonLayout?.posActionButtonsVisibility || {};
+
+  const renderCashierButton = (btnId: string) => {
+    switch (btnId) {
+      case 'numpad':
+        return (
+          <button
+            key="numpad"
+            id="btn-pos-touch-keypad"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              if (cart.length > 0) {
+                handleOpenQuantityKeypad(cart[cart.length - 1]);
+              } else if (filteredProducts.length > 0) {
+                handleOpenProductPriceEdit(filteredProducts[0]);
+              } else {
+                setTouchKeypadConfig({
+                  isOpen: true,
+                  mode: 'quantity',
+                  currentQuantity: 1,
+                  unit: 'قطعة'
+                });
+              }
+            }}
+            data-longpress-title={language === 'ar' ? 'لوحة المفاتيح الرقمية اللمسية' : 'Touch Numeric Keypad'}
+            data-longpress-desc={language === 'ar' ? 'إدخال سريع للكميات والأسعار والخصومات بأزرار لمسية كبيرة مريحة للعين والأصابع.' : 'Fast numeric entry for quantities and prices with large touch buttons.'}
+            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-blue-50/90 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800/60 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            title={language === 'ar' ? 'لوحة مفاتيح رقمية لمسية للكميات والأسعار' : 'Touch Numeric Keypad'}
+          >
+            <Calculator className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="hidden sm:inline">{language === 'ar' ? 'أرقام' : 'Numpad'}</span>
+          </button>
+        );
+      case 'barcode':
+        return (
+          <button
+            key="barcode"
+            id="btn-scan-barcode-modal"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              setIsBarcodeModalOpen(true);
+            }}
+            data-longpress-title={language === 'ar' ? 'قارئ الباركود' : 'Barcode Scanner'}
+            data-longpress-desc={language === 'ar' ? 'مسح الباركود باستخدام كاميرا الهاتف أو أجهزة الليزر USB لإضافة الأصناف للسلة فوراً.' : 'Scan barcodes with camera or USB scanner to add items to cart.'}
+            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            title={language === 'ar' ? 'قارئ الباركود والكاميرا' : 'Barcode & Camera Scanner'}
+          >
+            <ScanBarcode className="w-4 h-4 text-amber-500" />
+            <span className="hidden md:inline">{t('scanBarcode')}</span>
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="القارئ نشط تلقائياً" />
+          </button>
+        );
+      case 'customerQr':
+        return (
+          <button
+            key="customerQr"
+            id="btn-scan-customer-qr-modal"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              setIsCustomerQRModalOpen(true);
+            }}
+            data-longpress-title={language === 'ar' ? 'مسح كود العميل وبطاقة الولاء' : 'Customer Loyalty Card'}
+            data-longpress-desc={language === 'ar' ? 'التعرف على العميل، كسب نقاط المكافآت، واحتساب رصيد المشتريات.' : 'Identify member customer, award loyalty points, and track balance.'}
+            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+              selectedCustomer
+                ? 'bg-amber-500 text-white border-amber-500 shadow-amber-500/20'
+                : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+            }`}
+            title={t('scanCustomerQR')}
+          >
+            <QrCode className="w-4 h-4" />
+            <span className="hidden md:inline">
+              {selectedCustomer ? selectedCustomer.name.slice(0, 10) : t('customer')}
+            </span>
+          </button>
+        );
+      case 'bluetoothPrinter':
+        return (
+          <button
+            key="bluetoothPrinter"
+            id="btn-pos-bluetooth-printer"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              setIsBluetoothModalOpen(true);
+            }}
+            data-longpress-title="طابعة إيصالات البلوتوث (ESC/POS)"
+            data-longpress-desc="ربط وإدارة طابعة الفواتير الحرارية اللاسلكية، فحص الاتصال، وطباعة إيصالات مباشرة."
+            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+              btPrinterStatus.isConnected
+                ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
+                : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+            }`}
+            title="طابعة إيصالات حرارية عبر البلوتوث"
+          >
+            <Bluetooth className={`w-4 h-4 ${btPrinterStatus.isConnected ? 'text-white' : 'text-blue-500'}`} />
+            <span className="hidden xl:inline">
+              {btPrinterStatus.isConnected
+                ? (btPrinterStatus.deviceName?.slice(0, 10) || 'طابعة متصلة')
+                : 'طابعة'}
+            </span>
+            {btPrinterStatus.isConnected && (
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </button>
+        );
+      case 'priceEdit':
+        return (
+          <button
+            key="priceEdit"
+            id="btn-pos-quick-price-edit"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              if (cart.length > 0) {
+                handleOpenCartItemPriceEdit(cart[cart.length - 1]);
+              } else if (filteredProducts.length > 0) {
+                handleOpenProductPriceEdit(filteredProducts[0]);
+              }
+            }}
+            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            title="تعديل السعر السريع"
+          >
+            <Edit3 className="w-4 h-4 text-emerald-500" />
+            <span className="hidden lg:inline">{language === 'ar' ? 'السعر' : 'Price'}</span>
+          </button>
+        );
+      case 'favorites':
+        return (
+          <button
+            key="favorites"
+            id="btn-pos-favorites-toggle"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              setShowFavoritesOnly(!showFavoritesOnly);
+            }}
+            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+              showFavoritesOnly
+                ? 'bg-amber-500 text-slate-950 border-amber-600 font-black'
+                : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+            }`}
+            title="المفضلة والأكثر طلباً"
+          >
+            <Star className={`w-4 h-4 ${showFavoritesOnly ? 'fill-slate-950 text-slate-950' : 'text-amber-500'}`} />
+            <span className="hidden xl:inline">{language === 'ar' ? 'المفضلة' : 'Favorites'}</span>
+          </button>
+        );
+      case 'customizeButtons':
+        return (
+          <button
+            key="customizeButtons"
+            id="btn-pos-customize-buttons"
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              setIsButtonCustomizerModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-1 px-2.5 min-h-[40px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold rounded-xl border border-amber-300/80 dark:border-amber-700/80 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer group"
+            title="تخصيص وترتيب مواقع الأزرار"
+          >
+            <Sliders className="w-4 h-4 text-amber-600 dark:text-amber-400 group-hover:rotate-90 transition-transform" />
+            <span className="hidden 2xl:inline">{language === 'ar' ? 'تخصيص الأزرار' : 'Buttons'}</span>
+          </button>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden bg-slate-100/70 dark:bg-slate-950 max-w-full w-full">
       {/* LEFT / CENTER: Products Catalog & Categories */}
@@ -682,104 +874,12 @@ export const POSView: React.FC = () => {
             </div>
           )}
 
-          {/* 2. Unified Cashier Command Cluster (محطة أدوات الكاشير المنظمة) */}
+          {/* 2. Unified Cashier Command Cluster (محطة أدوات الكاشير المنظمة القابلة للتخصيص والترتيب) */}
           <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs shrink-0 overflow-x-auto no-scrollbar">
-            {/* Touch Numpad Quick Keypad Button */}
-            <button
-              id="btn-pos-touch-keypad"
-              type="button"
-              onClick={() => {
-                haptics.buttonPress();
-                if (cart.length > 0) {
-                  handleOpenQuantityKeypad(cart[cart.length - 1]);
-                } else if (filteredProducts.length > 0) {
-                  handleOpenProductPriceEdit(filteredProducts[0]);
-                } else {
-                  setTouchKeypadConfig({
-                    isOpen: true,
-                    mode: 'quantity',
-                    currentQuantity: 1,
-                    unit: 'قطعة'
-                  });
-                }
-              }}
-              data-longpress-title={language === 'ar' ? 'لوحة المفاتيح الرقمية اللمسية' : 'Touch Numeric Keypad'}
-              data-longpress-desc={language === 'ar' ? 'إدخال سريع للكميات والأسعار والخصومات بأزرار لمسية كبيرة مريحة للعين والأصابع.' : 'Fast numeric entry for quantities and prices with large touch buttons.'}
-              className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-blue-50/90 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800/60 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
-              title={language === 'ar' ? 'لوحة مفاتيح رقمية لمسية للكميات والأسعار' : 'Touch Numeric Keypad'}
-            >
-              <Calculator className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span className="hidden sm:inline">{language === 'ar' ? 'أرقام' : 'Numpad'}</span>
-            </button>
-
-            {/* Barcode Scanner Button (Camera / Modal) */}
-            <button
-              id="btn-scan-barcode-modal"
-              type="button"
-              onClick={() => {
-                haptics.buttonPress();
-                setIsBarcodeModalOpen(true);
-              }}
-              data-longpress-title={language === 'ar' ? 'قارئ الباركود' : 'Barcode Scanner'}
-              data-longpress-desc={language === 'ar' ? 'مسح الباركود باستخدام كاميرا الهاتف أو أجهزة الليزر USB لإضافة الأصناف للسلة فوراً.' : 'Scan barcodes with camera or USB scanner to add items to cart.'}
-              className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
-              title={language === 'ar' ? 'قارئ الباركود والكاميرا' : 'Barcode & Camera Scanner'}
-            >
-              <ScanBarcode className="w-4 h-4 text-amber-500" />
-              <span className="hidden md:inline">{t('scanBarcode')}</span>
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="القارئ نشط تلقائياً" />
-            </button>
-
-            {/* Customer QR Scanner Button */}
-            <button
-              id="btn-scan-customer-qr-modal"
-              type="button"
-              onClick={() => {
-                haptics.buttonPress();
-                setIsCustomerQRModalOpen(true);
-              }}
-              data-longpress-title={language === 'ar' ? 'مسح كود العميل وبطاقة الولاء' : 'Customer Loyalty Card'}
-              data-longpress-desc={language === 'ar' ? 'التعرف على العميل، كسب نقاط المكافآت، واحتساب رصيد المشتريات.' : 'Identify member customer, award loyalty points, and track balance.'}
-              className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
-                selectedCustomer
-                  ? 'bg-amber-500 text-white border-amber-500 shadow-amber-500/20'
-                  : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-              }`}
-              title={t('scanCustomerQR')}
-            >
-              <QrCode className="w-4 h-4" />
-              <span className="hidden md:inline">
-                {selectedCustomer ? selectedCustomer.name.slice(0, 10) : t('customer')}
-              </span>
-            </button>
-
-            {/* Bluetooth ESC/POS Thermal Printer Button */}
-            <button
-              id="btn-pos-bluetooth-printer"
-              type="button"
-              onClick={() => {
-                haptics.buttonPress();
-                setIsBluetoothModalOpen(true);
-              }}
-              data-longpress-title="طابعة إيصالات البلوتوث (ESC/POS)"
-              data-longpress-desc="ربط وإدارة طابعة الفواتير الحرارية اللاسلكية، فحص الاتصال، وطباعة إيصالات مباشرة."
-              className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
-                btPrinterStatus.isConnected
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
-                  : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-              }`}
-              title="طابعة إيصالات حرارية عبر البلوتوث"
-            >
-              <Bluetooth className={`w-4 h-4 ${btPrinterStatus.isConnected ? 'text-white' : 'text-blue-500'}`} />
-              <span className="hidden xl:inline">
-                {btPrinterStatus.isConnected
-                  ? (btPrinterStatus.deviceName?.slice(0, 10) || 'طابعة متصلة')
-                  : 'طابعة'}
-              </span>
-              {btPrinterStatus.isConnected && (
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              )}
-            </button>
+            {posActionButtonsOrder.map((btnId) => {
+              if (posActionButtonsVisibility[btnId] === false) return null;
+              return renderCashierButton(btnId);
+            })}
 
             {/* Mobile Cart Toggle Button */}
             <button
@@ -1247,7 +1347,7 @@ export const POSView: React.FC = () => {
 
       {/* RIGHT: POS Register Cart & Checkout Panel */}
       <div
-        className={`w-full lg:w-96 xl:w-[420px] bg-white dark:bg-slate-900 border-s border-slate-200 dark:border-slate-800 flex flex-col h-full shadow-lg z-30 transition-transform ${
+        className={`w-full lg:w-96 xl:w-[420px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col h-full shadow-lg z-30 transition-transform ${cartOrderClass} ${
           isMobileCartOpen ? 'fixed inset-0 z-50' : 'hidden lg:flex'
         }`}
       >
@@ -1658,7 +1758,11 @@ export const POSView: React.FC = () => {
           </div>
 
           {/* Restaurant Quick KOT Kitchen Print Button + Main Pay Button */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className={`flex items-center gap-2 pt-1 ${
+            buttonLayout?.posPayButtonAlignment === 'reversed' ? 'flex-row-reverse' : ''
+          } ${
+            buttonLayout?.posPayButtonAlignment === 'full' ? 'flex-col sm:flex-row' : ''
+          }`}>
             {businessMode === 'restaurant' && (
               <button
                 type="button"

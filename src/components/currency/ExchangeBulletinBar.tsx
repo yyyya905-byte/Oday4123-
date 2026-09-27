@@ -66,7 +66,11 @@ export const ExchangeBulletinBar: React.FC = () => {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="flex items-center gap-1">
               <span>نشرة الصرف</span>
-              <span className="text-[9px] font-mono bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded">sp-today</span>
+              <span className="text-[9px] font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded">
+                {bulletin.sourceLabel?.includes('لبنان') || settings.currency.code === 'LBP'
+                  ? '🇱🇧 بيروت / صيرفة'
+                  : 'sp-today'}
+              </span>
             </span>
           </div>
 

@@ -11,8 +11,61 @@ import {
   AuditLog,
   WholesaleWarehouse,
   DeliveryVehicle,
-  VehicleLoadingManifest
+  VehicleLoadingManifest,
+  ButtonLayoutConfig
 } from '../types';
+
+export const defaultButtonLayout: ButtonLayoutConfig = {
+  posCartPosition: 'right',
+  posActionButtonsOrder: [
+    'numpad',
+    'barcode',
+    'customerQr',
+    'bluetoothPrinter',
+    'priceEdit',
+    'favorites',
+    'customizeButtons'
+  ],
+  posActionButtonsVisibility: {
+    numpad: true,
+    barcode: true,
+    customerQr: true,
+    bluetoothPrinter: true,
+    priceEdit: true,
+    favorites: true,
+    customizeButtons: true
+  },
+  posPayButtonAlignment: 'split',
+  headerButtonsOrder: [
+    'operatingMode',
+    'sectionsNav',
+    'search',
+    'toolsHub',
+    'quickNewSale',
+    'networkStatus',
+    'battery',
+    'notifications',
+    'themeToggle',
+    'langToggle',
+    'staffProfile'
+  ],
+  headerButtonsVisibility: {
+    operatingMode: true,
+    sectionsNav: true,
+    search: true,
+    toolsHub: true,
+    quickNewSale: true,
+    networkStatus: true,
+    battery: true,
+    notifications: true,
+    themeToggle: true,
+    langToggle: true,
+    staffProfile: true
+  },
+  floatingActionPosition: 'bottom-right',
+  floatingActionEnabled: true,
+  activePreset: 'standard'
+};
 
 export const initialSettings: StoreSettings = {
   storeId: 'store_kian_01',
@@ -164,6 +217,7 @@ export const initialSettings: StoreSettings = {
   debtInvoiceMessageTemplate: '',
   debtPaymentReceiptTemplate: '',
   debtOverdueMessageTemplate: '',
+  buttonLayout: defaultButtonLayout,
 };
 
 export const initialCategories: Category[] = [

@@ -35,7 +35,9 @@ import {
   ThemeMode,
   BatteryInfo,
   SavedSyncPartner,
-  LicenseInfo
+  LicenseInfo,
+  ButtonLayoutConfig,
+  ButtonLayoutPreset
 } from '../types';
 import {
   generateLicenseCode,
@@ -45,6 +47,7 @@ import {
 } from '../utils/licenseUtils';
 import {
   initialSettings,
+  defaultButtonLayout,
   initialCategories,
   initialProducts,
   initialCustomers,
@@ -79,7 +82,90 @@ export interface AppNotification {
   type: 'success' | 'info' | 'warning' | 'error';
   timestamp: string;
   read: boolean;
+  category?: 'improvement' | 'feature' | 'system_update' | 'alert';
+  badge?: string;
+  isPermanent?: boolean;
 }
+
+export const SYSTEM_IMPROVEMENTS_CHANGELOG: AppNotification[] = [
+  {
+    id: 'upd_battery_power_indicator',
+    title: '🔋 مؤشر شحن البطارية وحالة الطاقة في شريط الرأس',
+    message: 'إضافة مؤشر ذكي في شريط الرأس يعرض نسبة الشحن بدقة ويتغير لونه ديناميكياً وفق حالة الطاقة (أخضر للشحن ⚡، أصفر لتوفير الطاقة 🌿، أحمر للشحن الحرج 🚨) مع تكامل مباشر مع وضع التوفير والحماية التلقائية عند انخفاض الشحن إلى 20%.',
+    type: 'success',
+    timestamp: '2026-09-26T13:58:00Z',
+    read: false,
+    category: 'feature',
+    badge: 'جديد ✨',
+    isPermanent: true
+  },
+  {
+    id: 'upd_lebanese_currency_dual',
+    title: '🇱🇧 خيار العملة اللبنانية (LBP — ل.ل) والدفع المزدوج',
+    message: 'دعم شامل لليرة اللبنانية كعملة أساسية للنظام، مع نشرة أسعار الصرف الرسمية وسوق بيروت (1$ = 89,500 ل.ل)، وفئات نقدية سريعة من 50 ألف إلى 2 مليون، ومساعد الدفع النقدي بالدولار واحتساب الباقي بالدولار والليرة.',
+    type: 'info',
+    timestamp: '2026-09-26T08:35:00Z',
+    read: false,
+    category: 'feature',
+    badge: 'ميزة جديدة 🇱🇧',
+    isPermanent: true
+  },
+  {
+    id: 'upd_receipt_customizer_panel',
+    title: '🧾 لوحة تخصيص شكل الفاتورة والإيصال مع معاينة حية',
+    message: 'لوحة تفاعلية متطورة تمكنك من تخصيص شكل الإيصال والتحكم بظهور شعار المتجر، الرقم الضريبي، ملاحظات الزبون، ورسالة التذييل وتنسيقات الورق الحراري (80mm/58mm) مع معاينة فورية ومباشرة.',
+    type: 'success',
+    timestamp: '2026-09-25T07:50:00Z',
+    read: false,
+    category: 'feature',
+    badge: 'تحديث رئيسي 🧾',
+    isPermanent: true
+  },
+  {
+    id: 'upd_visual_materials_redesign',
+    title: '🎨 إعادة تصميم الواجهة بنظام المواد البصرية (Apple Semantic Materials)',
+    message: 'تطبيق تأثيرات الزجاج والبلور الذكي وخلفيات NSVisualEffectView التي تتكيف تلقائياً مع الإضاءة والوضع الليلي/النهاري، مع انضباط طباعي مريح للعين (Zero-Pill Discipline) وردود فعل لمسية سريعة.',
+    type: 'info',
+    timestamp: '2026-09-25T07:45:00Z',
+    read: false,
+    category: 'system_update',
+    badge: 'تصميم مطوّر 🎨',
+    isPermanent: true
+  },
+  {
+    id: 'upd_live_exchange_bulletin',
+    title: '💱 شريط نشرة الصرف الحي وأسعار العملات والذهب',
+    message: 'شريط تداول مباشر في أعلى الشاشة لمتابعة أسعار صرف الدولار واليورو وغرام الذهب 21 لحظياً من مصادر دمشق وبيروت والبنك المركزي مع تحديث فوري.',
+    type: 'info',
+    timestamp: '2026-09-24T12:00:00Z',
+    read: true,
+    category: 'feature',
+    badge: 'أسعار الصرف 💱',
+    isPermanent: true
+  },
+  {
+    id: 'upd_whatsapp_debt_automation',
+    title: '💬 أتمتة تذكيرات ديون العملاء عبر WhatsApp',
+    message: 'إرسال كشوف الحسابات وتذكيرات السداد التلقائية للعملاء بروابط واتساب مباشرة مع إظهار المعادل بالدولار الأمريكي وفق سعر الصرف اليومي.',
+    type: 'success',
+    timestamp: '2026-09-24T10:00:00Z',
+    read: true,
+    category: 'feature',
+    badge: 'أتمتة ذكية 💬',
+    isPermanent: true
+  },
+  {
+    id: 'upd_google_drive_cloud_backup',
+    title: '☁️ النسخ الاحتياطي السحابي في Google Drive',
+    message: 'حفظ وأرشفة قاعدة بيانات المتجر والنسخ الاحتياطية في حساب Google Drive بأمان تام وبنقرة واحدة مع استرجاع لحظي في أي وقت.',
+    type: 'info',
+    timestamp: '2026-09-24T09:00:00Z',
+    read: true,
+    category: 'system_update',
+    badge: 'سحابي وآمن ☁️',
+    isPermanent: true
+  }
+];
 
 interface AppContextType {
   // Localization & Theme
@@ -102,6 +188,7 @@ interface AppContextType {
   setPowerSavingActive: (active: boolean) => void;
   wakeFromStandby: () => void;
   batteryInfo: BatteryInfo;
+  updateBatteryInfo: (info: Partial<BatteryInfo>) => void;
 
   // Business Operating Mode (Restaurant / Wholesale / Retail)
   businessMode: BusinessMode;
@@ -178,11 +265,18 @@ interface AppContextType {
   storeSettings: StoreSettings;
   updateSettings: (newSettings: Partial<StoreSettings>) => void;
   formatCurrency: (amount: number) => string;
-  formatSecondaryCurrency: (amount: number, target?: 'USD' | 'EUR', rateType?: 'buy' | 'sell') => string;
+  formatSecondaryCurrency: (amount: number, target?: 'USD' | 'EUR' | 'LBP' | 'SYP', rateType?: 'buy' | 'sell') => string;
   changeBaseCurrency: (newCurrency: CurrencyConfig, conversionRate?: number, convertPricesAndInvoices?: boolean) => void;
   updateExchangeBulletin: (bulletin: Partial<ExchangeRateBulletin>) => void;
   convertBaseToForeign: (amount: number, targetCurrency: 'USD' | 'EUR', rateType?: 'buy' | 'sell') => number;
   convertForeignToBase: (amount: number, sourceCurrency: 'USD' | 'EUR', rateType?: 'buy' | 'sell') => number;
+
+  // Button Layout & UI Position Customizer
+  isButtonCustomizerModalOpen: boolean;
+  setIsButtonCustomizerModalOpen: (open: boolean) => void;
+  updateButtonLayout: (layout: Partial<ButtonLayoutConfig>) => void;
+  resetButtonLayout: () => void;
+  applyButtonLayoutPreset: (preset: ButtonLayoutPreset) => void;
 
   // Products & Categories
   products: Product[];
@@ -271,8 +365,9 @@ interface AppContextType {
 
   // Notifications
   notifications: AppNotification[];
-  notify: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
+  notify: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error', category?: 'improvement' | 'feature' | 'system_update' | 'alert', badge?: string) => void;
   markNotificationAsRead: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
   clearAllNotifications: () => void;
 
   // Multi-Device Linking & Terminals Hub
@@ -373,6 +468,7 @@ const STORAGE_KEYS = {
   VEHICLE_MANIFESTS: 'kian_pos_vehicle_manifests',
   SUPPLIERS: 'kian_pos_suppliers',
   DEBT_TRANSACTIONS: 'kian_pos_debt_transactions',
+  NOTIFICATIONS: 'kian_pos_notifications',
   FIRST_LOGIN_COMPLETED: 'kian_first_login_completed',
   APP_PURCHASED: 'kian_app_purchased',
   LICENSE_KEY: 'kian_license_key',
@@ -477,7 +573,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [settings, setSettingsState] = useState<StoreSettings>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return saved ? JSON.parse(saved) : initialSettings;
+      const parsed = saved ? JSON.parse(saved) : initialSettings;
+      return {
+        ...initialSettings,
+        ...parsed,
+        buttonLayout: {
+          ...defaultButtonLayout,
+          ...(parsed.buttonLayout || {})
+        }
+      };
     } catch {
       return initialSettings;
     }
@@ -695,6 +799,196 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [settings.soundEffects]);
 
   // =========================================================================
+  // Button Layout Customizer & UI Position Management
+  // =========================================================================
+  const [isButtonCustomizerModalOpen, setIsButtonCustomizerModalOpen] = useState<boolean>(false);
+
+  const BUTTON_LAYOUT_PRESETS: Record<ButtonLayoutPreset, ButtonLayoutConfig> = {
+    standard: defaultButtonLayout,
+    left_handed: {
+      posCartPosition: 'left',
+      posActionButtonsOrder: [
+        'customizeButtons',
+        'favorites',
+        'priceEdit',
+        'bluetoothPrinter',
+        'customerQr',
+        'barcode',
+        'numpad'
+      ],
+      posActionButtonsVisibility: {
+        numpad: true,
+        barcode: true,
+        customerQr: true,
+        bluetoothPrinter: true,
+        priceEdit: true,
+        favorites: true,
+        customizeButtons: true
+      },
+      posPayButtonAlignment: 'reversed',
+      headerButtonsOrder: [
+        'staffProfile',
+        'langToggle',
+        'themeToggle',
+        'notifications',
+        'battery',
+        'networkStatus',
+        'quickNewSale',
+        'toolsHub',
+        'search',
+        'sectionsNav',
+        'operatingMode'
+      ],
+      headerButtonsVisibility: {
+        operatingMode: true,
+        sectionsNav: true,
+        search: true,
+        toolsHub: true,
+        quickNewSale: true,
+        networkStatus: true,
+        battery: true,
+        notifications: true,
+        themeToggle: true,
+        langToggle: true,
+        staffProfile: true
+      },
+      floatingActionPosition: 'bottom-left',
+      floatingActionEnabled: true,
+      activePreset: 'left_handed'
+    },
+    touchscreen: {
+      posCartPosition: 'right',
+      posActionButtonsOrder: [
+        'barcode',
+        'numpad',
+        'customerQr',
+        'priceEdit',
+        'bluetoothPrinter',
+        'favorites',
+        'customizeButtons'
+      ],
+      posActionButtonsVisibility: {
+        numpad: true,
+        barcode: true,
+        customerQr: true,
+        bluetoothPrinter: true,
+        priceEdit: true,
+        favorites: true,
+        customizeButtons: true
+      },
+      posPayButtonAlignment: 'full',
+      headerButtonsOrder: [
+        'operatingMode',
+        'sectionsNav',
+        'toolsHub',
+        'quickNewSale',
+        'notifications',
+        'battery',
+        'staffProfile'
+      ],
+      headerButtonsVisibility: {
+        operatingMode: true,
+        sectionsNav: true,
+        search: false,
+        toolsHub: true,
+        quickNewSale: true,
+        networkStatus: true,
+        battery: true,
+        notifications: true,
+        themeToggle: true,
+        langToggle: true,
+        staffProfile: true
+      },
+      floatingActionPosition: 'bottom-right',
+      floatingActionEnabled: true,
+      activePreset: 'touchscreen'
+    },
+    compact: {
+      posCartPosition: 'right',
+      posActionButtonsOrder: [
+        'barcode',
+        'numpad',
+        'bluetoothPrinter',
+        'customizeButtons'
+      ],
+      posActionButtonsVisibility: {
+        numpad: true,
+        barcode: true,
+        customerQr: false,
+        bluetoothPrinter: true,
+        priceEdit: false,
+        favorites: false,
+        customizeButtons: true
+      },
+      posPayButtonAlignment: 'full',
+      headerButtonsOrder: [
+        'toolsHub',
+        'quickNewSale',
+        'battery',
+        'notifications',
+        'staffProfile'
+      ],
+      headerButtonsVisibility: {
+        operatingMode: false,
+        sectionsNav: false,
+        search: false,
+        toolsHub: true,
+        quickNewSale: true,
+        networkStatus: false,
+        battery: true,
+        notifications: true,
+        themeToggle: false,
+        langToggle: false,
+        staffProfile: true
+      },
+      floatingActionPosition: 'hidden',
+      floatingActionEnabled: false,
+      activePreset: 'compact'
+    },
+    custom: {
+      ...defaultButtonLayout,
+      activePreset: 'custom'
+    }
+  };
+
+  const updateButtonLayout = (newLayout: Partial<ButtonLayoutConfig>) => {
+    const current = settings.buttonLayout || defaultButtonLayout;
+    const updatedLayout: ButtonLayoutConfig = {
+      ...current,
+      ...newLayout,
+      posActionButtonsVisibility: {
+        ...current.posActionButtonsVisibility,
+        ...(newLayout.posActionButtonsVisibility || {})
+      },
+      headerButtonsVisibility: {
+        ...current.headerButtonsVisibility,
+        ...(newLayout.headerButtonsVisibility || {})
+      },
+      activePreset: 'custom'
+    };
+    updateSettings({ buttonLayout: updatedLayout });
+    notify('تم تعديل مواقع وترتيب الأزرار بنجاح 🎛️', 'تم تطبيق الترتيب الجديد فورياً على شاشة الكاشير والواجهة', 'success');
+  };
+
+  const resetButtonLayout = () => {
+    updateSettings({ buttonLayout: defaultButtonLayout });
+    notify('تمت استعادة الترتيب الافتراضي للأزرار', 'عادت كافة الأزرار لمواقعها القياسية', 'info');
+  };
+
+  const applyButtonLayoutPreset = (preset: ButtonLayoutPreset) => {
+    const selected = BUTTON_LAYOUT_PRESETS[preset] || defaultButtonLayout;
+    updateSettings({ buttonLayout: selected });
+    const presetNames: Record<ButtonLayoutPreset, string> = {
+      standard: 'الوضع القياسي الافتراضي',
+      left_handed: 'وضع اليد اليسرى (الأعسر)',
+      touchscreen: 'وضع شاشات اللمس الكبيرة',
+      compact: 'الوضع المكثف السريع',
+      custom: 'التخصيص الحر'
+    };
+    notify(`تم تفعيل: ${presetNames[preset]} 🚀`, 'تم تعديل مواقع السلة وأزرار الكاشير والشريط العلوي فورياً', 'success');
+  };
+
+  // =========================================================================
   // Inactivity Idle Timer for Auto-PIN Lock & Mandatory Login / Guest License
   // =========================================================================
   const [isIdleLocked, setIsIdleLocked] = useState<boolean>(false);
@@ -892,6 +1186,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
   }, []);
+
+  const updateBatteryInfo = useCallback((info: Partial<BatteryInfo>) => {
+    setBatteryInfo(prev => ({
+      ...prev,
+      ...info,
+      supported: true
+    }));
+  }, []);
+
+  // Auto trigger power saving when battery drops low (<= 20%) and discharging
+  useEffect(() => {
+    if (batteryInfo.level <= 20 && !batteryInfo.charging && !isPowerSavingActive) {
+      if (settings.autoEnablePowerSavingOnLowBattery !== false) {
+        setPowerSavingActive(true);
+        notify(
+          'تنبيه شحن البطارية (منخفض)',
+          `انخفض مستوى شحن البطارية إلى ${batteryInfo.level}%، تم تفعيل وضع توفير الطاقة تلقائياً للحفاظ على استمرار عمل الكاشير.`,
+          'warning'
+        );
+      }
+    }
+  }, [batteryInfo.level, batteryInfo.charging, isPowerSavingActive, settings.autoEnablePowerSavingOnLowBattery]);
 
   // Synchronize CSS filter and class on documentElement
   useEffect(() => {
@@ -2309,36 +2625,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(updated));
   };
 
-  // 15. In-App Notifications
-  const [notifications, setNotifications] = useState<AppNotification[]>([
-    {
-      id: 'notif_init',
-      title: 'مرحباً بك في كيان كاشير',
-      message: 'تم إعداد النظام بالعملة السورية الجديدة وجاهز للبيع والعمل بدون إنترنت.',
-      type: 'info',
-      timestamp: new Date().toISOString(),
-      read: false,
-    }
-  ]);
+  // 15. In-App Notifications & Persistent Improvements Changelog
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+      const readMapSaved = localStorage.getItem('kian_notifications_read_map');
+      const readMap: Record<string, boolean> = readMapSaved ? JSON.parse(readMapSaved) : {};
 
-  const notify = (title: string, message: string, type: 'success' | 'info' | 'warning' | 'error' = 'info') => {
+      // Prepare changelog with user read state
+      const changelog = SYSTEM_IMPROVEMENTS_CHANGELOG.map(item => ({
+        ...item,
+        read: readMap[item.id] !== undefined ? readMap[item.id] : item.read
+      }));
+
+      if (saved) {
+        const parsed: AppNotification[] = JSON.parse(saved);
+        // Ensure all permanent changelog items exist in list
+        const existingIds = new Set(parsed.map(n => n.id));
+        const missingChangelog = changelog.filter(c => !existingIds.has(c.id));
+        const merged = parsed.map(p => {
+          const matchingChangelog = changelog.find(c => c.id === p.id);
+          if (matchingChangelog) {
+            return {
+              ...matchingChangelog,
+              read: p.read
+            };
+          }
+          return p;
+        });
+        return [...missingChangelog, ...merged];
+      }
+      return changelog;
+    } catch {
+      return SYSTEM_IMPROVEMENTS_CHANGELOG;
+    }
+  });
+
+  const notify = (
+    title: string,
+    message: string,
+    type: 'success' | 'info' | 'warning' | 'error' = 'info',
+    category: 'improvement' | 'feature' | 'system_update' | 'alert' = 'alert',
+    badge?: string
+  ) => {
     const newNotif: AppNotification = {
-      id: `notif_${Date.now()}_${Math.random()}`,
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       title,
       message,
       type,
+      category,
+      badge,
       timestamp: new Date().toISOString(),
       read: false,
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    setNotifications(prev => {
+      const updated = [newNotif, ...prev.slice(0, 99)];
+      try {
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const markNotificationAsRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifications(prev => {
+      const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
+      try {
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(updated));
+        const readMapSaved = localStorage.getItem('kian_notifications_read_map');
+        const readMap: Record<string, boolean> = readMapSaved ? JSON.parse(readMapSaved) : {};
+        readMap[id] = true;
+        localStorage.setItem('kian_notifications_read_map', JSON.stringify(readMap));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const markAllNotificationsAsRead = () => {
+    setNotifications(prev => {
+      const updated = prev.map(n => ({ ...n, read: true }));
+      try {
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(updated));
+        const readMap: Record<string, boolean> = {};
+        updated.forEach(n => { readMap[n.id] = true; });
+        localStorage.setItem('kian_notifications_read_map', JSON.stringify(readMap));
+      } catch {}
+      return updated;
+    });
   };
 
   const clearAllNotifications = () => {
-    setNotifications([]);
+    // Keep permanent system improvements changelog, but mark everything as read
+    setNotifications(prev => {
+      const permanentItems = prev.filter(n => n.isPermanent).map(n => ({ ...n, read: true }));
+      const fallback = SYSTEM_IMPROVEMENTS_CHANGELOG.map(n => ({ ...n, read: true }));
+      const itemsToKeep = permanentItems.length > 0 ? permanentItems : fallback;
+      try {
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(itemsToKeep));
+      } catch {}
+      return itemsToKeep;
+    });
   };
 
   // 16. Wholesale Warehouses State & Management
@@ -2661,7 +3047,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit('تحديث نشرة أسعار الصرف اليومية', `سعر الدولار مبيع: ${updatedBulletin.usdSellRate}، شراء: ${updatedBulletin.usdBuyRate} | سعر اليورو مبيع: ${updatedBulletin.eurSellRate}`, 'medium');
   };
 
-  const formatSecondaryCurrency = (amount: number, target?: 'USD' | 'EUR', rateType: 'buy' | 'sell' = 'sell'): string => {
+  const formatSecondaryCurrency = (amount: number, target?: 'USD' | 'EUR' | 'LBP' | 'SYP', rateType: 'buy' | 'sell' = 'sell'): string => {
     const bulletin = settings.exchangeBulletin || defaultExchangeBulletin;
     const chosenTarget = target || (bulletin.preferredDisplay === 'EUR' ? 'EUR' : 'USD');
     return formatSecondaryCurrencyUtil(amount, chosenTarget, bulletin, rateType);
@@ -2704,6 +3090,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedBulletin.usdSellRate = 1.09;
       updatedBulletin.eurBuyRate = 1;
       updatedBulletin.eurSellRate = 1;
+    } else if (newCurrency.code === 'LBP') {
+      updatedBulletin.usdBuyRate = 89000;
+      updatedBulletin.usdSellRate = 89500;
+      updatedBulletin.eurBuyRate = 96500;
+      updatedBulletin.eurSellRate = 97200;
+      updatedBulletin.goldGram21 = 6850000;
+      updatedBulletin.centralBankOfficialRate = 89500;
+      updatedBulletin.sourceLabel = 'سوق بيروت المالي ومصرف لبنان (BDL / Sayrafa)';
+    } else if (newCurrency.code === 'SYP') {
+      updatedBulletin.usdBuyRate = 13100;
+      updatedBulletin.usdSellRate = 13150;
+      updatedBulletin.eurBuyRate = 15120;
+      updatedBulletin.eurSellRate = 15300;
+      updatedBulletin.goldGram21 = 1652300;
+      updatedBulletin.centralBankOfficialRate = 13500;
+      updatedBulletin.sourceLabel = 'موقع الليرة اليوم (sp-today.com)';
     }
 
     const updatedSettings: StoreSettings = {
@@ -2713,7 +3115,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // If recalculation requested with a valid rate multiplier
-    if (convertPricesAndInvoices && conversionRate && conversionRate > 0 && conversionRate !== 1) {
+    const shouldRecalculate = (convertPricesAndInvoices || (conversionRate !== undefined && conversionRate > 0 && conversionRate !== 1)) && conversionRate && conversionRate > 0 && conversionRate !== 1;
+    if (shouldRecalculate) {
       const decimals = newCurrency.decimals || 0;
       const factor = Math.pow(10, decimals);
       const roundVal = (val: number) => Math.round(val * conversionRate * factor) / factor;
@@ -3621,6 +4024,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPowerSavingActive,
         wakeFromStandby,
         batteryInfo,
+        updateBatteryInfo,
         businessMode,
         setBusinessMode,
         isModeModalOpen,
@@ -3688,6 +4092,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateExchangeBulletin,
         convertBaseToForeign,
         convertForeignToBase,
+        isButtonCustomizerModalOpen,
+        setIsButtonCustomizerModalOpen,
+        updateButtonLayout,
+        resetButtonLayout,
+        applyButtonLayoutPreset,
         products,
         categories,
         addProduct,
@@ -3752,6 +4161,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications,
         notify,
         markNotificationAsRead,
+        markAllNotificationsAsRead,
         clearAllNotifications,
         devices,
         kitchenOrders,

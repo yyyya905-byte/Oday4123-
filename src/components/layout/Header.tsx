@@ -24,7 +24,9 @@ import {
   MoreVertical,
   Clock,
   KeyRound,
-  Crown
+  Crown,
+  Sparkles,
+  CheckCheck
 } from 'lucide-react';
 import { PinSwitchModal } from '../modals/PinSwitchModal';
 import { ExchangeBulletinBar } from '../currency/ExchangeBulletinBar';
@@ -35,6 +37,7 @@ import { SectionsNavModal } from '../modals/SectionsNavModal';
 import { getRoleInfo } from '../../utils/permissions';
 import { GoogleIcon } from '../common/GoogleIcon';
 import { isAuthorizedToGenerateCodes } from '../../utils/licenseUtils';
+import { BatteryIndicator } from './BatteryIndicator';
 
 export const Header: React.FC = () => {
   const {
@@ -52,6 +55,7 @@ export const Header: React.FC = () => {
     setIsGlobalSearchOpen,
     notifications,
     markNotificationAsRead,
+    markAllNotificationsAsRead,
     clearAllNotifications,
     settings,
     businessMode,
@@ -66,16 +70,22 @@ export const Header: React.FC = () => {
     isAppPurchased,
     trialDaysRemaining,
     isTrialExpired,
-    setIsPurchaseModalOpen
+    setIsPurchaseModalOpen,
+    setIsButtonCustomizerModalOpen
   } = useApp();
 
+  const headerVisibility = settings.buttonLayout?.headerButtonsVisibility || {};
+
   const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
+  const [notifFilterTab, setNotifFilterTab] = useState<'improvements' | 'all' | 'alerts'>('improvements');
   const [isBulletinModalOpen, setIsBulletinModalOpen] = useState(false);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [isToolsHubModalOpen, setIsToolsHubModalOpen] = useState(false);
   const [isSectionsModalOpen, setIsSectionsModalOpen] = useState(false);
 
   const unreadCount = notifications.filter(n => !n.read).length;
+  const improvementsCount = notifications.filter(n => n.category === 'feature' || n.category === 'improvement' || n.category === 'system_update' || n.isPermanent).length;
+  const unreadImprovementsCount = notifications.filter(n => (n.category === 'feature' || n.category === 'improvement' || n.category === 'system_update' || n.isPermanent) && !n.read).length;
   const onlineDevicesCount = devices.filter(d => d.isOnline).length;
   const roleInfo = getRoleInfo(currentUser.role);
 
@@ -134,47 +144,53 @@ export const Header: React.FC = () => {
           </div>
 
           {/* Clean Mode Pill */}
-          <button
-            id="btn-header-operating-mode"
-            type="button"
-            onClick={() => setIsModeModalOpen(true)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer btn-tactile ${modeBadge.color}`}
-            title={language === 'ar' ? 'تبديل وضع التشغيل' : 'Switch Mode'}
-          >
-            <ModeIcon className="w-3 h-3" />
-            <span className="hidden md:inline">{modeBadge.label}</span>
-          </button>
+          {headerVisibility.operatingMode !== false && (
+            <button
+              id="btn-header-operating-mode"
+              type="button"
+              onClick={() => setIsModeModalOpen(true)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer btn-tactile ${modeBadge.color}`}
+              title={language === 'ar' ? 'تبديل وضع التشغيل' : 'Switch Mode'}
+            >
+              <ModeIcon className="w-3 h-3" />
+              <span className="hidden md:inline">{modeBadge.label}</span>
+            </button>
+          )}
 
           {/* Professional "الأقسام" (Sections Navigator) Button */}
-          <button
-            id="btn-header-sections-nav"
-            type="button"
-            onClick={() => setIsSectionsModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer border border-slate-200/80 dark:border-slate-700/80 shadow-2xs btn-tactile"
-            title={language === 'ar' ? 'استعراض كافة أقسام النظام' : 'Browse All Sections'}
-          >
-            <Grid className="w-3.5 h-3.5 text-amber-500" />
-            <span className="hidden sm:inline">{language === 'ar' ? 'الأقسام' : 'Sections'}</span>
-          </button>
+          {headerVisibility.sectionsNav !== false && (
+            <button
+              id="btn-header-sections-nav"
+              type="button"
+              onClick={() => setIsSectionsModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer border border-slate-200/80 dark:border-slate-700/80 shadow-2xs btn-tactile"
+              title={language === 'ar' ? 'استعراض كافة أقسام النظام' : 'Browse All Sections'}
+            >
+              <Grid className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden sm:inline">{language === 'ar' ? 'الأقسام' : 'Sections'}</span>
+            </button>
+          )}
         </div>
 
         {/* Center: Clean Global Search Input */}
-        <div className="flex-1 max-w-sm mx-2 sm:mx-4 min-w-0">
-          <button
-            id="btn-open-global-search"
-            type="button"
-            onClick={() => setIsGlobalSearchOpen(true)}
-            className="w-full flex items-center justify-between gap-1.5 px-3 py-1.5 text-xs text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80 transition-colors text-start cursor-pointer shadow-2xs"
-          >
-            <div className="flex items-center gap-2 truncate">
-              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate text-[11px] sm:text-xs">{t('globalSearch')}</span>
-            </div>
-            <kbd className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-500 dark:text-slate-300 shrink-0">
-              Ctrl+K
-            </kbd>
-          </button>
-        </div>
+        {headerVisibility.search !== false && (
+          <div className="flex-1 max-w-sm mx-2 sm:mx-4 min-w-0">
+            <button
+              id="btn-open-global-search"
+              type="button"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              className="w-full flex items-center justify-between gap-1.5 px-3 py-1.5 text-xs text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80 transition-colors text-start cursor-pointer shadow-2xs"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate text-[11px] sm:text-xs">{t('globalSearch')}</span>
+              </div>
+              <kbd className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-500 dark:text-slate-300 shrink-0">
+                Ctrl+K
+              </kbd>
+            </button>
+          </div>
+        )}
 
         {/* End / Right Section: Tools Menu, New Sale, Status & User */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -230,70 +246,79 @@ export const Header: React.FC = () => {
           )}
 
           {/* Primary "قائمة الأدوات" (Tools Menu) Button */}
-          <button
-            id="btn-header-tools-hub"
-            type="button"
-            onClick={() => setIsToolsHubModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 text-xs font-black transition-all active:scale-95 cursor-pointer shadow-2xs group"
-            title={language === 'ar' ? 'فتح قائمة الأدوات والميزات الذكية' : 'Open Tools & Utilities'}
-          >
-            <Wrench className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 group-hover:rotate-45 transition-transform" />
-            <span>{language === 'ar' ? 'قائمة الأدوات' : 'Tools'}</span>
-            {(onlineDevicesCount > 0 || isPowerSavingActive || offlineQueueCount > 0) && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
-            )}
-          </button>
+          {headerVisibility.toolsHub !== false && (
+            <button
+              id="btn-header-tools-hub"
+              type="button"
+              onClick={() => setIsToolsHubModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 text-xs font-black transition-all active:scale-95 cursor-pointer shadow-2xs group"
+              title={language === 'ar' ? 'فتح قائمة الأدوات والميزات الذكية' : 'Open Tools & Utilities'}
+            >
+              <Wrench className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 group-hover:rotate-45 transition-transform" />
+              <span>{language === 'ar' ? 'قائمة الأدوات' : 'Tools'}</span>
+              {(onlineDevicesCount > 0 || isPowerSavingActive || offlineQueueCount > 0) && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              )}
+            </button>
+          )}
 
           {/* Quick POS New Sale Button */}
-          <button
-            id="btn-quick-new-sale"
-            type="button"
-            onClick={() => setActiveTab('pos')}
-            className="hidden md:flex items-center gap-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-xs font-black px-2.5 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer"
-            title={language === 'ar' ? 'فتح شاشة الكاشير للبيع' : 'Open POS Cashier'}
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            <span>{t('newSale')}</span>
-          </button>
+          {headerVisibility.quickNewSale !== false && (
+            <button
+              id="btn-quick-new-sale"
+              type="button"
+              onClick={() => setActiveTab('pos')}
+              className="hidden md:flex items-center gap-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-xs font-black px-2.5 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer"
+              title={language === 'ar' ? 'فتح شاشة الكاشير للبيع' : 'Open POS Cashier'}
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>{t('newSale')}</span>
+            </button>
+          )}
 
           {/* Minimalist Network Online/Offline Status */}
-          <div
-            onClick={() => {
-              if (offlineQueueCount > 0 && isOnline) {
-                syncOfflineQueueNow();
+          {headerVisibility.networkStatus !== false && (
+            <div
+              onClick={() => {
+                if (offlineQueueCount > 0 && isOnline) {
+                  syncOfflineQueueNow();
+                }
+              }}
+              className={`hidden lg:flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold select-none ${
+                isOnline
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+              } ${offlineQueueCount > 0 && isOnline ? 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/60' : ''}`}
+              title={
+                !isOnline
+                  ? 'أوفلاين — يتم تخزين البيانات محلياً في IndexedDB'
+                  : offlineQueueCount > 0
+                  ? `${offlineQueueCount} عملية معلقة، انقر للمزامنة الفورية`
+                  : 'متصل بالإنترنت'
               }
-            }}
-            className={`hidden lg:flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold select-none ${
-              isOnline
-                ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-            } ${offlineQueueCount > 0 && isOnline ? 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/60' : ''}`}
-            title={
-              !isOnline
-                ? 'أوفلاين — يتم تخزين البيانات محلياً في IndexedDB'
-                : offlineQueueCount > 0
-                ? `${offlineQueueCount} عملية معلقة، انقر للمزامنة الفورية`
-                : 'متصل بالإنترنت'
-            }
-          >
-            {isOnline ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-[10px]">{t('online')}</span>
-                {offlineQueueCount > 0 && (
-                  <span className="flex items-center gap-0.5 bg-amber-500 text-slate-950 text-[9px] font-black px-1 rounded-full ms-0.5">
-                    <RefreshCw className={`w-2.5 h-2.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
-                    {offlineQueueCount}
-                  </span>
-                )}
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                <span className="text-[10px]">{t('offline')}</span>
-              </>
-            )}
-          </div>
+            >
+              {isOnline ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-[10px]">{t('online')}</span>
+                  {offlineQueueCount > 0 && (
+                    <span className="flex items-center gap-0.5 bg-amber-500 text-slate-950 text-[9px] font-black px-1 rounded-full ms-0.5">
+                      <RefreshCw className={`w-2.5 h-2.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
+                      {offlineQueueCount}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span className="text-[10px]">{t('offline')}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* System Battery Charge Level & Power Saving Indicator */}
+          {headerVisibility.battery !== false && <BatteryIndicator />}
 
           {/* Notifications Dropdown Toggle */}
           <div className="relative">
@@ -313,87 +338,242 @@ export const Header: React.FC = () => {
             </button>
 
             {isNotifDropdownOpen && (
-              <div className="absolute end-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+              <div className="absolute end-0 mt-2 w-80 sm:w-104 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                {/* Header Bar */}
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Bell className="w-3.5 h-3.5 text-amber-500" />
-                    <h3 className="text-xs font-bold text-slate-900 dark:text-white">{t('notifications')}</h3>
-                    {unreadCount > 0 && (
-                      <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-1.5 py-0.5 rounded-full">
-                        {unreadCount}
-                      </span>
-                    )}
+                    <div className="w-7 h-7 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                      <Bell className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-900 dark:text-white">
+                        {language === 'ar' ? 'الإشعارات وسجل التحسينات' : 'Notifications & Updates'}
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        {unreadCount > 0
+                          ? (language === 'ar' ? `${unreadCount} غير مقروء` : `${unreadCount} unread`)
+                          : (language === 'ar' ? 'جميع الإشعارات مقروءة' : 'All caught up')}
+                      </p>
+                    </div>
                   </div>
-                  {notifications.length > 0 && (
+
+                  <div className="flex items-center gap-1.5">
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={markAllNotificationsAsRead}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 transition-all cursor-pointer"
+                        title="تحديد الكل كمقروء"
+                      >
+                        <CheckCheck className="w-3 h-3" />
+                        <span>{language === 'ar' ? 'تحديد كمقروء' : 'Read all'}</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={clearAllNotifications}
-                      className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                      className="px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                      title="مسح التنبيهات المؤقتة والاحتفاظ بسجل التحسينات"
                     >
-                      {t('clearAll')}
+                      {language === 'ar' ? 'مسح التنبيهات' : 'Clear alerts'}
                     </button>
-                  )}
+                  </div>
                 </div>
 
-                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                  {notifications.length === 0 ? (
-                    <div className="p-6 text-center text-slate-400 text-xs">
-                      {t('noNotifications')}
+                {/* Filter Tabs Bar (دائماً يظهر خيار التحسينات المضافة) */}
+                <div className="px-3 pt-2.5 pb-2 bg-slate-50/50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setNotifFilterTab('improvements')}
+                    className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      notifFilterTab === 'improvements'
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'التحسينات والميزات' : 'What\'s New'}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black bg-black/10 dark:bg-white/20">
+                      {improvementsCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNotifFilterTab('all')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      notifFilterTab === 'all'
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60'
+                    }`}
+                  >
+                    <span>{language === 'ar' ? 'الكل' : 'All'}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full font-mono bg-black/10 dark:bg-white/20">
+                      {notifications.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNotifFilterTab('alerts')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      notifFilterTab === 'alerts'
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60'
+                    }`}
+                  >
+                    <span>{language === 'ar' ? 'التنبيهات' : 'Alerts'}</span>
+                  </button>
+                </div>
+
+                {/* Optional Top Explanatory Banner for Improvements */}
+                {notifFilterTab === 'improvements' && (
+                  <div className="p-2.5 bg-gradient-to-r from-amber-500/10 via-emerald-500/5 to-transparent border-b border-amber-500/20 flex items-center gap-2 text-xs">
+                    <span className="text-base select-none">✨</span>
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200 font-bold leading-tight">
+                      {language === 'ar'
+                        ? 'سجل التحديثات والإضافات: يوثق دائماً كل ما تم تطويره وتحسينه في النظام.'
+                        : 'Release Log: Always showcasing all improvements and features added to the system.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Notifications List */}
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                  {notifications
+                    .filter(n => {
+                      if (notifFilterTab === 'improvements') {
+                        return n.category === 'feature' || n.category === 'improvement' || n.category === 'system_update' || n.isPermanent;
+                      }
+                      if (notifFilterTab === 'alerts') {
+                        return n.category === 'alert' || (!n.isPermanent && n.category !== 'feature' && n.category !== 'improvement' && n.category !== 'system_update');
+                      }
+                      return true;
+                    })
+                    .length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs space-y-1">
+                      <p className="font-bold">{t('noNotifications')}</p>
+                      <p className="text-[10px] text-slate-400">لا توجد عناصر لعرضها في هذا القسم حالياً</p>
                     </div>
                   ) : (
-                    notifications.map(n => (
-                      <div
-                        key={n.id}
-                        onClick={() => markNotificationAsRead(n.id)}
-                        className={`p-3 text-xs flex gap-2.5 items-start hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer ${
-                          !n.read ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''
-                        }`}
-                      >
-                        {n.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
-                        {n.type === 'warning' && <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />}
-                        {n.type === 'error' && <X className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />}
-                        {n.type === 'info' && <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />}
-                        <div className="flex-1">
-                          <p className="font-bold text-slate-800 dark:text-slate-200">{n.title}</p>
-                          <p className="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">{n.message}</p>
-                          <span className="text-[9px] text-slate-400 mt-1 block">
-                            {new Date(n.timestamp).toLocaleTimeString(language === 'ar' ? 'ar-SY' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                    notifications
+                      .filter(n => {
+                        if (notifFilterTab === 'improvements') {
+                          return n.category === 'feature' || n.category === 'improvement' || n.category === 'system_update' || n.isPermanent;
+                        }
+                        if (notifFilterTab === 'alerts') {
+                          return n.category === 'alert' || (!n.isPermanent && n.category !== 'feature' && n.category !== 'improvement' && n.category !== 'system_update');
+                        }
+                        return true;
+                      })
+                      .map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => markNotificationAsRead(n.id)}
+                          className={`p-3 text-xs flex gap-2.5 items-start hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors ${
+                            !n.read ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''
+                          }`}
+                        >
+                          {/* Icon representation */}
+                          {n.category === 'feature' || n.category === 'improvement' || n.isPermanent ? (
+                            <div className="w-7 h-7 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                              <Sparkles className="w-3.5 h-3.5" />
+                            </div>
+                          ) : n.type === 'success' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                          ) : n.type === 'warning' ? (
+                            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                          ) : n.type === 'error' ? (
+                            <X className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                          )}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 flex-wrap">
+                              <p className="font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <span>{n.title}</span>
+                                {!n.read && (
+                                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                                )}
+                              </p>
+                              {n.badge && (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 shrink-0">
+                                  {n.badge}
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-slate-600 dark:text-slate-300 text-[11px] mt-1 leading-relaxed">
+                              {n.message}
+                            </p>
+
+                            <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-400">
+                              <span>
+                                {new Date(n.timestamp).toLocaleDateString(language === 'ar' ? 'ar-SY' : 'en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                              {n.isPermanent && (
+                                <span className="text-amber-600 dark:text-amber-400 font-bold">
+                                  {language === 'ar' ? 'دائم في السجل ✓' : 'Permanent ✓'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))
                   )}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Theme Toggle */}
+          {/* Button Positions & Layout Customizer Quick Trigger */}
           <button
-            id="btn-theme-toggle"
+            id="btn-header-customize-buttons"
             type="button"
-            onClick={toggleTheme}
-            className="p-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all relative cursor-pointer"
-            title={theme === 'dark' ? t('lightMode') : t('darkMode')}
+            onClick={() => setIsButtonCustomizerModalOpen(true)}
+            className="p-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-600 transition-colors relative cursor-pointer"
+            title={language === 'ar' ? 'تخصيص وترتيب مواقع الأزرار والواجهة' : 'Customize UI & Button Layout'}
           >
-            {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-700" />
-            )}
+            <SlidersHorizontal className="w-4 h-4 text-amber-500" />
           </button>
 
+          {/* Theme Toggle */}
+          {headerVisibility.themeToggle !== false && (
+            <button
+              id="btn-theme-toggle"
+              type="button"
+              onClick={toggleTheme}
+              className="p-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all relative cursor-pointer"
+              title={theme === 'dark' ? t('lightMode') : t('darkMode')}
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-700" />
+              )}
+            </button>
+          )}
+
           {/* Language Switcher */}
-          <button
-            id="btn-lang-toggle"
-            type="button"
-            onClick={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
-            className="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-            title={t('language')}
-          >
-            <Languages className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-[11px]">{language === 'ar' ? 'EN' : 'عربي'}</span>
-          </button>
+          {headerVisibility.langToggle !== false && (
+            <button
+              id="btn-lang-toggle"
+              type="button"
+              onClick={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              title={t('language')}
+            >
+              <Languages className="w-3.5 h-3.5 text-amber-500" />
+              <span className="text-[11px]">{language === 'ar' ? 'EN' : 'عربي'}</span>
+            </button>
+          )}
 
           {/* Staff Switch / Profile Card */}
           <button

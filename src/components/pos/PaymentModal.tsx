@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { PrintableReceiptModal } from './PrintableReceiptModal';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
+import { isLebaneseCurrency, LEBANESE_QUICK_BANKNOTES, LEBANESE_INCREMENT_BUTTONS } from '../../utils/currencyUtils';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -73,14 +74,37 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const changeDue = !isCredit ? Math.max(0, paidAmount - totalAmount) : 0;
   const remainingDebt = isCredit ? Math.max(0, totalAmount - (paidAmount || 0)) : 0;
 
-  // Currency quick banknotes depending on currency
+  // Currency specific detection (Lebanese Pound LBP / Syrian Pound SYP / USD)
+  const isLebanesePound = isLebaneseCurrency(settings.currency);
   const isSyrianPound = settings.currency.code === 'SYP' || settings.currency.symbol.includes('ل.س') || settings.currency.symbol.includes('LS');
-  const quickBanknotes = isSyrianPound
-    ? [5000, 10000, 25000, 50000, 100000, 200000]
-    : [10, 20, 50, 100, 200, 500];
+  const isUsd = settings.currency.code === 'USD' || settings.currency.symbol === '$';
+
+  let quickBanknotes = [10, 20, 50, 100, 200, 500];
+  let quickIncrements = [10, 20, 50, 100];
+
+  if (isLebanesePound) {
+    quickBanknotes = LEBANESE_QUICK_BANKNOTES;
+    quickIncrements = LEBANESE_INCREMENT_BUTTONS;
+  } else if (isSyrianPound) {
+    quickBanknotes = [5000, 10000, 25000, 50000, 100000, 200000];
+    quickIncrements = [5000, 10000, 25000, 50000];
+  }
+
+  // Dual Currency Rate for Lebanon (1 USD = 89,500 LBP default or from bulletin)
+  const usdRateForLbp = settings.exchangeBulletin?.usdSellRate && settings.exchangeBulletin.usdSellRate > 1000
+    ? settings.exchangeBulletin.usdSellRate
+    : 89500;
+  const totalInUsdForLbp = Number((totalAmount / usdRateForLbp).toFixed(2));
+  const changeDueInUsdForLbp = changeDue > 0 ? Number((changeDue / usdRateForLbp).toFixed(2)) : 0;
 
   const handleAddAmount = (val: number) => {
     setPaidAmount(prev => (Number(prev) || 0) + val);
+  };
+
+  const handleSetUsdCash = (usdVal: number) => {
+    const lbpVal = Math.round(usdVal * usdRateForLbp);
+    setPaidAmount(lbpVal);
+    notify('تم احتساب الدولار', `استلام ورقة $${usdVal} = ${lbpVal.toLocaleString()} ل.ل (سعر الصرف: ${usdRateForLbp.toLocaleString()})`, 'info');
   };
 
   const handleSetExact = () => {
@@ -470,10 +494,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Increment Buttons (+5,000 / +10,000 / +50,000) */}
+                  {/* Increment Buttons */}
                   <div className="flex items-center gap-1.5 pt-1 flex-wrap">
                     <span className="text-[10px] text-slate-400 font-bold">إضافة:</span>
-                    {[5000, 10000, 25000, 50000].map(inc => (
+                    {quickIncrements.map(inc => (
                       <button
                         key={inc}
                         type="button"
@@ -488,6 +512,36 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     ))}
                   </div>
 
+                  {/* LEBANESE DUAL CURRENCY USD CASH HELPER (دفع بالدولار النقدي للعملة اللبنانية) */}
+                  {isLebanesePound && (
+                    <div className="p-3 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/30 rounded-2xl space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                        <div className="flex items-center gap-1.5 font-bold text-emerald-900 dark:text-emerald-200">
+                          <span className="w-5 h-5 rounded-lg bg-emerald-500 text-white flex items-center justify-center text-xs font-bold">$</span>
+                          <span>استلام دولار نقداً (USD Cash):</span>
+                        </div>
+                        <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300 font-bold flex items-center gap-2">
+                          <span>الفاتورة: <strong>${totalInUsdForLbp}</strong></span>
+                          <span>(1$ = {usdRateForLbp.toLocaleString()} ل.ل)</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[10, 20, 50, 100].map(dollar => (
+                          <button
+                            key={dollar}
+                            type="button"
+                            onClick={() => handleSetUsdCash(dollar)}
+                            className="min-h-[42px] px-2 py-2 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs font-mono font-black text-emerald-800 dark:text-emerald-300 transition-all active:scale-95 text-center shadow-2xs cursor-pointer flex flex-col items-center justify-center"
+                          >
+                            <span className="text-sm font-black">${dollar}</span>
+                            <span className="text-[9px] text-slate-400 font-normal">{(dollar * usdRateForLbp).toLocaleString()} ل.ل</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* PROMINENT CHANGE DUE DISPLAY (قديش باقيله) */}
                   <div className={`mt-3 p-4 rounded-2xl border transition-all ${
                     paidAmount >= totalAmount
@@ -500,8 +554,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           <Coins className={`w-4 h-4 ${paidAmount >= totalAmount ? 'text-emerald-600' : 'text-rose-500'}`} />
                           <span>{t('changeDue')} (المبلغ الباقي للزبون / الفكة):</span>
                         </span>
-                        <div className="text-3xl font-black font-mono tracking-tight mt-1 text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(changeDue)}
+                        <div className="flex items-baseline gap-3 mt-1">
+                          <div className="text-3xl font-black font-mono tracking-tight text-emerald-600 dark:text-emerald-400">
+                            {formatCurrency(changeDue)}
+                          </div>
+                          {isLebanesePound && changeDue > 0 && (
+                            <div className="text-sm font-mono font-bold text-slate-500 dark:text-slate-400">
+                              (أو تقريباً <span className="font-black text-emerald-600 dark:text-emerald-400">${changeDueInUsdForLbp}</span>)
+                            </div>
+                          )}
                         </div>
                       </div>
 

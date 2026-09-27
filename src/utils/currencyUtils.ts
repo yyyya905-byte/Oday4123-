@@ -197,24 +197,115 @@ export const defaultExchangeBulletin: ExchangeRateBulletin = {
 };
 
 /**
- * Format an amount in a secondary currency (e.g. USD or EUR) based on the current bulletin rate
+ * Standard Lebanese Market Exchange Bulletin (1 USD = 89,500 LBP Parallel Market & BDL Sayrafa rate)
+ */
+export const defaultLebaneseExchangeBulletin: ExchangeRateBulletin = {
+  usdBuyRate: 89000,
+  usdSellRate: 89500,
+  eurBuyRate: 96500,
+  eurSellRate: 97200,
+  goldGram21: 6850000,
+  centralBankOfficialRate: 89500,
+  lastUpdated: new Date().toISOString(),
+  sourceLabel: 'سوق بيروت المالي ومصرف لبنان (BDL / Sayrafa)',
+  displayInHeader: true,
+  displayInPosCart: true,
+  displayInReceipts: true,
+  preferredDisplay: 'BOTH'
+};
+
+/**
+ * Check if the given currency is the Lebanese Pound (LBP / ل.ل)
+ */
+export function isLebaneseCurrency(currency?: CurrencyConfig | { code?: string; symbol?: string; symbolNative?: string } | null): boolean {
+  if (!currency) return false;
+  const code = (currency.code || '').toUpperCase();
+  const symbol = currency.symbol || '';
+  const native = currency.symbolNative || '';
+  return code === 'LBP' || symbol.includes('ل.ل') || symbol.includes('LBP') || symbol.includes('LL') || native.includes('ل.ل');
+}
+
+/**
+ * Quick cash banknotes for Lebanese Pound
+ */
+export const LEBANESE_QUICK_BANKNOTES = [50000, 100000, 250000, 500000, 1000000, 2000000];
+export const LEBANESE_INCREMENT_BUTTONS = [20000, 50000, 100000, 250000, 500000];
+
+/**
+ * Intelligently calculate currency conversion multiplier between any two presets
+ * based on current market rate or official exchange rates (Base: USD)
+ */
+export function calculateConversionMultiplier(
+  fromCode: string,
+  toCode: string,
+  bulletin?: ExchangeRateBulletin
+): number {
+  if (fromCode === toCode) return 1;
+
+  const fromPreset = CURRENCY_PRESETS.find(c => c.code === fromCode);
+  const toPreset = CURRENCY_PRESETS.find(c => c.code === toCode);
+
+  let fromRate = fromPreset?.defaultUsdRate || 1;
+  let toRate = toPreset?.defaultUsdRate || 1;
+
+  // Use live bulletin if applicable
+  if (bulletin?.usdSellRate && bulletin.usdSellRate > 0) {
+    if (fromCode === 'SYP' && !bulletin.sourceLabel?.includes('لبنان')) fromRate = bulletin.usdSellRate;
+    if (toCode === 'SYP' && !bulletin.sourceLabel?.includes('لبنان')) toRate = bulletin.usdSellRate;
+    if (fromCode === 'LBP' && (bulletin.sourceLabel?.includes('لبنان') || bulletin.usdSellRate > 50000)) fromRate = bulletin.usdSellRate;
+    if (toCode === 'LBP' && (bulletin.sourceLabel?.includes('لبنان') || bulletin.usdSellRate > 50000)) toRate = bulletin.usdSellRate;
+  }
+
+  // 1 unit of fromCode = (1 / fromRate) USD
+  // In toCode: (1 / fromRate) * toRate = toRate / fromRate
+  const multiplier = toRate / fromRate;
+
+  if (multiplier >= 1) {
+    return Number(multiplier.toFixed(4));
+  } else {
+    return Number(multiplier.toFixed(8));
+  }
+}
+
+/**
+ * Format an amount in a secondary currency (e.g. USD or EUR or LBP) based on the current bulletin rate
  */
 export function formatSecondaryCurrency(
   baseAmount: number,
-  targetCurrency: 'USD' | 'EUR',
+  targetCurrency: 'USD' | 'EUR' | 'LBP' | 'SYP',
   bulletin?: ExchangeRateBulletin,
   rateType: 'buy' | 'sell' = 'sell'
 ): string {
   if (!bulletin || baseAmount <= 0) return '';
-  const rate = targetCurrency === 'USD' 
-    ? (rateType === 'buy' ? bulletin.usdBuyRate : bulletin.usdSellRate)
-    : (rateType === 'buy' ? bulletin.eurBuyRate : bulletin.eurSellRate);
 
-  if (!rate || rate <= 0) return '';
-  
-  const converted = baseAmount / rate;
-  const symbol = targetCurrency === 'USD' ? '$' : '€';
-  
+  let converted = 0;
+  let symbol = '$';
+
+  if (targetCurrency === 'USD') {
+    const rate = rateType === 'buy' ? bulletin.usdBuyRate : bulletin.usdSellRate;
+    if (!rate || rate <= 0) return '';
+    converted = baseAmount / rate;
+    symbol = '$';
+  } else if (targetCurrency === 'EUR') {
+    const rate = rateType === 'buy' ? bulletin.eurBuyRate : bulletin.eurSellRate;
+    if (!rate || rate <= 0) return '';
+    converted = baseAmount / rate;
+    symbol = '€';
+  } else if (targetCurrency === 'LBP') {
+    // If base is USD, convert to LBP
+    const rate = rateType === 'buy' ? bulletin.usdBuyRate : bulletin.usdSellRate;
+    if (!rate || rate <= 0) return '';
+    converted = baseAmount * rate;
+    symbol = 'ل.ل';
+    return `${Math.round(converted).toLocaleString()} ${symbol}`;
+  } else if (targetCurrency === 'SYP') {
+    const rate = rateType === 'buy' ? bulletin.usdBuyRate : bulletin.usdSellRate;
+    if (!rate || rate <= 0) return '';
+    converted = baseAmount * rate;
+    symbol = 'ل.س';
+    return `${Math.round(converted).toLocaleString()} ${symbol}`;
+  }
+
   const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2

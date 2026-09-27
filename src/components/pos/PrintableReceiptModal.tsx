@@ -459,8 +459,16 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
 
               {settings.printExchangeRateOnReceipt && settings.exchangeBulletin && (
                 <div className="flex justify-between text-[9.5px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300 font-mono">
-                  <span>المعادل بالدولار تقريباً:</span>
-                  <span>${((sale.total) / (settings.exchangeBulletin.usdSellRate || 14800)).toFixed(2)} USD</span>
+                  <span>
+                    {settings.currency.code === 'USD'
+                      ? (settings.exchangeBulletin.sourceLabel?.includes('لبنان') ? 'المعادل بالليرة اللبنانية:' : 'المعادل بالليرة السورية:')
+                      : 'المعادل بالدولار تقريباً:'}
+                  </span>
+                  <span>
+                    {settings.currency.code === 'USD'
+                      ? `${Math.round(sale.total * (settings.exchangeBulletin.usdSellRate || 89500)).toLocaleString()} ${settings.exchangeBulletin.sourceLabel?.includes('لبنان') ? 'ل.ل' : 'ل.س'}`
+                      : `$${((sale.total) / (settings.exchangeBulletin.usdSellRate || (settings.currency.code === 'LBP' ? 89500 : 14800))).toFixed(2)} USD`}
+                  </span>
                 </div>
               )}
 
