@@ -11,7 +11,8 @@ import {
   Plus,
   Coins,
   Sun,
-  Moon
+  Moon,
+  Palette
 } from 'lucide-react';
 import { haptics } from '../../services/haptics';
 
@@ -64,6 +65,23 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
               <Sliders className="w-3.5 h-3.5" />
             </span>
             <span>{language === 'ar' ? 'تخصيص الأزرار' : 'Customize Buttons'}</span>
+          </button>
+
+          {/* 2. Theme Color */}
+          <button
+            type="button"
+            onClick={() => {
+              haptics.buttonPress();
+              setIsOpen(false);
+              setActiveTab('settings');
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 shadow-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-all cursor-pointer group text-xs font-black"
+            title="تخصيص نظام ألوان وهوية المتجر"
+          >
+            <span className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Palette className="w-3.5 h-3.5" />
+            </span>
+            <span>{language === 'ar' ? 'ألوان المتجر 🎨' : 'Theme Color'}</span>
           </button>
 
           {/* 2. Open Changelog / About */}

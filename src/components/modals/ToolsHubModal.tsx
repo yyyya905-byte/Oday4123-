@@ -26,7 +26,8 @@ import {
   Store,
   UtensilsCrossed,
   Building2,
-  CheckCircle2
+  CheckCircle2,
+  Palette
 } from 'lucide-react';
 import { canAccessTab } from '../../utils/permissions';
 import { GoogleIcon } from '../common/GoogleIcon';
@@ -59,7 +60,8 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
     batteryInfo,
     devices,
     currentUser,
-    setIsDataTransferModalOpen
+    setIsDataTransferModalOpen,
+    setIsButtonCustomizerModalOpen
   } = useApp();
 
   if (!isOpen) return null;
@@ -413,6 +415,95 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: تخصيص مواقع الأزرار وهوية المتجر وسجل التحسينات */}
+          <div>
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
+              {language === 'ar' ? 'تخصيص الواجهة وهوية المتجر' : 'Store Branding & UI Customization'}
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Store Theme Color */}
+              <button
+                type="button"
+                id="btn-tools-theme-color"
+                onClick={() => handleToolAction(() => setActiveTab('settings'))}
+                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Palette className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {language === 'ar' ? 'نظام ألوان المتجر 🎨' : 'Theme Color'}
+                    </h4>
+                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded-md">
+                      12 لوحة
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    {language === 'ar'
+                      ? 'تغيير ألوان التطبيق ليتطابق مع شعار ونشاط متجرك (سوبرماركت، كافيه، إلكترونيات)'
+                      : 'Customize app primary colors to match your store branding & logo'}
+                  </p>
+                </div>
+              </button>
+
+              {/* Button Positions & Layout Customizer */}
+              <button
+                type="button"
+                id="btn-tools-customize-buttons"
+                onClick={() => handleToolAction(() => setIsButtonCustomizerModalOpen(true))}
+                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {language === 'ar' ? 'تخصيص وترتيب مواقع الأزرار 🎛️' : 'Customize UI & Button Layout'}
+                    </h4>
+                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded-md">
+                      {language === 'ar' ? 'تحكم كامل' : 'Custom'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    {language === 'ar'
+                      ? 'نقل لوحة السلة يمين أو يسار الشاشة، ترتيب أزرار الكاشير، الشريط العلوي، والزر العائم'
+                      : 'Move cart left/right, reorder cashier command cluster, header, and floating tools'}
+                  </p>
+                </div>
+              </button>
+
+              {/* Periodic Changelog & Updates Log */}
+              <button
+                type="button"
+                id="btn-tools-changelog"
+                onClick={() => handleToolAction(() => setActiveTab('about'))}
+                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {language === 'ar' ? 'سجل التحسينات والتحديثات الدورية ✨' : 'What\'s New & Release Log'}
+                    </h4>
+                    <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-md">
+                      v2.6.0 Pro
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    {language === 'ar'
+                      ? 'استعراض سجل كامل ومفصل لكافة الميزات والإضافات المطورة دورياً داخل صفحة حول'
+                      : 'Browse complete periodic changelog and feature history inside the About screen'}
+                  </p>
+                </div>
+              </button>
             </div>
           </div>
         </div>

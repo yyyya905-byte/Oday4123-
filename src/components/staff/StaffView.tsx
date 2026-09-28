@@ -201,18 +201,6 @@ export const StaffView: React.FC = () => {
                 )}
                 <span>تسجيل الدخول بـ Google</span>
               </button>
-              {AUTHORIZED_PURCHASE_GENERATOR_EMAILS.map((email, idx) => (
-                <button
-                  key={email}
-                  onClick={() => signInWithGoogle({ hintEmail: email })}
-                  disabled={isGoogleAuthLoading}
-                  className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                  title="دخول فوري بحساب المطور المعتمد"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>دخول المطور ({idx + 1})</span>
-                </button>
-              ))}
             </>
           )}
         </div>

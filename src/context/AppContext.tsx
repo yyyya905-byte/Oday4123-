@@ -37,8 +37,14 @@ import {
   SavedSyncPartner,
   LicenseInfo,
   ButtonLayoutConfig,
-  ButtonLayoutPreset
+  ButtonLayoutPreset,
+  ThemeColorPreset
 } from '../types';
+import {
+  applyThemeColor,
+  getThemeColorConfig,
+  THEME_COLOR_PRESETS
+} from '../utils/themeColorUtils';
 import {
   generateLicenseCode,
   validateLicenseCode,
@@ -277,6 +283,11 @@ interface AppContextType {
   updateButtonLayout: (layout: Partial<ButtonLayoutConfig>) => void;
   resetButtonLayout: () => void;
   applyButtonLayoutPreset: (preset: ButtonLayoutPreset) => void;
+
+  // Theme Color & Store Brand Identity
+  activeThemeColor: ThemeColorPreset;
+  activePrimaryHex: string;
+  setThemeColor: (color: ThemeColorPreset, customHex?: string) => void;
 
   // Products & Categories
   products: Product[];
@@ -986,6 +997,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       custom: 'التخصيص الحر'
     };
     notify(`تم تفعيل: ${presetNames[preset]} 🚀`, 'تم تعديل مواقع السلة وأزرار الكاشير والشريط العلوي فورياً', 'success');
+  };
+
+  // =========================================================================
+  // Theme Color & Store Brand Identity Management
+  // =========================================================================
+  const activeThemeColor: ThemeColorPreset = settings.themeColor || 'amber';
+  const activePrimaryHex: string = settings.primaryColorHex || '#f59e0b';
+
+  useEffect(() => {
+    applyThemeColor(activeThemeColor, settings.primaryColorHex);
+  }, [activeThemeColor, settings.primaryColorHex]);
+
+  const setThemeColor = (color: ThemeColorPreset, customHex?: string) => {
+    applyThemeColor(color, customHex);
+    updateSettings({
+      themeColor: color,
+      primaryColorHex: customHex || (color === 'amber' ? '#f59e0b' : undefined)
+    });
+    const cfg = getThemeColorConfig(color, customHex);
+    notify(`تم تطبيق هوية المتجر: ${cfg.nameAr} 🎨`, 'تم تحديث الألوان الأساسية لكافة أزرار وبطاقات وشاشات النظام بنجاح', 'success');
   };
 
   // =========================================================================
@@ -4097,6 +4128,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateButtonLayout,
         resetButtonLayout,
         applyButtonLayoutPreset,
+        activeThemeColor,
+        activePrimaryHex,
+        setThemeColor,
         products,
         categories,
         addProduct,

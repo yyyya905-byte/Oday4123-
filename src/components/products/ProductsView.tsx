@@ -26,9 +26,11 @@ import {
   Barcode as BarcodeIcon,
   Printer,
   ListPlus,
-  Hash
+  Hash,
+  Camera
 } from 'lucide-react';
 import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
+import { ProductBarcodeScannerModal } from './ProductBarcodeScannerModal';
 import { generateBarcodeSvg, generateRandomEan13 } from '../../utils/barcodeUtils';
 
 export const ProductsView: React.FC = () => {
@@ -58,6 +60,10 @@ export const ProductsView: React.FC = () => {
   // Barcode Designer State
   const [isBarcodeDesignerOpen, setIsBarcodeDesignerOpen] = useState(false);
   const [barcodeProductTarget, setBarcodeProductTarget] = useState<Product | null>(null);
+
+  // Camera Barcode Scanner State
+  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
+  const [cameraScanTarget, setCameraScanTarget] = useState<'catalog' | 'modal_field'>('catalog');
 
   // Category Modal State
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -240,6 +246,21 @@ export const ProductsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Camera Barcode Scanner (Auto Add / Stock Increment) */}
+          <button
+            type="button"
+            id="btn-scan-product-camera"
+            onClick={() => {
+              setCameraScanTarget('catalog');
+              setIsCameraScannerOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs font-black rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            title="ماسح الباركود بالكاميرا - إضافة المنتجات تلقائياً وتحديث الرصيد"
+          >
+            <Camera className="w-4 h-4" />
+            <span>ماسح الكاميرا (إضافة تلقائية)</span>
+          </button>
+
           {/* Barcode Designer & Sticker Printer */}
           <button
             type="button"
@@ -286,9 +307,20 @@ export const ProductsView: React.FC = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="بحث بالاسم، الباركود، أو الرمز (SKU)..."
-            className="w-full pl-3 pr-9 py-2 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
+            className="w-full pl-10 pr-9 py-2 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
           />
           <Search className="w-4 h-4 text-slate-400 absolute start-3 top-2.5" />
+          <button
+            type="button"
+            onClick={() => {
+              setCameraScanTarget('catalog');
+              setIsCameraScannerOpen(true);
+            }}
+            className="absolute end-2 top-2 p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            title="مسح باركود بالكاميرا"
+          >
+            <Camera className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Category Filter */}
@@ -580,14 +612,28 @@ export const ProductsView: React.FC = () => {
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                       الباركود (Barcode) *
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setBarcode(generateRandomEan13())}
-                      className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      توليد باركود تلقائي
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCameraScanTarget('modal_field');
+                          setIsCameraScannerOpen(true);
+                        }}
+                        className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        title="مسح الباركود باستخدام كاميرا الجهاز"
+                      >
+                        <Camera className="w-3 h-3" />
+                        مسح بالكاميرا
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBarcode(generateRandomEan13())}
+                        className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        توليد تلقائي
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="text"
@@ -978,6 +1024,24 @@ export const ProductsView: React.FC = () => {
           initialProduct={barcodeProductTarget || undefined}
         />
       )}
+
+      {/* Camera Barcode Scanner Modal with Direct Auto-Add */}
+      <ProductBarcodeScannerModal
+        isOpen={isCameraScannerOpen}
+        onClose={() => setIsCameraScannerOpen(false)}
+        initialAction={cameraScanTarget === 'modal_field' ? 'field_capture' : 'auto_add'}
+        onScanBarcodeDirect={cameraScanTarget === 'modal_field' ? (code) => {
+          setBarcode(code);
+        } : undefined}
+        onEditProductRequest={(prod) => {
+          setIsCameraScannerOpen(false);
+          openEditModal(prod);
+        }}
+        onOpenAddModalWithBarcode={(scannedBarcode) => {
+          setIsCameraScannerOpen(false);
+          openAddModal(scannedBarcode);
+        }}
+      />
     </div>
   );
 };

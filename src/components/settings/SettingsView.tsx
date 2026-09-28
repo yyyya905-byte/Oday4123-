@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Settings,
@@ -44,7 +44,8 @@ import {
   BatteryCharging,
   Leaf,
   Zap,
-  Contrast
+  Contrast,
+  Palette
 } from 'lucide-react';
 import { DarkContrastLevel } from '../../types';
 import { soundEffects } from '../../services/audio';
@@ -52,10 +53,12 @@ import { GoogleDriveBackupSection } from '../backup/GoogleDriveBackupSection';
 import { WhatsAppDebtAutomationDashboard } from '../debts/WhatsAppDebtAutomationDashboard';
 import { PrintSettingsPanel } from './PrintSettingsPanel';
 import { ReceiptCustomizerPanel } from './ReceiptCustomizerPanel';
+import { ThemeColorSelector } from './ThemeColorSelector';
 import { CURRENCY_PRESETS, fetchLiveSyrianLiraRates, calculateConversionMultiplier, isLebaneseCurrency, defaultLebaneseExchangeBulletin } from '../../utils/currencyUtils';
 import { testWhatsAppCloudApiConnection } from '../../services/debtCollectionService';
 import { isAuthorizedToGenerateCodes } from '../../utils/licenseUtils';
 import { StoreLogoUploader } from './StoreLogoUploader';
+import { ReceiptHeaderFooterSettings } from './ReceiptHeaderFooterSettings';
 
 interface ContrastLevelConfig {
   id: DarkContrastLevel;
@@ -151,7 +154,15 @@ export const SettingsView: React.FC = () => {
     isTrialExpired,
     setIsPurchaseModalOpen,
     currentUser,
-    googleUser
+    googleUser,
+    isButtonCustomizerModalOpen,
+    setIsButtonCustomizerModalOpen,
+    updateButtonLayout,
+    resetButtonLayout,
+    applyButtonLayoutPreset,
+    activeThemeColor,
+    activePrimaryHex,
+    setThemeColor
   } = useApp();
 
   const activeEmail = (
@@ -163,9 +174,14 @@ export const SettingsView: React.FC = () => {
 
   const isAuthorizedToGenerate = isAuthorizedToGenerateCodes(activeEmail);
 
-  const [activeSubTab, setActiveSubTab] = useState<'appearance' | 'receipt_design' | 'printer' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'license'>('receipt_design');
+  const [activeSubTab, setActiveSubTab] = useState<'theme_color' | 'receipt_header_footer' | 'appearance' | 'receipt_design' | 'printer' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'license' | 'buttons_layout'>('theme_color');
   const [formData, setFormData] = useState({ ...settings });
   const [fileInputKey, setFileInputKey] = useState(Date.now());
+
+  // Synchronize local form data whenever settings change globally
+  useEffect(() => {
+    setFormData({ ...settings });
+  }, [settings]);
 
   // Live Rates Fetching State
   const [isFetchingLiveRates, setIsFetchingLiveRates] = useState<boolean>(false);
@@ -396,6 +412,40 @@ export const SettingsView: React.FC = () => {
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
         <button
           type="button"
+          onClick={() => setActiveSubTab('theme_color')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'theme_color'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Palette className="w-4 h-4 text-amber-500" />
+          <span>نظام الألوان وهوية المتجر 🎨</span>
+          <span
+            className="w-3 h-3 rounded-full border border-white shadow-xs"
+            style={{ backgroundColor: activePrimaryHex || '#f59e0b' }}
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('receipt_header_footer')}
+          id="btn-settings-subtab-header-footer"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'receipt_header_footer'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Store className="w-4 h-4 text-amber-500" />
+          <span>شعار وترويسة وتذييل الفاتورة 🧾</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold border border-amber-500/30">
+            مطبوع
+          </span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveSubTab('appearance')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
             activeSubTab === 'appearance'
@@ -407,6 +457,22 @@ export const SettingsView: React.FC = () => {
           <span>المظهر والوضع الليلي لراحة الكاشير</span>
           <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-500 text-white font-mono font-bold">
             {themeMode === 'auto_time' ? 'تلقائي ذكي' : theme === 'dark' ? 'داكن' : 'فاتح'}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('buttons_layout')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'buttons_layout'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Sliders className="w-4 h-4 text-amber-500" />
+          <span>تخصيص وترتيب مواقع الأزرار 🎛️</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300 font-mono font-bold">
+            {settings.buttonLayout?.posCartPosition === 'left' ? 'سلة يسار' : 'سلة يمين'}
           </span>
         </button>
 
@@ -1376,6 +1442,30 @@ export const SettingsView: React.FC = () => {
       {/* TAB 4: General Settings */}
       {activeSubTab === 'general' && (
         <div className="space-y-6 max-w-4xl animate-in fade-in">
+          {/* Quick link banner to Header, Footer & Logo customization */}
+          <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-slate-900/40 p-4 rounded-3xl border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-md shadow-amber-500/20 shrink-0">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                  شعار وترويسة وتذييل الفاتورة المطبوعة (معاينة حية)
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  تعديل شعار المتجر، رسائل الترحيب أعلى الفاتورة، ورسائل الشكر وسياسة الاسترجاع أسفل الفاتورة.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('receipt_header_footer')}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-sm transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
+            >
+              <span>فتح واجهة الترويسة والتذييل 🧾</span>
+            </button>
+          </div>
+
           {/* Store Logo Management & Receipt Header Synchronization */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
             <StoreLogoUploader
@@ -1451,6 +1541,92 @@ export const SettingsView: React.FC = () => {
                   onChange={e => setFormData({ ...formData, address: e.target.value })}
                   className="w-full text-xs px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* Receipt Header & Footer Configuration Section */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-amber-500" />
+                <span>ترويسة وتذييل الفاتورة المطبوعة (Receipt Header & Footer)</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('receipt_header_footer')}
+                className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>استوديو التخصيص والمعاينة الحية 🧾</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  ترويسة الفاتورة — نص الترحيب أعلى الفاتورة المطبوعة
+                </label>
+                <input
+                  type="text"
+                  value={formData.receiptHeader || ''}
+                  onChange={e => setFormData({ ...formData, receiptHeader: e.target.value })}
+                  placeholder="مثال: أهلاً بكم في متجرنا — نسعد بخدمتكم دائماً"
+                  className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  يظهر مباشرة تحت شعار المتجر واسم المنشأة في رأس الفاتورة الحرارية
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  تذييل الفاتورة — نص الشكر والملاحظات وشروط الإرجاع أسفل الفاتورة
+                </label>
+                <textarea
+                  rows={2}
+                  value={formData.receiptFooter || ''}
+                  onChange={e => setFormData({ ...formData, receiptFooter: e.target.value })}
+                  placeholder="مثال: شكراً لزيارتكم وتسوقكم معنا! يرجى الاحتفاظ بالفاتورة لضمان حق الاسترجاع والاستبدال خلال 3 أيام."
+                  className="w-full text-xs font-bold px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500 resize-none"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  يظهر في أسفل الفاتورة فوق الباركود وخاتمة الإيصال
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formData.receiptShowLogo ?? formData.printStoreLogo ?? true}
+                    onChange={e => setFormData({
+                      ...formData,
+                      receiptShowLogo: e.target.checked,
+                      printStoreLogo: e.target.checked
+                    })}
+                    className="w-4 h-4 accent-amber-500 rounded"
+                  />
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    طباعة شعار المتجر أعلى الفاتورة
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formData.printTaxDetails ?? true}
+                    onChange={e => setFormData({
+                      ...formData,
+                      printTaxDetails: e.target.checked,
+                      receiptShowTaxNumber: e.target.checked
+                    })}
+                    className="w-4 h-4 accent-amber-500 rounded"
+                  />
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    إظهار الرقم الضريبي والسجل التجاري في الفاتورة
+                  </span>
+                </label>
               </div>
             </div>
           </div>
@@ -1534,9 +1710,263 @@ export const SettingsView: React.FC = () => {
         <WhatsAppDebtAutomationDashboard />
       )}
 
+      {/* TAB: Button Positions & Layout Customizer */}
+      {activeSubTab === 'buttons_layout' && (
+        <div className="space-y-6 max-w-4xl animate-in fade-in">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-slate-900 text-white p-6 rounded-3xl border border-amber-900/50 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 end-0 translate-x-10 -translate-y-10 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <Sliders className="w-5 h-5" />
+                  </span>
+                  <h3 className="text-lg font-black tracking-tight">تخصيص وترتيب مواقع جميع الأزرار والواجهة</h3>
+                </div>
+                <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+                  تحكم بحرية كاملة بموقع لوحة السلة والمحاسبة (يمين أو يسار لتناسب اليد اليمنى واليسرى)، وترتيب أدوات الكاشير، والشريط العلوي، والزر العائم الذكي.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsButtonCustomizerModalOpen(true)}
+                className="px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer shrink-0 flex items-center gap-2"
+              >
+                <Sliders className="w-4 h-4" />
+                <span>فتح نافذة التحكم التفاعلية 🎛️</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Presets Grid */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">الأوضاع المريحة الجاهزة (1-Click Presets)</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">تطبيق نمط كامل لمواقع الأزرار بضغطة زر واحدة</p>
+              </div>
+              <span className="text-xs font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
+                النمط النشط: {settings.buttonLayout?.activePreset || 'standard'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+              <button
+                type="button"
+                onClick={() => applyButtonLayoutPreset('standard')}
+                className={`p-3.5 rounded-2xl border-2 text-start transition-all cursor-pointer ${
+                  settings.buttonLayout?.activePreset === 'standard'
+                    ? 'border-amber-500 bg-amber-500/10 font-black'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-amber-400/50'
+                }`}
+              >
+                <span className="text-xl">🎯</span>
+                <p className="text-xs font-black text-slate-900 dark:text-white mt-1">الوضع القياسي (RTL)</p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">السلة على اليمين مع أزرار كاملة</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyButtonLayoutPreset('left_handed')}
+                className={`p-3.5 rounded-2xl border-2 text-start transition-all cursor-pointer ${
+                  settings.buttonLayout?.activePreset === 'left_handed'
+                    ? 'border-amber-500 bg-amber-500/10 font-black'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-amber-400/50'
+                }`}
+              >
+                <span className="text-xl">🖐️</span>
+                <p className="text-xs font-black text-slate-900 dark:text-white mt-1">وضع الأعسر (Left-Handed)</p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">السلة على اليسار مع أزرار معكوسة</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyButtonLayoutPreset('touchscreen')}
+                className={`p-3.5 rounded-2xl border-2 text-start transition-all cursor-pointer ${
+                  settings.buttonLayout?.activePreset === 'touchscreen'
+                    ? 'border-amber-500 bg-amber-500/10 font-black'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-amber-400/50'
+                }`}
+              >
+                <span className="text-xl">📱</span>
+                <p className="text-xs font-black text-slate-900 dark:text-white mt-1">شاشات اللمس (Touch)</p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">أزرار عريضة ومحطة دفع مكبرة</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyButtonLayoutPreset('compact')}
+                className={`p-3.5 rounded-2xl border-2 text-start transition-all cursor-pointer ${
+                  settings.buttonLayout?.activePreset === 'compact'
+                    ? 'border-amber-500 bg-amber-500/10 font-black'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-amber-400/50'
+                }`}
+              >
+                <span className="text-xl">⚡</span>
+                <p className="text-xs font-black text-slate-900 dark:text-white mt-1">فائق السرعة (Express)</p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">إخفاء العناصر غير الضرورية</p>
+              </button>
+            </div>
+          </div>
+
+          {/* POS Screen Customization */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+            <h4 className="text-sm font-black text-slate-900 dark:text-white">إعدادات شاشة الكاشير والمحاسبة (POS)</h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Cart Side */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">موضع لوحة السلة والمحاسبة:</span>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => updateButtonLayout({ posCartPosition: 'right' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      settings.buttonLayout?.posCartPosition === 'right'
+                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    السلة على اليمين ➡️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateButtonLayout({ posCartPosition: 'left' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      settings.buttonLayout?.posCartPosition === 'left'
+                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    السلة على اليسار ⬅️
+                  </button>
+                </div>
+              </div>
+
+              {/* Checkout Bar Alignment */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">تنسيق أزرار المحاسبة النهائية:</span>
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => updateButtonLayout({ posPayButtonAlignment: 'split' })}
+                    className={`py-2 px-1 text-center rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                      settings.buttonLayout?.posPayButtonAlignment === 'split'
+                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    مقسم مع المطبخ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateButtonLayout({ posPayButtonAlignment: 'full' })}
+                    className={`py-2 px-1 text-center rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                      settings.buttonLayout?.posPayButtonAlignment === 'full'
+                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    عرض كامل
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateButtonLayout({ posPayButtonAlignment: 'reversed' })}
+                    className={`py-2 px-1 text-center rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                      settings.buttonLayout?.posPayButtonAlignment === 'reversed'
+                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    عكس الترتيب
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Floating Action Button (FAB) Settings */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">الزر العائم الذكي (Floating Hub)</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">زر دائري يطفو على الشاشة للوصول السريع للأدوات وتخصيص الأزرار</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  updateButtonLayout({
+                    floatingActionEnabled: !settings.buttonLayout?.floatingActionEnabled
+                  })
+                }
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  settings.buttonLayout?.floatingActionEnabled !== false
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {settings.buttonLayout?.floatingActionEnabled !== false ? 'مفعل ✓' : 'معطل ✕'}
+              </button>
+            </div>
+
+            {settings.buttonLayout?.floatingActionEnabled !== false && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                {[
+                  { id: 'bottom-right', label: '↘️ أسفل اليمين' },
+                  { id: 'bottom-left', label: '↙️ أسفل اليسار' },
+                  { id: 'top-right', label: '↗️ أعلى اليمين' },
+                  { id: 'top-left', label: '↖️ أعلى اليسار' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => updateButtonLayout({ floatingActionPosition: item.id as any })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      (settings.buttonLayout?.floatingActionPosition || 'bottom-right') === item.id
+                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Reset Action */}
+          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              تريد العودة للترتيب والمواقع الافتراضية للنظام؟
+            </span>
+            <button
+              type="button"
+              onClick={resetButtonLayout}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>استعادة الترتيب الافتراضي للأزرار</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: Store Brand Theme Color Studio */}
+      {activeSubTab === 'theme_color' && (
+        <div className="space-y-6 max-w-5xl animate-in fade-in">
+          <ThemeColorSelector />
+        </div>
+      )}
+
       {/* TAB: Cashier Night Mode & Appearance Settings */}
       {activeSubTab === 'appearance' && (
-        <div className="space-y-6 max-w-4xl animate-in fade-in">
+        <div className="space-y-6 max-w-5xl animate-in fade-in">
+          {/* Theme Color & Store Brand Identity */}
+          <ThemeColorSelector />
+
           {/* Header Banner */}
           <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-900/50 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 end-0 translate-x-10 -translate-y-10 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -2403,6 +2833,11 @@ export const SettingsView: React.FC = () => {
             </div>
           </form>
         </div>
+      )}
+
+      {/* TAB: Store Logo, Receipt Header & Footer Settings */}
+      {activeSubTab === 'receipt_header_footer' && (
+        <ReceiptHeaderFooterSettings />
       )}
 
       {/* TAB: Receipt Customization Studio (Real-Time Live Preview) */}

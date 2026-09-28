@@ -248,7 +248,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
           </div>
 
           {/* Developer / Master Keys Helper (Exclusively for authorized developer emails) */}
-          {isAuthorized ? (
+          {isAuthorized && (
             <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 dark:bg-amber-950/30 dark:border-amber-500/50 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -344,36 +344,6 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </div>
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>إنشاء وتوليد الأكواد محصور بالمطور المعتمد فقط</span>
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                زر إنشاء وتوليد أكواد الشراء متاح حصراً للمطور المعتمد ومالك النظام. إذا كنت صاحب النظام، يمكنك تسجيل الدخول للتحقق وعرض زر الإنشاء:
-              </p>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {AUTHORIZED_PURCHASE_GENERATOR_EMAILS.map((email, idx) => (
-                  <button
-                    key={email}
-                    type="button"
-                    disabled={isSigningInDev}
-                    onClick={async () => {
-                      setIsSigningInDev(true);
-                      await signInWithGoogle({ hintEmail: email });
-                      setIsSigningInDev(false);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-amber-500 text-[11px] font-bold text-slate-700 dark:text-slate-200 cursor-pointer transition-all shadow-2xs hover:bg-amber-50 dark:hover:bg-slate-700"
-                  >
-                    <LogIn className="w-3 h-3 text-amber-500" />
-                    <span>دخول بحساب المطور المعتمد ({idx + 1})</span>
-                  </button>
-                ))}
-              </div>
             </div>
           )}
         </div>

@@ -222,25 +222,6 @@ export const PinSwitchModal: React.FC<PinSwitchModalProps> = ({ isOpen, onClose 
                     {isGoogleAuthLoading ? 'جاري الاتصال بـ Google...' : 'تسجيل الدخول باستخدام Google'}
                   </span>
                 </button>
-
-                {/* Quick 1-click button for authorized developers */}
-                <div className="space-y-1.5 pt-0.5">
-                  {AUTHORIZED_PURCHASE_GENERATOR_EMAILS.map((email, idx) => (
-                    <button
-                      key={email}
-                      type="button"
-                      onClick={() => handleGoogleSignIn(email)}
-                      disabled={isGoogleAuthLoading}
-                      className="w-full py-1.5 px-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 text-[11px] font-bold flex items-center justify-between transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles className="w-3 h-3 text-amber-500" />
-                        <span>دخول فوري بحساب المطور المعتمد ({idx + 1})</span>
-                      </span>
-                      <span className="text-[10px] font-black text-blue-600 dark:text-blue-400">دخول ⚡</span>
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
           </div>

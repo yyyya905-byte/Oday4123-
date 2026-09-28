@@ -29,7 +29,13 @@ import {
   ArrowRight,
   Database,
   Cloud,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Palette,
+  Eye,
+  Store,
+  Camera,
+  ScanBarcode,
+  Receipt
 } from 'lucide-react';
 
 interface ChangelogItem {
@@ -71,6 +77,8 @@ export const AboutView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [expandedVersions, setExpandedVersions] = useState<Record<string, boolean>>({
+    'v2.7.0': true,
+    'v2.6.0': true,
     'v2.5.4': true,
     'v2.5.0': true,
     'v2.4.0': false,
@@ -88,18 +96,116 @@ export const AboutView: React.FC = () => {
 
   const changelogData: ChangelogItem[] = [
     {
+      id: 'v2.7.0',
+      version: 'v2.7.0 Pro',
+      date: 'سبتمبر 2026',
+      isLatest: true,
+      titleAr: 'واجهة API لماسح الباركود بالكاميرا والإضافة التلقائية للمنتجات',
+      titleEn: 'Camera Barcode Scanner API & Auto-Add Products Integration',
+      summaryAr: 'إضافة واجهة برمجة تطبيقات (API) بسيطة ومتقدمة لاستخدام كاميرا الهاتف والحاسوب كماسح ضوئي عالي السرعة في صفحة المنتجات، بحيث يتم التعرف على الرمز وإضافة الصنف الجديد فورياً أو زيادة رصيد المخزن تلقائياً.',
+      summaryEn: 'Simple & robust Barcode Scanner API utilizing device camera in Products page to automatically register new products or increment stock immediately upon barcode scan.',
+      category: 'all',
+      badgeAr: 'الإصدار الأحدث ⚡',
+      badgeEn: 'Latest Release ⚡',
+      badgeColor: 'bg-emerald-500 text-white',
+      features: [
+        {
+          icon: Camera,
+          titleAr: 'ماسح الباركود بالكاميرا المباشر (Camera Barcode API)',
+          titleEn: 'Direct Camera Barcode Scanner API',
+          descAr: 'واجهة برمجية متكاملة تتصل بكاميرا الجهاز مباشرة (WebRTC / BarcodeDetector / Html5Qrcode) مع تحكم كامل بالفلاش والتبديل بين الكاميرات ومسح الصور المرفوعة.',
+          descEn: 'Integrated API connecting directly to device camera (WebRTC / BarcodeDetector / Html5Qrcode) with flashlight toggle, multi-camera switching, and gallery image upload scan.',
+          tag: 'واجهة الكاميرا API',
+          actionLabelAr: 'فتح شاشة المنتجات والماسح 📷',
+          actionLabelEn: 'Open Products Scanner',
+          onAction: (a) => a.setActiveTab('products')
+        },
+        {
+          icon: ScanBarcode,
+          titleAr: 'إضافة المنتج تلقائياً فور مسح الرمز (Instant Auto-Add)',
+          titleEn: 'Instant Auto-Add on Barcode Scan',
+          descAr: 'بمجرد توجيه الكاميرا نحو باركود صنف غير مسجل، يتم إنشاء الصنف وحفظه تلقائياً بالكتالوج بالأسعار الافتراضية مع إشعار صوتي وإمكانية تعديل الاسم والسعر فورياً بنقرة واحدة.',
+          descEn: 'Instantly creates and registers new product into catalog upon pointing camera at unrecognized barcode, with sound notification and instant one-click detail edit.',
+          tag: 'إضافة تلقائية',
+          actionLabelAr: 'تجربة الإضافة التلقائية',
+          actionLabelEn: 'Try Auto-Add',
+          onAction: (a) => a.setActiveTab('products')
+        },
+        {
+          icon: Receipt,
+          titleAr: 'تخصيص شعار المتجر وترويسة وتذييل الفاتورة المطبوعة',
+          titleEn: 'Store Logo, Receipt Header & Footer Customizer',
+          descAr: 'واجهة بسيطة وسلسة في الإعدادات تتيح رفع الشعار أو التقاطه بالكاميرا أو اختيار شعارات تجارية جاهزة، مع تعديل اسم المتجر ورسائل الترحيب في الترويسة وبنود الشكر وسياسة الاسترجاع في التذييل مع محاكي فوري للفاتورة الحرارية.',
+          descEn: 'Intuitive interface in Settings to upload store logo, capture from camera, or use presets, plus customizing header greetings and footer thank-you and return policy with live thermal receipt simulator.',
+          tag: 'شعار الفاتورة',
+          actionLabelAr: 'تخصيص الفاتورة الآن 🧾',
+          actionLabelEn: 'Customize Receipt',
+          onAction: (a) => a.setActiveTab('settings')
+        }
+      ]
+    },
+    {
+      id: 'v2.6.0',
+      version: 'v2.6.0 Pro',
+      date: 'سبتمبر 2026',
+      isLatest: false,
+      titleAr: 'نظام ألوان وهوية المتجر وتخصيص المظهر (Theme Color System)',
+      titleEn: 'Store Brand & Theme Color Customization System',
+      summaryAr: 'إضافة نظام متكامل في إعدادات التطبيق يسمح للمستخدم بتغيير نظام الألوان الأساسي للتطبيق (Theme Color) ليتناسب بدقة مع هوية وشعار متجره التجاري مع 12 لوحة جاهزة ومولد ألوان HEX ومحاكي شاشة الكاشير.',
+      summaryEn: 'Complete theme color customization system allowing users to change primary app colors to match their store brand, featuring 12 curated palettes, custom HEX generator, and live POS simulator.',
+      category: 'all',
+      badgeAr: 'الإصدار الأحدث ✨',
+      badgeEn: 'Latest Release ✨',
+      badgeColor: 'bg-amber-500 text-slate-950',
+      features: [
+        {
+          icon: Palette,
+          titleAr: 'تخصيص نظام ألوان وهوية المتجر (Theme Color)',
+          titleEn: 'Store Theme Color System Customization',
+          descAr: '12 لوحة ألوان منتقاة بعناية تناسب مختلف الأنشطة التجارية (السوبرماركت الأخضر، الكافيهات العسلي، الإلكترونيات الأزرق، العطور الأرجواني، الأزياء المرجاني، الملاحم الأحمر الياقوتي، والمحامص البرتقالي) مع تطبيق فوري وتلقائي على كافة عناصر وأزرار النظام.',
+          descEn: '12 carefully curated industry palettes (supermarket green, coffee amber, tech blue, perfume purple, boutique coral, butchery ruby, roastery orange) with instant universal application.',
+          tag: 'هوية المتجر',
+          actionLabelAr: 'تخصيص لون المتجر الآن 🎨',
+          actionLabelEn: 'Customize Theme Color',
+          onAction: (a) => a.setActiveTab('settings')
+        },
+        {
+          icon: Sliders,
+          titleAr: 'منتقي ألوان HEX حر ومولد التدرجات الذكي (50-950)',
+          titleEn: 'Custom HEX Color Picker & Smart 11-Shade Generator',
+          descAr: 'إمكانية إدخال أي كود لوني مخصص لشعار متجرك أو اختياره من عجلة الألوان التفاعلية، مع توليد 11 درجة لونية متناسقة تلقائياً لضمان وضوح النصوص والأزرار والخلفيات وحواف الشاشة.',
+          descEn: 'Pick any custom HEX color matching your store logo, generating an 11-shade palette (50-950) ensuring perfect text readability, contrast, and visual harmony.',
+          tag: 'تخصيص حر',
+          actionLabelAr: 'فتح إعدادات الألوان',
+          actionLabelEn: 'Color Settings',
+          onAction: (a) => a.setActiveTab('settings')
+        },
+        {
+          icon: Eye,
+          titleAr: 'محاكي شاشة الكاشير التفاعلي والمعاينة الحية',
+          titleEn: 'Interactive Cashier Screen Simulator & Live Preview',
+          descAr: 'معاينة فورية لتأثير اللون المختار على بطاقات المنتجات، أسعار الكاشير، أزرار الإضافة، وسلة المبيعات وزر الدفع والطباعة في الوضعين النهاري والليلي قبل اعتماده.',
+          descEn: 'Real-time simulator showing how your selected brand color looks on product cards, POS cashier buttons, cart totals, and pay actions in both Light and Dark modes.',
+          tag: 'معاينة تفاعلية',
+          actionLabelAr: 'معاينة المحاكي',
+          actionLabelEn: 'Preview Simulator',
+          onAction: (a) => a.setActiveTab('settings')
+        }
+      ]
+    },
+    {
       id: 'v2.5.4',
       version: 'v2.5.4 Pro',
       date: 'سبتمبر 2026',
-      isLatest: true,
+      isLatest: false,
       titleAr: 'تحديث العملة اللبنانية، مؤشر البطارية الذكي، والتحكم بمواقع الأزرار',
       titleEn: 'Lebanese Currency, Battery Indicator & Custom Button Positioning',
       summaryAr: 'إضافة شاملة لخيارات العملة اللبنانية، مؤشر شحن البطارية الديناميكي، ونظام كامل للتحكم بمواقع وترتيب أزرار الواجهة ولوحة السلة.',
       summaryEn: 'Comprehensive Lebanese LBP support, dynamic battery indicator, and full UI button placement customization.',
       category: 'all',
-      badgeAr: 'الإصدار الأحدث ✨',
-      badgeEn: 'Latest Release ✨',
-      badgeColor: 'bg-amber-500 text-slate-950',
+      badgeAr: 'تحديث رئيسي 🚀',
+      badgeEn: 'Major Update 🚀',
+      badgeColor: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30',
       features: [
         {
           icon: Coins,
@@ -421,17 +527,36 @@ export const AboutView: React.FC = () => {
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                   KIAN CASHIER — كيان كاشير
                 </h2>
-                <span className="text-[11px] font-mono font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-2.5 py-0.5 rounded-full">
-                  الإصدار v2.5.4 Pro
+                <span className="text-[11px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 rounded-full">
+                  الإصدار v2.7.0 Pro
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-lg leading-relaxed">
-                نظام نقاط بيع سحابي ومحلي متكامل مصمم للمتاجر، المطاعم، والمستودعات بأعلى معايير السرعة، مع دعم العملات المتعددة والتحكم الكامل بالواجهة.
+                نظام نقاط بيع سحابي ومحلي متكامل مصمم للمتاجر، المطاعم، والمستودعات بأعلى معايير السرعة، مع دعم العملات المتعددة، وتخصيص هوية وألوان المتجر، وماسح الباركود بكاميرا الجهاز للإضافة التلقائية.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('products')}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-black text-xs border border-emerald-500/30 shadow-xs transition-all active:scale-95 cursor-pointer"
+              title="فتح صفحة المنتجات والماسح الضوئي"
+            >
+              <Camera className="w-4 h-4 text-emerald-600" />
+              <span>{language === 'ar' ? 'ماسح الكاميرا 📷' : 'Camera Scanner'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black text-xs border border-amber-500/30 shadow-xs transition-all active:scale-95 cursor-pointer"
+              title="تخصيص نظام ألوان وهوية المتجر"
+            >
+              <Palette className="w-4 h-4 text-amber-500" />
+              <span>{language === 'ar' ? 'ألوان المتجر 🎨' : 'Theme Color'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsButtonCustomizerModalOpen(true)}

@@ -451,6 +451,46 @@ export type POSPayButtonAlignment = 'split' | 'full' | 'reversed';
 export type FloatingActionPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'hidden';
 export type ButtonLayoutPreset = 'standard' | 'left_handed' | 'touchscreen' | 'compact' | 'custom';
 
+export type ThemeColorPreset =
+  | 'amber'
+  | 'emerald'
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'rose'
+  | 'ruby'
+  | 'teal'
+  | 'orange'
+  | 'cyan'
+  | 'coffee'
+  | 'slate'
+  | 'custom';
+
+export interface ThemeColorItem {
+  id: ThemeColorPreset;
+  nameAr: string;
+  nameEn: string;
+  primaryHex: string;
+  hoverHex: string;
+  darkHex: string;
+  lightHex: string;
+  badge: string;
+  recommendedFor: string;
+  shades: {
+    50: string;
+    100: string;
+    200: string;
+    300: string;
+    400: string;
+    500: string;
+    600: string;
+    700: string;
+    800: string;
+    900: string;
+    950: string;
+  };
+}
+
 export interface ButtonLayoutConfig {
   posCartPosition: POSCartPosition;
   posActionButtonsOrder: string[]; // ['numpad', 'barcode', 'customerQr', 'bluetoothPrinter', 'priceEdit', 'favorites', 'customizeButtons']
@@ -478,6 +518,9 @@ export interface StoreSettings {
   currency: CurrencyConfig;
   exchangeBulletin?: ExchangeRateBulletin;
   buttonLayout?: ButtonLayoutConfig;
+  // Theme Color & Store Brand Identity
+  themeColor?: ThemeColorPreset; // 'amber' (default), 'emerald', 'blue', 'indigo', etc.
+  primaryColorHex?: string; // Custom HEX color e.g. '#f59e0b'
   // Theme & Night Mode (Cashier Eye Comfort & Dark Work Environment Contrast)
   themeMode?: ThemeMode;
   nightModeStartHour?: number; // e.g. 18 (6:00 PM)

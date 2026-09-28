@@ -31,6 +31,8 @@ import { GlobalSearchModal } from './components/modals/GlobalSearchModal';
 import { ModeSelectionModal } from './components/modals/ModeSelectionModal';
 import { FirstTimeLoginModal } from './components/modals/FirstTimeLoginModal';
 import { AppPurchaseModal } from './components/modals/AppPurchaseModal';
+import { ButtonLayoutModal } from './components/modals/ButtonLayoutModal';
+import { FloatingActionHub } from './components/common/FloatingActionHub';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LongPressProvider } from './components/common/LongPressTooltip';
 import { WifiOff, RefreshCw, ArrowLeftRight, Database, CheckCircle2, Leaf } from 'lucide-react';
@@ -211,6 +213,12 @@ const AppContent: React.FC = () => {
         onClose={() => setIsPurchaseModalOpen(false)}
         forceRequired={isTrialExpired}
       />
+
+      {/* Button Layout & UI Customizer Modal */}
+      <ButtonLayoutModal />
+
+      {/* Smart Floating Action Hub */}
+      <FloatingActionHub />
 
       {/* Floating Offline Sync & Storage Status Banner */}
       {(!isOnline || offlineQueueCount > 0) && (

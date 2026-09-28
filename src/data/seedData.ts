@@ -218,6 +218,8 @@ export const initialSettings: StoreSettings = {
   debtPaymentReceiptTemplate: '',
   debtOverdueMessageTemplate: '',
   buttonLayout: defaultButtonLayout,
+  themeColor: 'amber',
+  primaryColorHex: '#f59e0b',
 };
 
 export const initialCategories: Category[] = [
