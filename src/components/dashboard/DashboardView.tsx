@@ -57,6 +57,7 @@ import {
   Legend
 } from 'recharts';
 import { DailySalesSummaryWidget } from './DailySalesSummaryWidget';
+import { SubscriptionStatusWidget } from './SubscriptionStatusWidget';
 import { getRoleInfo, hasActionPermission } from '../../utils/permissions';
 
 export const DashboardView: React.FC = () => {
@@ -635,6 +636,9 @@ export const DashboardView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Subscription Remaining Days & Status Widget (from localStorage) */}
+      <SubscriptionStatusWidget />
 
       {/* AI Smart Executive Advisor Card (Supervisors and Managers Only) */}
       {canViewAiAdvisor && (

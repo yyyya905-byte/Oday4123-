@@ -421,9 +421,12 @@ export interface LicenseInfo {
   isPurchased: boolean;
   licenseKey?: string;
   licenseStatus: 'trial' | 'active' | 'expired';
+  licenseType?: '1_month' | '1_year' | 'lifetime';
+  licenseDurationLabel?: string;
   trialStartDate?: string;
   trialExpiresAt?: string;
   purchasedAt?: string;
+  licenseExpiresAt?: string;
   customerName?: string;
   customerPhone?: string;
 }

@@ -149,6 +149,9 @@ export const SettingsView: React.FC = () => {
     batteryInfo,
     isAppPurchased,
     licenseKey,
+    licenseRemainingDays,
+    licenseDurationLabel,
+    isLifetimeLicense,
     trialDaysRemaining,
     trialHoursRemaining,
     isTrialExpired,
@@ -2938,17 +2941,22 @@ export const SettingsView: React.FC = () => {
             {/* License Details */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1">
-                <span className="text-[11px] font-bold text-slate-400 block">كود الترخيص المفعل:</span>
+                <span className="text-[11px] font-bold text-slate-400 block">حالة كود الترخيص:</span>
                 <div className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 break-all">
-                  {licenseKey || 'لا يوجد كود مفعل حالياً (وضع الضيف)'}
+                  {licenseKey ? '•••••••• (كود مشفر ونشط)' : 'لا يوجد كود مفعل حالياً (وضع الضيف)'}
                 </div>
               </div>
 
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1">
                 <span className="text-[11px] font-bold text-slate-400 block">نوع الرخصة:</span>
                 <div className="text-xs font-black text-slate-800 dark:text-slate-200">
-                  {isAppPurchased ? 'ترخيص دائم مدى الحياة (Lifetime License)' : 'فترة تجريبية لمدة أسبوع (7 Days Trial)'}
+                  {isAppPurchased ? (licenseDurationLabel || 'ترخيص معتمد') : 'فترة تجريبية لمدة أسبوع (7 Days Trial)'}
                 </div>
+                {isAppPurchased && !isLifetimeLicense && (
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 block">
+                    الوقت المتبقي: {licenseRemainingDays} يوماً
+                  </span>
+                )}
               </div>
             </div>
 
@@ -2956,32 +2964,21 @@ export const SettingsView: React.FC = () => {
             <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <div className="space-y-0.5">
                 <span className="font-bold text-slate-900 dark:text-white block">
-                  كيف تحصل على كود الشراء الدائم لمتجرك؟
+                  كيف تحصل على كود تفعيل التطبيق لمتجرك؟
                 </span>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                  يقوم المطور بإنشاء كود ترخيص مشفر ومخصص لاسم متجرك ورقم هاتفك ليعمل للأبد.
+                  يقوم المطور بتزويدك بكود تفعيل مخصص (سنوي أو شهري) ليعمل على جهازك.
                 </span>
               </div>
 
-              {isAuthorizedToGenerate ? (
-                <button
-                  type="button"
-                  onClick={() => setIsPurchaseModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
-                  title="أدوات المطور المعتمد — انقر لتوليد أكواد الشراء"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>زر إنشاء أكواد الشراء (المطور)</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsPurchaseModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-                >
-                  إدخال كود الشراء / تفعيل
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setIsPurchaseModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>إدخال كود التفعيل</span>
+              </button>
             </div>
           </div>
         </div>

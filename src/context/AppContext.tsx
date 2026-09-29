@@ -46,9 +46,13 @@ import {
   THEME_COLOR_PRESETS
 } from '../utils/themeColorUtils';
 import {
-  generateLicenseCode,
   validateLicenseCode,
   getTrialTimeRemaining,
+  getLicenseTimeRemaining,
+  calculateSubscriptionExpirationDate,
+  markCodeAsUsed,
+  isCodeAlreadyUsed,
+  PREDEFINED_LICENSE_CODES,
   MASTER_ACTIVATION_CODES
 } from '../utils/licenseUtils';
 import {
@@ -238,6 +242,12 @@ interface AppContextType {
   completeFirstLogin: (userData?: Partial<User>) => void;
   isAppPurchased: boolean;
   licenseKey: string;
+  licenseExpiresAt: string | null;
+  licenseRemainingDays: number;
+  licenseRemainingHours: number;
+  isLicenseExpired: boolean;
+  licenseDurationLabel: string;
+  isLifetimeLicense: boolean;
   trialStartDate: string;
   trialDaysRemaining: number;
   trialHoursRemaining: number;
@@ -483,8 +493,11 @@ const STORAGE_KEYS = {
   FIRST_LOGIN_COMPLETED: 'kian_first_login_completed',
   APP_PURCHASED: 'kian_app_purchased',
   LICENSE_KEY: 'kian_license_key',
+  LICENSE_EXPIRES_AT: 'kian_pos_license_expires_at',
+  LICENSE_TYPE: 'kian_pos_license_type',
   TRIAL_START_DATE: 'kian_trial_start_date',
   PURCHASED_AT: 'kian_purchased_at',
+  IS_TRIAL_EXPIRED: 'kian_pos_is_trial_expired',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -1072,13 +1085,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED) !== 'true';
   });
 
-  const [isAppPurchased, setIsAppPurchased] = useState<boolean>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.APP_PURCHASED);
-    return saved === 'true' || settings.licenseInfo?.isPurchased === true;
-  });
-
   const [licenseKey, setLicenseKey] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
+  });
+
+  const [licenseExpiresAt, setLicenseExpiresAt] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.LICENSE_EXPIRES_AT) || settings.licenseInfo?.licenseExpiresAt || null;
+  });
+
+  const licenseRemInfo = getLicenseTimeRemaining(licenseExpiresAt || undefined);
+  const isLicenseExpired = Boolean(
+    licenseExpiresAt && (new Date(licenseExpiresAt).getTime() <= Date.now() || licenseRemInfo.isExpired)
+  );
+  const licenseRemainingDays = licenseRemInfo.daysRemaining;
+  const licenseRemainingHours = licenseRemInfo.hoursRemaining;
+  const isLifetimeLicense = licenseRemInfo.isLifetime;
+  const licenseDurationLabel = settings.licenseInfo?.licenseDurationLabel || (isLifetimeLicense ? 'ترخيص دائم مدى الحياة' : (licenseExpiresAt ? (licenseRemainingDays > 35 ? 'اشتراك سنوي (سنة)' : 'اشتراك شهري (شهر)') : 'ترخيص معتمد'));
+
+  const [isAppPurchased, setIsAppPurchased] = useState<boolean>(() => {
+    const expiresSaved = localStorage.getItem(STORAGE_KEYS.LICENSE_EXPIRES_AT) || settings.licenseInfo?.licenseExpiresAt;
+    if (expiresSaved) {
+      const isExpired = new Date(expiresSaved).getTime() <= Date.now();
+      if (isExpired) return false;
+    }
+    const saved = localStorage.getItem(STORAGE_KEYS.APP_PURCHASED);
+    return saved === 'true' || settings.licenseInfo?.isPurchased === true;
   });
 
   const [trialStartDate, setTrialStartDate] = useState<string>(() => {
@@ -1095,14 +1126,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const trialInfo = getTrialTimeRemaining(trialStartDate, 7);
   const trialDaysRemaining = trialInfo.daysRemaining;
   const trialHoursRemaining = trialInfo.hoursRemaining;
-  const isTrialExpired = !isAppPurchased && trialInfo.isExpired;
 
-  // Auto prompt purchase modal if trial expired and first login was completed
-  useEffect(() => {
-    if (isTrialExpired && isFirstLoginCompleted && !isAppPurchased) {
-      setIsPurchaseModalOpen(true);
+  // Track isTrialExpired with localStorage persistence based on calculated expiration date
+  const [isTrialExpired, setIsTrialExpiredState] = useState<boolean>(() => {
+    const expiresSaved = localStorage.getItem(STORAGE_KEYS.LICENSE_EXPIRES_AT) || settings.licenseInfo?.licenseExpiresAt;
+    const purchasedSaved = (localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true') || (settings.licenseInfo?.isPurchased === true);
+
+    if (purchasedSaved && expiresSaved) {
+      const expTime = new Date(expiresSaved).getTime();
+      const hasExpired = !isNaN(expTime) && expTime <= Date.now();
+      localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, hasExpired ? 'true' : 'false');
+      return hasExpired;
     }
-  }, [isTrialExpired, isFirstLoginCompleted, isAppPurchased]);
+
+    if (purchasedSaved && !expiresSaved) {
+      localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'false');
+      return false;
+    }
+
+    const trialStartSaved = localStorage.getItem(STORAGE_KEYS.TRIAL_START_DATE) || settings.licenseInfo?.trialStartDate || new Date().toISOString();
+    const guestTrial = getTrialTimeRemaining(trialStartSaved, 7);
+    localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, guestTrial.isExpired ? 'true' : 'false');
+    return guestTrial.isExpired;
+  });
+
+  // Evaluate subscription expiration date and trial state periodically and update isTrialExpired
+  useEffect(() => {
+    const evaluateExpiration = () => {
+      const nowMs = Date.now();
+
+      // 1. Purchased with calculated expiration date (year or month)
+      if (licenseExpiresAt) {
+        const expTime = new Date(licenseExpiresAt).getTime();
+        const hasLicenseExpired = !isNaN(expTime) && expTime <= nowMs;
+
+        if (hasLicenseExpired) {
+          setIsAppPurchased(false);
+          setIsTrialExpiredState(true);
+          localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'false');
+          localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'true');
+          setIsPurchaseModalOpen(true);
+        } else {
+          setIsTrialExpiredState(false);
+          localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'false');
+        }
+        return;
+      }
+
+      // 2. Purchased without expiration date (lifetime)
+      if (isAppPurchased && !licenseExpiresAt) {
+        setIsTrialExpiredState(false);
+        localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'false');
+        return;
+      }
+
+      // 3. Not purchased - 7 days guest trial mode
+      const currentTrial = getTrialTimeRemaining(trialStartDate, 7);
+      if (currentTrial.isExpired) {
+        setIsTrialExpiredState(true);
+        localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'true');
+        if (isFirstLoginCompleted) {
+          setIsPurchaseModalOpen(true);
+        }
+      } else {
+        setIsTrialExpiredState(false);
+        localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'false');
+      }
+    };
+
+    evaluateExpiration();
+    const interval = setInterval(evaluateExpiration, 15000);
+    return () => clearInterval(interval);
+  }, [licenseExpiresAt, isAppPurchased, trialStartDate, isFirstLoginCompleted]);
 
   const completeFirstLogin = (userData?: Partial<User>) => {
     setIsFirstLoginCompletedState(true);
@@ -1126,24 +1221,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const activatePurchaseCode = (code: string, customerInfo?: { name?: string; phone?: string }): { success: boolean; message: string } => {
-    const res = validateLicenseCode(code);
-    if (!res.valid) {
+    const res = validateLicenseCode(code, licenseKey);
+    if (!res.valid || !res.matchedCode) {
       soundEffects.playWarning();
-      return { success: false, message: res.reason || 'كود الشراء غير صالح' };
+      return { success: false, message: res.reason || 'كود التفعيل غير صالح' };
     }
 
-    const cleanCode = code.trim().toUpperCase();
-    setIsAppPurchased(true);
-    setLicenseKey(cleanCode);
+    const matched = res.matchedCode;
+    const cleanCode = matched.code;
+    const now = new Date();
+
+    // Calculate subscription expiration date based on code duration (year or month)
+    let expiresAtIso: string | undefined = undefined;
+    if (matched.duration === '1_year' || cleanCode.toLowerCase() === 'k9_0u') {
+      // 1 Year Subscription: 1 full calendar year from now
+      const expDate = new Date(now.getTime());
+      expDate.setFullYear(expDate.getFullYear() + 1);
+      expiresAtIso = expDate.toISOString();
+    } else if (matched.duration === '1_month' || cleanCode.toLowerCase() === 'k9_0s50') {
+      // 1 Month Subscription: 1 full calendar month from now
+      const expDate = new Date(now.getTime());
+      expDate.setMonth(expDate.getMonth() + 1);
+      expiresAtIso = expDate.toISOString();
+    } else if (matched.durationDays > 0) {
+      const expMs = now.getTime() + matched.durationDays * 24 * 60 * 60 * 1000;
+      expiresAtIso = new Date(expMs).toISOString();
+    } else {
+      expiresAtIso = calculateSubscriptionExpirationDate(matched.duration, now) || undefined;
+    }
+
+    // Enforce single-use: mark code as used in localStorage
+    if (matched.singleUse) {
+      markCodeAsUsed(matched.code, customerInfo);
+    }
+
+    // Store in localStorage
     localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'true');
     localStorage.setItem(STORAGE_KEYS.LICENSE_KEY, cleanCode);
-    localStorage.setItem(STORAGE_KEYS.PURCHASED_AT, new Date().toISOString());
+    localStorage.setItem(STORAGE_KEYS.PURCHASED_AT, now.toISOString());
+    localStorage.setItem(STORAGE_KEYS.LICENSE_TYPE, matched.duration);
+    if (expiresAtIso) {
+      localStorage.setItem(STORAGE_KEYS.LICENSE_EXPIRES_AT, expiresAtIso);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.LICENSE_EXPIRES_AT);
+    }
+    // Update trial expired state in localStorage
+    localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'false');
+
+    // Update React state
+    setIsAppPurchased(true);
+    setLicenseKey(cleanCode);
+    setLicenseExpiresAt(expiresAtIso || null);
+    setIsTrialExpiredState(false);
 
     const updatedLicense: LicenseInfo = {
       isPurchased: true,
       licenseKey: cleanCode,
       licenseStatus: 'active',
-      purchasedAt: new Date().toISOString(),
+      licenseType: matched.duration,
+      licenseDurationLabel: matched.durationLabelAr,
+      purchasedAt: now.toISOString(),
+      licenseExpiresAt: expiresAtIso,
       customerName: customerInfo?.name || settings.storeNameAr,
       customerPhone: customerInfo?.phone || settings.phone
     };
@@ -1153,13 +1291,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsPurchaseModalOpen(false);
 
     notify(
-      'تم شراء وتفعيل التطبيق بنجاح! 👑',
-      'تم ترخيص نسختك بشكل دائم ومدى الحياة لكافة المزايا والعمليات بدون أي قيود تجريبية',
+      'تم تفعيل ترخيص التطبيق بنجاح! 👑',
+      `تم التفعيل بنجاح: ${matched.durationLabelAr}`,
       'success'
     );
 
-    logAudit('تفعيل كود شراء التطبيق', `الكود: ${cleanCode}`, 'high');
-    return { success: true, message: 'تم تفعيل ترخيص التطبيق بنجاح' };
+    logAudit('تفعيل كود ترخيص التطبيق', `نوع الاشتراك: ${matched.durationLabelAr}`, 'high');
+    return { success: true, message: `تم تفعيل ${matched.durationLabelAr} بنجاح` };
   };
 
   // =========================================================================
@@ -4091,6 +4229,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         completeFirstLogin,
         isAppPurchased,
         licenseKey,
+        licenseExpiresAt,
+        licenseRemainingDays,
+        licenseRemainingHours,
+        isLicenseExpired,
+        licenseDurationLabel,
+        isLifetimeLicense,
         trialStartDate,
         trialDaysRemaining,
         trialHoursRemaining,
