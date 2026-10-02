@@ -13,6 +13,7 @@ import {
   Save,
   CheckCircle2,
   Sparkles,
+  HardDrive,
   ShieldAlert,
   Building2,
   ShoppingBag,
@@ -165,7 +166,8 @@ export const SettingsView: React.FC = () => {
     applyButtonLayoutPreset,
     activeThemeColor,
     activePrimaryHex,
-    setThemeColor
+    setThemeColor,
+    openStorageCleanupModal
   } = useApp();
 
   const activeEmail = (
@@ -1171,6 +1173,52 @@ export const SettingsView: React.FC = () => {
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>استعادة البيانات التجريبية الافتراضية</span>
+              </button>
+            </div>
+          </div>
+
+          {/* IndexedDB Storage Health & Smart Cleanup Card */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <HardDrive className="w-4 h-4 text-cyan-500" />
+                <span>إدارة سعة التخزين المحلي (IndexedDB) والتنظيف الاستباقي</span>
+              </h3>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20 self-start sm:self-auto">
+                مراقبة ذكية استباقية
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              يقوم النظام بمراقبة الحصة التخزينية المتاحة في المتصفح تلقائياً، وإطلاق تنبيهات ذكية قبل امتلاء الذاكرة لتفادي أي انقطاع في حفظ الفواتير. يمكنك عرض تقرير السجلات القديمة المزامنة ومسحها بنقرة واحدة لتوفير مساحة إضافية.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={openStorageCleanupModal}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>فتح تقرير وتنظيف التخزين الذكي</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const curr = localStorage.getItem('kian_simulate_low_storage') === 'true';
+                  if (curr) {
+                    localStorage.removeItem('kian_simulate_low_storage');
+                    notify('إلغاء المحاكاة', 'تمت استعادة قراءة المساحة الطبيعية', 'info');
+                  } else {
+                    localStorage.setItem('kian_simulate_low_storage', 'true');
+                    notify('تفعيل محاكاة الذاكرة المنخفضة', 'تم تفعيل تنبيه استباقي (86% استهلاك) للتجربة', 'warning');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                <Sliders className="w-3.5 h-3.5 text-amber-500" />
+                <span>تجربة محاكاة التنبيه الاستباقي (86%)</span>
               </button>
             </div>
           </div>

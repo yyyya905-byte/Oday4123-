@@ -33,7 +33,9 @@ export const DailySalesSummaryWidget: React.FC = () => {
     language,
     notify,
     logAudit,
-    setActiveTab
+    setActiveTab,
+    openShiftModal,
+    activeShift
   } = useApp();
 
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState<boolean>(false);
@@ -160,8 +162,19 @@ export const DailySalesSummaryWidget: React.FC = () => {
             </div>
           </div>
 
-          {/* Action Button: WhatsApp Daily Closing Dispatch */}
+          {/* Action Button: WhatsApp Daily Closing Dispatch & Shift Handover */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="btn-shift-handover-dashboard"
+              onClick={openShiftModal}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+              title="جرد درج الكاشير وتسليم الوردية للمناوب التالي"
+            >
+              <Banknote className="w-4 h-4 text-amber-400" />
+              <span>{activeShift ? `مطابقة الدرج (#${activeShift.shiftNumber})` : 'تسليم الوردية'}</span>
+            </button>
+
             <button
               id="btn-whatsapp-full-closing"
               onClick={() => setIsWhatsAppModalOpen(true)}

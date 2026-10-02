@@ -74,6 +74,56 @@ export interface StorageStats {
   lastSyncTime: string | null;
 }
 
+export interface StoragePurgeCandidateReport {
+  usageBytes: number;
+  quotaBytes: number;
+  freeBytes: number;
+  percentUsed: number;
+  isWarning: boolean;
+  isCritical: boolean;
+  statusLevel: 'healthy' | 'warning' | 'critical';
+  statusMessageAr: string;
+  isSimulatedWarning: boolean;
+  syncedSales: {
+    totalCount: number;
+    totalBytes: number;
+    olderThan30Days: { count: number; bytes: number; sales: Sale[] };
+    olderThan60Days: { count: number; bytes: number; sales: Sale[] };
+    olderThan90Days: { count: number; bytes: number; sales: Sale[] };
+  };
+  syncedQueue: {
+    count: number;
+    bytes: number;
+  };
+  expiredTransfers: {
+    count: number;
+    bytes: number;
+    transfers: DeviceTransferPackage[];
+  };
+  oldAuditLogs: {
+    count: number;
+    bytes: number;
+  };
+  totalCleanableBytes: number;
+}
+
+export interface PurgeOptions {
+  purgeSalesOlderThanDays?: 30 | 60 | 90 | null;
+  purgeSyncedQueue?: boolean;
+  purgeExpiredTransfers?: boolean;
+  purgeOldAuditLogs?: boolean;
+}
+
+export interface PurgeExecutionResult {
+  deletedSalesCount: number;
+  deletedSalesIds: string[];
+  deletedQueueCount: number;
+  deletedTransfersCount: number;
+  deletedLogsCount: number;
+  freedBytes: number;
+  messageAr: string;
+}
+
 class IndexedDbService {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<IDBDatabase> | null = null;
@@ -594,6 +644,324 @@ class IndexedDbService {
     }
   }
 
+  /**
+   * Get all synced queue items
+   */
+  async getSyncedQueueItems(): Promise<OfflineQueueItem[]> {
+    try {
+      const db = await this.getDB();
+      return new Promise((resolve) => {
+        const transaction = db.transaction(['offline_queue'], 'readonly');
+        const store = transaction.objectStore('offline_queue');
+        const index = store.index('status');
+        const request = index.getAll('synced');
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => resolve([]);
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Delete specific sales from IndexedDB by their ID
+   */
+  async deleteSalesByIds(ids: string[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    try {
+      const db = await this.getDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['sales'], 'readwrite');
+        const store = transaction.objectStore('sales');
+        let count = 0;
+        ids.forEach(id => {
+          store.delete(id);
+          count++;
+        });
+        transaction.oncomplete = () => resolve(count);
+        transaction.onerror = () => reject(transaction.error);
+      });
+    } catch (err) {
+      console.warn('Failed to delete sales from IndexedDB:', err);
+      return 0;
+    }
+  }
+
+  /**
+   * Purge expired device transfer packages
+   */
+  async purgeExpiredTransfers(): Promise<number> {
+    try {
+      const db = await this.getDB();
+      const all = await this.getAll<DeviceTransferPackage>('device_transfers');
+      const now = Date.now();
+      const expired = all.filter(t => new Date(t.expiresAt).getTime() < now);
+      if (expired.length === 0) return 0;
+
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['device_transfers'], 'readwrite');
+        const store = transaction.objectStore('device_transfers');
+        expired.forEach(t => store.delete(t.transferCode));
+        transaction.oncomplete = () => resolve(expired.length);
+        transaction.onerror = () => reject(transaction.error);
+      });
+    } catch (err) {
+      console.warn('Failed to purge expired transfers:', err);
+      return 0;
+    }
+  }
+
+  /**
+   * Purge all synced items from the offline mutation queue
+   */
+  async purgeSyncedQueue(): Promise<number> {
+    try {
+      const items = await this.getSyncedQueueItems();
+      if (items.length === 0) return 0;
+      const db = await this.getDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['offline_queue'], 'readwrite');
+        const store = transaction.objectStore('offline_queue');
+        items.forEach(it => {
+          if (it.id) store.delete(it.id);
+        });
+        transaction.oncomplete = () => resolve(items.length);
+        transaction.onerror = () => reject(transaction.error);
+      });
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Generates a smart report on storage usage and candidates for safe cleaning
+   */
+  async getStoragePurgeReport(allSales: Sale[] = []): Promise<StoragePurgeCandidateReport> {
+    const stats = await this.getStorageStats();
+
+    // Check simulation mode flag (stored in localStorage for easy testing)
+    let isSimulatedWarning = false;
+    try {
+      isSimulatedWarning = localStorage.getItem('kian_simulate_low_storage') === 'true';
+    } catch {}
+
+    const now = Date.now();
+    const msInDay = 24 * 60 * 60 * 1000;
+    const cutoff30 = now - 30 * msInDay;
+    const cutoff60 = now - 60 * msInDay;
+    const cutoff90 = now - 90 * msInDay;
+
+    // Filter synced/completed sales by age
+    const sales30: Sale[] = [];
+    const sales60: Sale[] = [];
+    const sales90: Sale[] = [];
+    let totalSyncedCount = 0;
+    let totalSyncedBytes = 0;
+
+    for (const sale of allSales) {
+      if (sale.status === 'completed' || sale.status === 'refunded') {
+        const time = new Date(sale.createdAt).getTime();
+        const saleSize = Math.max(380, JSON.stringify(sale).length * 2);
+        totalSyncedCount++;
+        totalSyncedBytes += saleSize;
+
+        if (time < cutoff90) {
+          sales90.push(sale);
+          sales60.push(sale);
+          sales30.push(sale);
+        } else if (time < cutoff60) {
+          sales60.push(sale);
+          sales30.push(sale);
+        } else if (time < cutoff30) {
+          sales30.push(sale);
+        }
+      }
+    }
+
+    const bytes30 = sales30.reduce((acc, s) => acc + Math.max(380, JSON.stringify(s).length * 2), 0);
+    const bytes60 = sales60.reduce((acc, s) => acc + Math.max(380, JSON.stringify(s).length * 2), 0);
+    const bytes90 = sales90.reduce((acc, s) => acc + Math.max(380, JSON.stringify(s).length * 2), 0);
+
+    // Get synced queue items
+    const syncedQueueItems = await this.getSyncedQueueItems();
+    const syncedQueueBytes = syncedQueueItems.reduce((acc, q) => acc + Math.max(250, JSON.stringify(q).length * 2), 0);
+
+    // Get expired transfers
+    let expiredTransfers: DeviceTransferPackage[] = [];
+    try {
+      const allTransfers = await this.getAll<DeviceTransferPackage>('device_transfers');
+      expiredTransfers = allTransfers.filter(t => new Date(t.expiresAt).getTime() < now);
+    } catch {}
+    const expiredTransfersBytes = expiredTransfers.reduce((acc, t) => acc + Math.max(500, JSON.stringify(t).length * 2), 0);
+
+    // Get old audit logs
+    let oldLogsCount = 0;
+    let oldLogsBytes = 0;
+    try {
+      const logsRaw = localStorage.getItem('kian_pos_audit_logs');
+      if (logsRaw) {
+        const logs = JSON.parse(logsRaw);
+        if (Array.isArray(logs)) {
+          const oldLogs = logs.filter((l: any) => new Date(l.timestamp || l.createdAt).getTime() < cutoff30);
+          oldLogsCount = oldLogs.length;
+          oldLogsBytes = Math.max(120, JSON.stringify(oldLogs).length * 2);
+        }
+      }
+    } catch {}
+
+    const freeBytes = Math.max(0, stats.quotaBytes - stats.usageBytes);
+    let percentUsed = stats.percentUsed;
+    let usageBytes = stats.usageBytes;
+
+    if (isSimulatedWarning) {
+      percentUsed = 86;
+      usageBytes = stats.quotaBytes > 0 ? Math.round(stats.quotaBytes * 0.86) : 215000000;
+    }
+
+    const isCritical = percentUsed >= 90 || (freeBytes > 0 && freeBytes < 8 * 1024 * 1024);
+    const isWarning = isSimulatedWarning || percentUsed >= 75 || (freeBytes > 0 && freeBytes < 30 * 1024 * 1024) || (sales30.length >= 25);
+
+    const statusLevel: 'healthy' | 'warning' | 'critical' = isCritical ? 'critical' : isWarning ? 'warning' : 'healthy';
+    const statusMessageAr = isCritical
+      ? 'مساحة تخزين حرجة جداً! يلزم تنظيف البيانات القديمة فوراً لتفادي توقف حفظ الفواتير.'
+      : isWarning
+      ? 'تنبيه استباقي: المساحة التخزينية تقترب من حد الامتلاء. يُوصى بتنظيف السجلات القديمة المزامنة.'
+      : 'حالة التخزين ممتازة ومستقرة. لا توجد مخاطر حالية لنفاد المساحة.';
+
+    const totalCleanableBytes = bytes30 + syncedQueueBytes + expiredTransfersBytes + oldLogsBytes;
+
+    return {
+      usageBytes,
+      quotaBytes: stats.quotaBytes,
+      freeBytes,
+      percentUsed,
+      isWarning,
+      isCritical,
+      statusLevel,
+      statusMessageAr,
+      isSimulatedWarning,
+      syncedSales: {
+        totalCount: totalSyncedCount,
+        totalBytes: totalSyncedBytes,
+        olderThan30Days: { count: sales30.length, bytes: bytes30, sales: sales30 },
+        olderThan60Days: { count: sales60.length, bytes: bytes60, sales: sales60 },
+        olderThan90Days: { count: sales90.length, bytes: bytes90, sales: sales90 },
+      },
+      syncedQueue: {
+        count: syncedQueueItems.length,
+        bytes: syncedQueueBytes,
+      },
+      expiredTransfers: {
+        count: expiredTransfers.length,
+        bytes: expiredTransfersBytes,
+        transfers: expiredTransfers,
+      },
+      oldAuditLogs: {
+        count: oldLogsCount,
+        bytes: oldLogsBytes,
+      },
+      totalCleanableBytes,
+    };
+  }
+
+  /**
+   * Execute selective data purge based on user choices
+   */
+  async executePurge(options: PurgeOptions, allSales: Sale[] = []): Promise<PurgeExecutionResult> {
+    let deletedSalesCount = 0;
+    const deletedSalesIds: string[] = [];
+    let freedSalesBytes = 0;
+    let deletedQueueCount = 0;
+    let freedQueueBytes = 0;
+    let deletedTransfersCount = 0;
+    let freedTransfersBytes = 0;
+    let deletedLogsCount = 0;
+    let freedLogsBytes = 0;
+
+    const now = Date.now();
+    const msInDay = 24 * 60 * 60 * 1000;
+
+    // 1. Purge sales older than specified days
+    if (options.purgeSalesOlderThanDays && options.purgeSalesOlderThanDays > 0) {
+      const cutoff = now - options.purgeSalesOlderThanDays * msInDay;
+      const salesToPurge = allSales.filter(sale => {
+        if (sale.status !== 'completed' && sale.status !== 'refunded') return false;
+        const time = new Date(sale.createdAt).getTime();
+        return time < cutoff;
+      });
+
+      if (salesToPurge.length > 0) {
+        const ids = salesToPurge.map(s => s.id);
+        deletedSalesCount = await this.deleteSalesByIds(ids);
+        deletedSalesIds.push(...ids);
+        freedSalesBytes = salesToPurge.reduce((acc, s) => acc + Math.max(380, JSON.stringify(s).length * 2), 0);
+      }
+    }
+
+    // 2. Purge synced queue items
+    if (options.purgeSyncedQueue) {
+      const queueItems = await this.getSyncedQueueItems();
+      freedQueueBytes = queueItems.reduce((acc, q) => acc + Math.max(250, JSON.stringify(q).length * 2), 0);
+      deletedQueueCount = await this.purgeSyncedQueue();
+    }
+
+    // 3. Purge expired transfers
+    if (options.purgeExpiredTransfers) {
+      try {
+        const allTransfers = await this.getAll<DeviceTransferPackage>('device_transfers');
+        const expired = allTransfers.filter(t => new Date(t.expiresAt).getTime() < now);
+        freedTransfersBytes = expired.reduce((acc, t) => acc + Math.max(500, JSON.stringify(t).length * 2), 0);
+        deletedTransfersCount = await this.purgeExpiredTransfers();
+      } catch (e) {
+        console.warn('Error purging expired transfers:', e);
+      }
+    }
+
+    // 4. Purge old audit logs
+    if (options.purgeOldAuditLogs) {
+      try {
+        const logsRaw = localStorage.getItem('kian_pos_audit_logs');
+        if (logsRaw) {
+          const logs = JSON.parse(logsRaw);
+          if (Array.isArray(logs)) {
+            const cutoff30 = now - 30 * msInDay;
+            const remainingLogs = logs.filter((l: any) => new Date(l.timestamp || l.createdAt).getTime() >= cutoff30);
+            deletedLogsCount = logs.length - remainingLogs.length;
+            freedLogsBytes = Math.max(120, (logs.length - remainingLogs.length) * 160);
+            localStorage.setItem('kian_pos_audit_logs', JSON.stringify(remainingLogs));
+          }
+        }
+      } catch (e) {
+        console.warn('Error purging old logs:', e);
+      }
+    }
+
+    // Clear simulation if it was active
+    try {
+      localStorage.removeItem('kian_simulate_low_storage');
+    } catch {}
+
+    const totalFreedBytes = freedSalesBytes + freedQueueBytes + freedTransfersBytes + freedLogsBytes;
+    const parts: string[] = [];
+    if (deletedSalesCount > 0) parts.push(`${deletedSalesCount} فاتورة قديمة`);
+    if (deletedQueueCount > 0) parts.push(`${deletedQueueCount} معاملة أوفلاين متزامنة`);
+    if (deletedTransfersCount > 0) parts.push(`${deletedTransfersCount} حزمة نقل منتهية`);
+    if (deletedLogsCount > 0) parts.push(`${deletedLogsCount} سجل تدقيق قديم`);
+
+    const summaryParts = parts.length > 0 ? parts.join('، و') : 'العناصر المحددة';
+    const messageAr = `تم إتمام التنظيف بنجاح: تم حذف (${summaryParts}) وتوفير ما يقارب ${formatStorageSize(totalFreedBytes)} من المساحة التخزينية.`;
+
+    return {
+      deletedSalesCount,
+      deletedSalesIds,
+      deletedQueueCount,
+      deletedTransfersCount,
+      deletedLogsCount,
+      freedBytes: totalFreedBytes,
+      messageAr
+    };
+  }
+
   // --- Generic Helpers ---
 
   private async bulkPut<T>(storeName: string, items: T[]): Promise<void> {
@@ -650,4 +1018,22 @@ export function formatStorageSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+export function downloadJsonBackup(data: any, fileNamePrefix: string = 'kian_storage_backup'): void {
+  try {
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `${fileNamePrefix}_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Failed to export backup file:', err);
+  }
 }

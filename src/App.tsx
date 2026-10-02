@@ -31,7 +31,12 @@ import { GlobalSearchModal } from './components/modals/GlobalSearchModal';
 import { ModeSelectionModal } from './components/modals/ModeSelectionModal';
 import { FirstTimeLoginModal } from './components/modals/FirstTimeLoginModal';
 import { AppPurchaseModal } from './components/modals/AppPurchaseModal';
+import { SubscriptionAlertToast } from './components/common/SubscriptionAlertToast';
 import { ButtonLayoutModal } from './components/modals/ButtonLayoutModal';
+import { StorageCleanupReportModal } from './components/modals/StorageCleanupReportModal';
+import { StorageProactiveAlertToast } from './components/common/StorageProactiveAlertToast';
+import { ShiftHandoverModal } from './components/modals/ShiftHandoverModal';
+import { PromotionsModal } from './components/modals/PromotionsModal';
 import { FloatingActionHub } from './components/common/FloatingActionHub';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LongPressProvider } from './components/common/LongPressTooltip';
@@ -57,6 +62,13 @@ const AppContent: React.FC = () => {
     setIsDataTransferModalOpen,
     isConnectToCashierModalOpen,
     setIsConnectToCashierModalOpen,
+    isStorageCleanupModalOpen,
+    setIsStorageCleanupModalOpen,
+    openStorageCleanupModal,
+    isShiftModalOpen,
+    setIsShiftModalOpen,
+    isPromotionsModalOpen,
+    setIsPromotionsModalOpen,
     offlineQueueCount,
     isSyncingOffline,
     syncOfflineQueueNow,
@@ -207,6 +219,30 @@ const AppContent: React.FC = () => {
         onOpenPurchaseModal={() => setIsPurchaseModalOpen(true)}
       />
 
+      {/* Subscription & Trial Alert Toast on App Opening */}
+      <SubscriptionAlertToast />
+
+      {/* Proactive Low Storage Warning Toast & Smart Cleaner */}
+      <StorageProactiveAlertToast onOpenCleanupModal={openStorageCleanupModal} />
+
+      {/* Smart Storage Cleanup & Report Modal */}
+      <StorageCleanupReportModal
+        isOpen={isStorageCleanupModalOpen}
+        onClose={() => setIsStorageCleanupModalOpen(false)}
+      />
+
+      {/* Cash Drawer Balancing & Shift Handover Modal */}
+      <ShiftHandoverModal
+        isOpen={isShiftModalOpen}
+        onClose={() => setIsShiftModalOpen(false)}
+      />
+
+      {/* Smart Promotions & Dynamic Deals Modal */}
+      <PromotionsModal
+        isOpen={isPromotionsModalOpen}
+        onClose={() => setIsPromotionsModalOpen(false)}
+      />
+
       {/* App Purchase Code Activation Modal */}
       <AppPurchaseModal
         isOpen={isPurchaseModalOpen}
@@ -252,6 +288,7 @@ const AppContent: React.FC = () => {
           {/* Embedded Data-Usage Summary Widget */}
           <DataUsageSummaryWidget
             onOpenDataTransfer={() => setIsDataTransferModalOpen(true)}
+            onOpenStorageCleanup={openStorageCleanupModal}
           />
 
           <div className="flex items-center gap-1.5 border-s border-slate-700 ps-2">

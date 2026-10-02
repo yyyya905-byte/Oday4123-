@@ -4,9 +4,13 @@ import {
   Wrench,
   X,
   Coins,
+  Banknote,
+  Tag,
+  Calculator,
   Barcode as BarcodeIcon,
   Radio,
   ArrowLeftRight,
+  HardDrive,
   Cloud,
   Sparkles,
   Leaf,
@@ -61,7 +65,11 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
     devices,
     currentUser,
     setIsDataTransferModalOpen,
-    setIsButtonCustomizerModalOpen
+    setIsButtonCustomizerModalOpen,
+    openStorageCleanupModal,
+    openShiftModal,
+    openPromotionsModal,
+    activeShift
   } = useApp();
 
   if (!isOpen) return null;
@@ -190,6 +198,62 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
                 </div>
               </button>
 
+              {/* Shift Handover & Cash Drawer Balancing */}
+              <button
+                type="button"
+                onClick={() => handleToolAction(() => openShiftModal())}
+                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-emerald-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all text-start cursor-pointer group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Banknote className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {language === 'ar' ? 'إدارة وتسليم الوردية ومطابقة الدرج' : 'Shift Handover & Cash Drawer'}
+                    </h4>
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                      activeShift
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                    }`}>
+                      {activeShift ? (language === 'ar' ? `وردية #${activeShift.shiftNumber}` : `Shift #${activeShift.shiftNumber}`) : (language === 'ar' ? 'لا توجد وردية' : 'Inactive')}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    {language === 'ar'
+                      ? 'متابعة النقد لحظياً، عد الفئات، كشف العجز والفائض، وطباعة إيصال التسليم'
+                      : 'Live drawer balance, denomination counter, and shift closing slips'}
+                  </p>
+                </div>
+              </button>
+
+              {/* Smart Promotions & Deals */}
+              <button
+                type="button"
+                onClick={() => handleToolAction(() => openPromotionsModal())}
+                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-rose-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-rose-300 dark:hover:border-rose-700 transition-all text-start cursor-pointer group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {language === 'ar' ? 'العروض الترويجية والخصومات الذكية' : 'Smart Promotions & Deals'}
+                    </h4>
+                    <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded-md">
+                      BOGO / %
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    {language === 'ar'
+                      ? 'خصومات سلة المشتريات التلقائية، وعروض اشترِ واحصل على هدية مجاناً'
+                      : 'Volume thresholds, buy-x-get-y, and category bundle discounts'}
+                  </p>
+                </div>
+              </button>
+
               {/* Barcode Designer & Label Printer */}
               <button
                 type="button"
@@ -272,6 +336,32 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
                     {language === 'ar'
                       ? 'تصدير ونقل المنتجات والفواتير فورياً لجهاز آخر عبر QR أو الرمز'
                       : 'Send or receive store database using direct pairing code'}
+                  </p>
+                </div>
+              </button>
+
+              {/* Storage Health & Smart Cleanup */}
+              <button
+                type="button"
+                onClick={() => handleToolAction(() => openStorageCleanupModal())}
+                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-cyan-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-cyan-300 dark:hover:border-cyan-700 transition-all text-start cursor-pointer group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {language === 'ar' ? 'تقرير وتنظيف الذاكرة الذكي' : 'Smart Storage & Cleaner'}
+                    </h4>
+                    <span className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-1.5 py-0.5 rounded-md">
+                      IndexedDB
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    {language === 'ar'
+                      ? 'مراقبة سعة الذاكرة، والتنبيه الاستباقي قبل النفاد، ومسح الفواتير القديمة بأمان'
+                      : 'Monitor storage quota, proactive low-memory alerts, and safe data purge'}
                   </p>
                 </div>
               </button>

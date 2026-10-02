@@ -775,3 +775,65 @@ export type ActiveTab =
   | 'settings'
   | 'about';
 
+// --- Cash Drawer & Shift Management Types ---
+export interface CashShiftTransaction {
+  id: string;
+  type: 'cash_in' | 'cash_out' | 'sale' | 'refund' | 'debt_payment' | 'opening';
+  amount: number;
+  reason?: string;
+  performedBy: string;
+  timestamp: string;
+  referenceId?: string;
+}
+
+export interface CashShift {
+  id: string;
+  shiftNumber: number;
+  cashierId: string;
+  cashierName: string;
+  openedAt: string;
+  closedAt?: string;
+  status: 'open' | 'closed';
+  openingFloat: number; // عهدة البداية
+  cashIn: number; // إيداعات إضافية
+  cashOut: number; // مسحوبات نقدية
+  cashSales: number; // مبيعات الكاش
+  cardSales: number; // مبيعات الشبكة والبطاقات
+  creditSales: number; // مبيعات الآجل
+  debtCashCollected: number; // مقبوضات الديون النقدية
+  refundsCash: number; // مرتجعات نقدية
+  expensesCash: number; // مصروفات نقدية مسددة
+  expectedCash: number; // النقد المتوقع في الدرج
+  actualCash?: number; // النقد الفعلي المحصي عند الجرد
+  discrepancy?: number; // actualCash - expectedCash (0 = مطابق, >0 فائض, <0 عجز)
+  discrepancyReason?: string;
+  closingNotes?: string;
+  handoverToCashierId?: string;
+  handoverToCashierName?: string;
+  denominationCounts?: Record<string, number>;
+  transactions?: CashShiftTransaction[];
+}
+
+// --- Smart Promotions & Combo Deals Types ---
+export type PromotionType = 'buy_x_get_y' | 'bundle_discount' | 'spend_threshold' | 'category_discount';
+
+export interface PromotionDeal {
+  id: string;
+  title: string;
+  description: string;
+  dealType: PromotionType;
+  isActive: boolean;
+  validFrom: string;
+  validTo: string;
+  badgeText: string;
+  minOrderTotal?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  buyQuantity?: number;
+  getQuantity?: number;
+  targetProductIds?: string[];
+  targetCategoryIds?: string[];
+  usageCount: number;
+}
+
+

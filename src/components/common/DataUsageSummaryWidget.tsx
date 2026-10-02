@@ -15,19 +15,23 @@ import {
   Wifi,
   CheckCircle2,
   ArrowLeftRight,
-  Info
+  Info,
+  Sparkles,
+  AlertTriangle
 } from 'lucide-react';
 
 interface DataUsageSummaryWidgetProps {
   compact?: boolean;
   className?: string;
   onOpenDataTransfer?: () => void;
+  onOpenStorageCleanup?: () => void;
 }
 
 export const DataUsageSummaryWidget: React.FC<DataUsageSummaryWidgetProps> = ({
   compact = false,
   className = '',
-  onOpenDataTransfer
+  onOpenDataTransfer,
+  onOpenStorageCleanup
 }) => {
   const {
     offlineQueueCount,
@@ -63,24 +67,43 @@ export const DataUsageSummaryWidget: React.FC<DataUsageSummaryWidgetProps> = ({
   const usedBytes = stats?.usageBytes || 0;
   const formattedSize = formatStorageSize(usedBytes);
 
+  let isLowStorage = false;
+  try {
+    const isSimulated = localStorage.getItem('kian_simulate_low_storage') === 'true';
+    isLowStorage = isSimulated || (stats ? stats.percentUsed >= 75 : false);
+  } catch {}
+
   return (
     <div className={`relative font-sans select-none ${className}`}>
       {/* Main compact pill/bar */}
-      <div className="flex items-center gap-2 py-1 px-2 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-white transition-all shadow-xs">
+      <div className={`flex items-center gap-2 py-1 px-2 rounded-xl transition-all shadow-xs ${
+        isLowStorage 
+          ? 'bg-amber-950/90 hover:bg-amber-950 border border-amber-500/80 text-white' 
+          : 'bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-white'
+      }`}>
         {/* Storage Size Indicator */}
         <div 
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex items-center gap-1.5 cursor-pointer hover:text-cyan-300 transition-colors"
-          title="انقر لعرض تفاصيل استهلاك التخزين المحلي والعمليات المعلقة"
+          title="انقر لعرض تفاصيل استهلاك التخزين المحلي والتقرير الذكي"
         >
-          <HardDrive className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          {isLowStorage ? (
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
+          ) : (
+            <HardDrive className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          )}
           <div className="flex items-center gap-1 text-[11px]">
             <span className="text-slate-300 hidden sm:inline">
-              {language === 'ar' ? 'تخزين IndexedDB:' : 'IndexedDB:'}
+              {language === 'ar' ? 'IndexedDB:' : 'IndexedDB:'}
             </span>
-            <span className="font-mono font-black text-cyan-300">
+            <span className={`font-mono font-black ${isLowStorage ? 'text-amber-300' : 'text-cyan-300'}`}>
               {formattedSize}
             </span>
+            {isLowStorage && (
+              <span className="text-[9px] px-1 py-0.2 rounded-full bg-amber-500 text-slate-950 font-bold hidden sm:inline">
+                {language === 'ar' ? 'تنبيه' : 'Alert'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -193,33 +216,49 @@ export const DataUsageSummaryWidget: React.FC<DataUsageSummaryWidgetProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2 pt-1">
-            {isOnline && offlineQueueCount > 0 && (
-              <button
-                type="button"
-                onClick={syncOfflineQueueNow}
-                disabled={isSyncingOffline}
-                className="flex-1 py-1.5 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
-                <span>{isSyncingOffline ? (language === 'ar' ? 'جارِ المزامنة...' : 'Syncing...') : (language === 'ar' ? 'مزامنة المعاملات الآن' : 'Sync Batch Now')}</span>
-              </button>
-            )}
-
-            {onOpenDataTransfer && (
+          <div className="flex flex-col gap-1.5 pt-1">
+            {onOpenStorageCleanup && (
               <button
                 type="button"
                 onClick={() => {
                   setIsExpanded(false);
-                  onOpenDataTransfer();
+                  onOpenStorageCleanup();
                 }}
-                className="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                title="نقل وتصدير البيانات لجهاز آخر"
+                className="w-full py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
               >
-                <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-400" />
-                <span>{language === 'ar' ? 'نقل بكود' : 'Transfer'}</span>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{language === 'ar' ? 'تقرير وتنظيف الذاكرة الذكي' : 'Storage Report & Cleanup'}</span>
               </button>
             )}
+
+            <div className="flex items-center gap-2">
+              {isOnline && offlineQueueCount > 0 && (
+                <button
+                  type="button"
+                  onClick={syncOfflineQueueNow}
+                  disabled={isSyncingOffline}
+                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingOffline ? (language === 'ar' ? 'جارِ المزامنة...' : 'Syncing...') : (language === 'ar' ? 'مزامنة المعاملات الآن' : 'Sync Batch Now')}</span>
+                </button>
+              )}
+
+              {onOpenDataTransfer && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExpanded(false);
+                    onOpenDataTransfer();
+                  }}
+                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="نقل وتصدير البيانات لجهاز آخر"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>{language === 'ar' ? 'نقل بكود' : 'Transfer'}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

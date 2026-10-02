@@ -44,8 +44,11 @@ import {
   Folder,
   Edit3,
   Bluetooth,
-  Sliders
+  Sliders,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+import { voiceAnnouncer } from '../../services/voiceAnnouncer';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { CustomerQRScannerModal } from './CustomerQRScannerModal';
 import { PaymentModal } from './PaymentModal';
@@ -97,7 +100,13 @@ export const POSView: React.FC = () => {
     sales,
     navigateToReturnWithInvoice,
     setIsButtonCustomizerModalOpen,
+    openShiftModal,
+    openPromotionsModal,
+    activeShift,
+    promotions,
   } = useApp();
+
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => voiceAnnouncer.isEnabled());
 
   const [selectedCategory, setSelectedCategory] = useState<string>('cat_all');
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
@@ -469,6 +478,34 @@ export const POSView: React.FC = () => {
   const taxableAmount = Math.max(0, subtotal - totalDiscount);
   const taxAmount = settings.enableTax ? (taxableAmount * (settings.defaultTaxRate || 0)) / 100 : 0;
   const grandTotal = Math.round(taxableAmount + taxAmount);
+
+  // Smart Banknote Suggestions for Speed Cash Checkout
+  const quickBanknotes = useMemo(() => {
+    if (grandTotal <= 0) return [];
+    const results: { amount: number; change: number }[] = [];
+    const standardTiers = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+    
+    for (const tier of standardTiers) {
+      if (tier > grandTotal && results.length < 3) {
+        results.push({
+          amount: tier,
+          change: tier - grandTotal
+        });
+      }
+    }
+
+    if (results.length < 2) {
+      const nextRound = Math.ceil(grandTotal / 1000) * 1000;
+      if (nextRound > grandTotal && !results.some(r => r.amount === nextRound)) {
+        results.push({
+          amount: nextRound,
+          change: nextRound - grandTotal
+        });
+      }
+    }
+
+    return results;
+  }, [grandTotal]);
 
   // Total items in cart
   const cartItemsCount = cart.reduce((sum, it) => sum + it.quantity, 0);
@@ -1370,6 +1407,32 @@ export const POSView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Shift Quick Status & Open Modal */}
+            <button
+              type="button"
+              onClick={openShiftModal}
+              data-longpress-title={language === 'ar' ? 'إدارة وتسليم الوردية' : 'Shift Handover'}
+              data-longpress-desc={language === 'ar' ? 'عرض رصيد الدرج، تسجيل إيداع/سحب، وجرد الصندوق لتسليم الوردية.' : 'View live drawer balance and manage cashier shifts.'}
+              className="p-2 min-h-[36px] rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/50 text-slate-700 hover:text-emerald-700 dark:text-slate-300 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95"
+              title={language === 'ar' ? 'إدارة الوردية والدرج' : 'Shift Manager'}
+            >
+              <Banknote className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden xl:inline">{activeShift ? `وردية #${activeShift.shiftNumber}` : (language === 'ar' ? 'الوردية' : 'Shift')}</span>
+            </button>
+
+            {/* Smart Promotions Shortcut */}
+            <button
+              type="button"
+              onClick={openPromotionsModal}
+              data-longpress-title={language === 'ar' ? 'العروض الترويجية والخصومات' : 'Promotions'}
+              data-longpress-desc={language === 'ar' ? 'إدارة وتفعيل خصومات سلة المشتريات وعروض الهدايا التلقائية.' : 'Manage automatic bundle and cart discounts.'}
+              className="p-2 min-h-[36px] rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95"
+              title={language === 'ar' ? 'العروض الترويجية' : 'Promotions'}
+            >
+              <Tag className="w-3.5 h-3.5 text-rose-500" />
+              <span className="hidden xl:inline">{promotions.filter(p => p.isActive).length > 0 ? `${promotions.filter(p => p.isActive).length} عروض` : (language === 'ar' ? 'عروض' : 'Deals')}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setActiveTab('ai')}
@@ -1756,6 +1819,72 @@ export const POSView: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* Quick Cash & Banknote Speed Bar for Peak Hours */}
+          {cart.length > 0 && (
+            <div className="pt-2 pb-1 space-y-1.5 border-t border-slate-200/80 dark:border-slate-800">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1">
+                  <Zap className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                  <span>{language === 'ar' ? 'مسار الدفع السريع بالنقد:' : 'Speed Cash Shortcuts:'}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newState = voiceAnnouncer.toggle();
+                    setIsVoiceEnabled(newState);
+                    if (newState) {
+                      voiceAnnouncer.testVoice(language === 'ar' ? 'ar' : 'en');
+                    }
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
+                    isVoiceEnabled
+                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
+                  }`}
+                  title={isVoiceEnabled ? 'المساعد الصوتي لنطق الفاتورة مفعل' : 'تفعيل المساعد الصوتي'}
+                >
+                  {isVoiceEnabled ? <Volume2 className="w-3 h-3 text-amber-500" /> : <VolumeX className="w-3 h-3" />}
+                  <span>{isVoiceEnabled ? (language === 'ar' ? 'مساعد ناطق' : 'Voice On') : (language === 'ar' ? 'صامت' : 'Muted')}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                {/* Exact Cash Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playCash();
+                    setIsPaymentModalOpen(true);
+                  }}
+                  className="px-2 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs"
+                  title="دفع نقد مضبوط بالضبط"
+                >
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{language === 'ar' ? 'نقد مضبوط' : 'Exact Cash'}</span>
+                  <span className="font-mono">{formatCurrency(grandTotal)}</span>
+                </button>
+
+                {/* Rounded Banknotes */}
+                {quickBanknotes.map((note) => (
+                  <button
+                    key={note.amount}
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playCash();
+                      setIsPaymentModalOpen(true);
+                    }}
+                    className="px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300 dark:hover:border-amber-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs"
+                    title={`استلام ورقة ${note.amount} — الباقي ${note.change}`}
+                  >
+                    <span className="font-mono">{note.amount.toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                      {language === 'ar' ? `باقي: ${note.change.toLocaleString()}` : `Chg: ${note.change.toLocaleString()}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Restaurant Quick KOT Kitchen Print Button + Main Pay Button */}
           <div className={`flex items-center gap-2 pt-1 ${

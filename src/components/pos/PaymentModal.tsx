@@ -22,6 +22,7 @@ import {
 import { PrintableReceiptModal } from './PrintableReceiptModal';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
 import { isLebaneseCurrency, LEBANESE_QUICK_BANKNOTES, LEBANESE_INCREMENT_BUTTONS } from '../../utils/currencyUtils';
+import { voiceAnnouncer } from '../../services/voiceAnnouncer';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -159,6 +160,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setCompletedSale(sale);
       setIsReceiptOpen(true);
       onClose();
+
+      // Smart Voice Announcer of Receipt Total
+      try {
+        voiceAnnouncer.announceSale(sale.total, settings.currency.symbol, language === 'ar' ? 'ar' : 'en');
+      } catch {}
     }
   };
 

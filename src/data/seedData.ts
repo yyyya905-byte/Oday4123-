@@ -12,7 +12,9 @@ import {
   WholesaleWarehouse,
   DeliveryVehicle,
   VehicleLoadingManifest,
-  ButtonLayoutConfig
+  ButtonLayoutConfig,
+  CashShift,
+  PromotionDeal
 } from '../types';
 
 export const defaultButtonLayout: ButtonLayoutConfig = {
@@ -1412,6 +1414,124 @@ export const initialDebtTransactions: DebtTransaction[] = [
     notes: 'سداد فاتورة شحنة المياه نصف الشهرية',
     recordedBy: 'عدي الزعبي',
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4).toISOString(),
+  }
+];
+
+export const initialShifts: CashShift[] = [
+  {
+    id: 'shift_101',
+    shiftNumber: 101,
+    cashierId: 'usr_1',
+    cashierName: 'عمر كيان (المدير العام)',
+    openedAt: new Date(Date.now() - 1000 * 60 * 60 * 3.5).toISOString(),
+    status: 'open',
+    openingFloat: 100000,
+    cashIn: 0,
+    cashOut: 0,
+    cashSales: 185000,
+    cardSales: 45000,
+    creditSales: 25000,
+    debtCashCollected: 50000,
+    refundsCash: 0,
+    expensesCash: 15000,
+    expectedCash: 320000, // 100000 + 185000 + 50000 - 15000
+    transactions: [
+      {
+        id: 'st_1',
+        type: 'opening',
+        amount: 100000,
+        reason: 'رصيد العهدة النقدية الافتتاحي للدرج',
+        performedBy: 'عمر كيان',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 3.5).toISOString(),
+      },
+      {
+        id: 'st_2',
+        type: 'debt_payment',
+        amount: 50000,
+        reason: 'قبض دفعة نقدية من حساب عميل',
+        performedBy: 'عمر كيان',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      },
+      {
+        id: 'st_3',
+        type: 'cash_out',
+        amount: 15000,
+        reason: 'شراء ضيافة ومستلزمات نظافة للمحل',
+        performedBy: 'عمر كيان',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(),
+      }
+    ]
+  },
+  {
+    id: 'shift_100',
+    shiftNumber: 100,
+    cashierId: 'usr_2',
+    cashierName: 'سارة أحمد',
+    openedAt: new Date(Date.now() - 1000 * 60 * 60 * 28).toISOString(),
+    closedAt: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString(),
+    status: 'closed',
+    openingFloat: 75000,
+    cashIn: 0,
+    cashOut: 0,
+    cashSales: 340000,
+    cardSales: 110000,
+    creditSales: 60000,
+    debtCashCollected: 40000,
+    refundsCash: 5000,
+    expensesCash: 20000,
+    expectedCash: 430000,
+    actualCash: 430000,
+    discrepancy: 0,
+    discrepancyReason: 'الجرد متطابق 100%',
+    closingNotes: 'تم تسليم الصندوق بحالة ممتازة إلى الوردية المسائية',
+    handoverToCashierName: 'عمر كيان',
+    denominationCounts: {
+      '5000': 60,
+      '2000': 50,
+      '1000': 30
+    }
+  }
+];
+
+export const initialPromotions: PromotionDeal[] = [
+  {
+    id: 'promo_1',
+    title: 'عرض الفاتورة الذهبية (خصم 10%)',
+    description: 'خصم فوري بنسبة 10% عند تجاوز إجمالي الفاتورة 100,000 ل.س',
+    dealType: 'spend_threshold',
+    isActive: true,
+    validFrom: '2026-01-01',
+    validTo: '2026-12-31',
+    badgeText: 'وفر 10%',
+    minOrderTotal: 100000,
+    discountPercent: 10,
+    usageCount: 14
+  },
+  {
+    id: 'promo_2',
+    title: 'عرض اشترِ 2 واحصل على 1 مجاناً',
+    description: 'عند شراء قطعتين من أي منتج مؤهل تحصل على القطعة الثالثة مجاناً',
+    dealType: 'buy_x_get_y',
+    isActive: true,
+    validFrom: '2026-01-01',
+    validTo: '2026-12-31',
+    badgeText: '2 + 1 مجاناً',
+    buyQuantity: 2,
+    getQuantity: 1,
+    usageCount: 8
+  },
+  {
+    id: 'promo_3',
+    title: 'خصم حزمة التوفير العائلية',
+    description: 'خصم مباشر بقيمة 15,000 ل.س على الفواتير التي تتجاوز 150,000 ل.س',
+    dealType: 'bundle_discount',
+    isActive: false,
+    validFrom: '2026-01-01',
+    validTo: '2026-12-31',
+    badgeText: 'خصم 15,000',
+    minOrderTotal: 150000,
+    discountAmount: 15000,
+    usageCount: 5
   }
 ];
 

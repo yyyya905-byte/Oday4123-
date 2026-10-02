@@ -38,7 +38,11 @@ import {
   LicenseInfo,
   ButtonLayoutConfig,
   ButtonLayoutPreset,
-  ThemeColorPreset
+  ThemeColorPreset,
+  CashShift,
+  CashShiftTransaction,
+  PromotionDeal,
+  PromotionType
 } from '../types';
 import {
   applyThemeColor,
@@ -69,7 +73,9 @@ import {
   initialAuditLogs,
   initialWholesaleWarehouses,
   initialDeliveryVehicles,
-  initialVehicleManifests
+  initialVehicleManifests,
+  initialShifts,
+  initialPromotions
 } from '../data/seedData';
 import { translations, Language } from '../i18n/translations';
 import { soundEffects } from '../services/audio';
@@ -254,7 +260,7 @@ interface AppContextType {
   isTrialExpired: boolean;
   isPurchaseModalOpen: boolean;
   setIsPurchaseModalOpen: (open: boolean) => void;
-  activatePurchaseCode: (code: string, customerInfo?: { name?: string; phone?: string }) => { success: boolean; message: string };
+  activatePurchaseCode: (code: string, customerInfo?: { name?: string; phone?: string; customExpiresAtIso?: string }) => { success: boolean; message: string; newExpiresAt?: string };
 
   // Authentication & Staff
   currentUser: User;
@@ -429,6 +435,30 @@ interface AppContextType {
   isSyncingOffline: boolean;
   syncOfflineQueueNow: () => Promise<void>;
   refreshOfflineQueueCount: () => Promise<void>;
+  isStorageCleanupModalOpen: boolean;
+  setIsStorageCleanupModalOpen: (open: boolean) => void;
+  openStorageCleanupModal: () => void;
+
+  // Cash Drawer & Shift Management
+  shifts: CashShift[];
+  activeShift: CashShift | null;
+  isShiftModalOpen: boolean;
+  setIsShiftModalOpen: (open: boolean) => void;
+  openShiftModal: () => void;
+  startNewShift: (openingFloat: number, notes?: string) => CashShift;
+  recordShiftCashMovement: (type: 'cash_in' | 'cash_out', amount: number, reason: string) => void;
+  closeShift: (actualCash: number, closingNotes?: string, denominationCounts?: Record<string, number>, handoverCashierName?: string) => CashShift;
+
+  // Smart Promotions & Bundle Deals
+  promotions: PromotionDeal[];
+  isPromotionsModalOpen: boolean;
+  setIsPromotionsModalOpen: (open: boolean) => void;
+  openPromotionsModal: () => void;
+  addPromotion: (promo: Omit<PromotionDeal, 'id' | 'usageCount'>) => PromotionDeal;
+  updatePromotion: (id: string, partial: Partial<PromotionDeal>) => void;
+  deletePromotion: (id: string) => void;
+  togglePromotionActive: (id: string) => void;
+  calculateCartPromotions: (cartItems: CartItem[], subtotal: number) => { appliedPromotion: PromotionDeal | null; discountAmount: number; finalTotal: number };
 
   // Saved Device & Auto-Sync Engine (مزامنة تلقائية وحفظ الأجهزة)
   isSyncingWithPartner: boolean;
@@ -498,6 +528,9 @@ const STORAGE_KEYS = {
   TRIAL_START_DATE: 'kian_trial_start_date',
   PURCHASED_AT: 'kian_purchased_at',
   IS_TRIAL_EXPIRED: 'kian_pos_is_trial_expired',
+  CASH_SHIFTS: 'kian_pos_cash_shifts',
+  ACTIVE_SHIFT_ID: 'kian_pos_active_shift_id',
+  PROMOTIONS: 'kian_pos_promotions',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -1220,7 +1253,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const activatePurchaseCode = (code: string, customerInfo?: { name?: string; phone?: string }): { success: boolean; message: string } => {
+  const activatePurchaseCode = (
+    code: string,
+    customerInfo?: { name?: string; phone?: string; customExpiresAtIso?: string }
+  ): { success: boolean; message: string; newExpiresAt?: string } => {
     const res = validateLicenseCode(code, licenseKey);
     if (!res.valid || !res.matchedCode) {
       soundEffects.playWarning();
@@ -1231,23 +1267,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanCode = matched.code;
     const now = new Date();
 
-    // Calculate subscription expiration date based on code duration (year or month)
-    let expiresAtIso: string | undefined = undefined;
-    if (matched.duration === '1_year' || cleanCode.toLowerCase() === 'k9_0u') {
-      // 1 Year Subscription: 1 full calendar year from now
-      const expDate = new Date(now.getTime());
-      expDate.setFullYear(expDate.getFullYear() + 1);
-      expiresAtIso = expDate.toISOString();
-    } else if (matched.duration === '1_month' || cleanCode.toLowerCase() === 'k9_0s50') {
-      // 1 Month Subscription: 1 full calendar month from now
-      const expDate = new Date(now.getTime());
-      expDate.setMonth(expDate.getMonth() + 1);
-      expiresAtIso = expDate.toISOString();
-    } else if (matched.durationDays > 0) {
-      const expMs = now.getTime() + matched.durationDays * 24 * 60 * 60 * 1000;
-      expiresAtIso = new Date(expMs).toISOString();
-    } else {
-      expiresAtIso = calculateSubscriptionExpirationDate(matched.duration, now) || undefined;
+    // Calculate or use provided subscription expiration date
+    let expiresAtIso: string | undefined = customerInfo?.customExpiresAtIso;
+    if (!expiresAtIso) {
+      const baseTime = (licenseExpiresAt && new Date(licenseExpiresAt).getTime() > now.getTime())
+        ? new Date(licenseExpiresAt)
+        : now;
+
+      if (matched.duration === '1_year' || cleanCode.toLowerCase() === 'k9_0u' || matched.durationDays === 365) {
+        // 1 Year Subscription: 1 full calendar year
+        const expDate = new Date(baseTime.getTime());
+        expDate.setFullYear(expDate.getFullYear() + 1);
+        expiresAtIso = expDate.toISOString();
+      } else if (matched.duration === '1_month' || cleanCode.toLowerCase() === 'k9_0s50' || matched.durationDays === 30) {
+        // 1 Month Subscription: 1 full calendar month
+        const expDate = new Date(baseTime.getTime());
+        expDate.setMonth(expDate.getMonth() + 1);
+        expiresAtIso = expDate.toISOString();
+      } else if (matched.durationDays > 0) {
+        const expMs = baseTime.getTime() + matched.durationDays * 24 * 60 * 60 * 1000;
+        expiresAtIso = new Date(expMs).toISOString();
+      } else {
+        expiresAtIso = calculateSubscriptionExpirationDate(matched.duration, baseTime) || undefined;
+      }
     }
 
     // Enforce single-use: mark code as used in localStorage
@@ -2537,6 +2579,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSalesState(updatedSales);
     localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(updatedSales));
 
+    // Update active cash shift
+    if (activeShift) {
+      const isCash = saleData.paymentMethod === 'cash';
+      const isCard = saleData.paymentMethod === 'card';
+      const isCredit = saleData.paymentMethod === 'credit';
+      const cashAmount = isCash ? grandTotal : 0;
+      const cardAmount = isCard ? grandTotal : 0;
+      const creditAmount = isCredit ? grandTotal : 0;
+
+      const updatedShifts = shifts.map(s => {
+        if (s.id !== activeShift.id) return s;
+        const nextCashSales = (s.cashSales || 0) + cashAmount;
+        const nextCardSales = (s.cardSales || 0) + cardAmount;
+        const nextCreditSales = (s.creditSales || 0) + creditAmount;
+        const nextExpectedCash = s.openingFloat + nextCashSales + (s.cashIn || 0) + (s.debtCashCollected || 0) - (s.cashOut || 0) - (s.expensesCash || 0) - (s.refundsCash || 0);
+        const shiftTx: CashShiftTransaction = {
+          id: `st_sale_${Date.now()}`,
+          type: 'sale',
+          amount: isCash ? grandTotal : 0,
+          reason: `فاتورة مبيعات ${invoiceNum} (${saleData.paymentMethod})`,
+          performedBy: currentUser.name,
+          timestamp: new Date().toISOString(),
+          referenceId: newSale.id
+        };
+        return {
+          ...s,
+          cashSales: nextCashSales,
+          cardSales: nextCardSales,
+          creditSales: nextCreditSales,
+          expectedCash: nextExpectedCash,
+          transactions: [shiftTx, ...(s.transactions || [])]
+        };
+      });
+      setShiftsState(updatedShifts);
+      localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(updatedShifts));
+    }
+
+    // Update promo usage count if applied
+    if (saleData.appliedPromotion) {
+      setPromotionsState(prev => {
+        const next = prev.map(p => p.id === saleData.appliedPromotion?.promoId ? { ...p, usageCount: (p.usageCount || 0) + 1 } : p);
+        localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify(next));
+        return next;
+      });
+    }
+
     // Offline caching & queuing
     try {
       indexedDbService.cacheAllData({ sales: updatedSales });
@@ -2614,6 +2702,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedRefunds = [newRefund, ...refunds];
     setRefundsState(updatedRefunds);
     localStorage.setItem(STORAGE_KEYS.REFUNDS, JSON.stringify(updatedRefunds));
+
+    // Update active cash shift if refund paid in cash
+    if (activeShift && refundData.refundMethod === 'cash') {
+      const updatedShifts = shifts.map(s => {
+        if (s.id !== activeShift.id) return s;
+        const nextRefunds = (s.refundsCash || 0) + refundData.totalRefundAmount;
+        const nextExpectedCash = s.openingFloat + (s.cashSales || 0) + (s.cashIn || 0) + (s.debtCashCollected || 0) - (s.cashOut || 0) - (s.expensesCash || 0) - nextRefunds;
+        const shiftTx: CashShiftTransaction = {
+          id: `st_ref_${Date.now()}`,
+          type: 'refund',
+          amount: refundData.totalRefundAmount,
+          reason: `مرتجع مبيعات نقدي - إشعار ${refundNum}`,
+          performedBy: currentUser.name,
+          timestamp: new Date().toISOString()
+        };
+        return {
+          ...s,
+          refundsCash: nextRefunds,
+          expectedCash: nextExpectedCash,
+          transactions: [shiftTx, ...(s.transactions || [])]
+        };
+      });
+      setShiftsState(updatedShifts);
+      localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(updatedShifts));
+    }
 
     logAudit('عملية إرجاع فاتورة', `إرجاع رقم ${refundNum} للفاتورة ${refundData.invoiceNumber} بمبلغ ${refundData.totalRefundAmount}`, 'high');
     notify('تم إتمام المرتجع بنجاح', `إشعار استرجاع رقم ${refundNum}`, 'success');
@@ -2755,6 +2868,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = [newExp, ...expenses];
     setExpensesState(updated);
     localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(updated));
+
+    // Update active cash shift if expense paid in cash from drawer
+    if (activeShift && expenseData.paymentMethod === 'cash') {
+      const updatedShifts = shifts.map(s => {
+        if (s.id !== activeShift.id) return s;
+        const nextExpenses = (s.expensesCash || 0) + expenseData.amount;
+        const nextExpectedCash = s.openingFloat + (s.cashSales || 0) + (s.cashIn || 0) + (s.debtCashCollected || 0) - (s.cashOut || 0) - nextExpenses - (s.refundsCash || 0);
+        const shiftTx: CashShiftTransaction = {
+          id: `st_exp_${Date.now()}`,
+          type: 'cash_out',
+          amount: expenseData.amount,
+          reason: `مصروف نقدي من الدرج: ${expenseData.title}`,
+          performedBy: currentUser.name,
+          timestamp: new Date().toISOString()
+        };
+        return {
+          ...s,
+          expensesCash: nextExpenses,
+          expectedCash: nextExpectedCash,
+          transactions: [shiftTx, ...(s.transactions || [])]
+        };
+      });
+      setShiftsState(updatedShifts);
+      localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(updatedShifts));
+    }
     logAudit('تسجيل مصروف جديد', `البيان: ${newExp.title} - المبلغ: ${newExp.amount}`, 'medium');
     notify('تم تسجيل المصروف بنجاح', newExp.title, 'success');
   };
@@ -3193,6 +3331,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setWholesaleWarehousesState(initialWholesaleWarehouses);
     setDeliveryVehiclesState(initialDeliveryVehicles);
     setVehicleManifestsState(initialVehicleManifests);
+    setShiftsState(initialShifts);
+    setPromotionsState(initialPromotions);
+    setActiveShiftId(initialShifts.find(s => s.status === 'open')?.id || null);
     setCart([]);
     setSelectedCustomer(null);
     notify('تمت إعادة ضبط المصنع بنجاح', 'تم استرجاع البيانات الافتراضية التجريبية', 'info');
@@ -3436,6 +3577,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updatedAt?: string;
   } | null>(null);
   const [isDataTransferModalOpen, setIsDataTransferModalOpen] = useState<boolean>(false);
+  const [isStorageCleanupModalOpen, setIsStorageCleanupModalOpen] = useState<boolean>(false);
+  const openStorageCleanupModal = () => setIsStorageCleanupModalOpen(true);
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false);
 
@@ -3552,6 +3695,244 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Saved Device & Auto-Sync Engine (مزامنة تلقائية وحفظ الأجهزة)
   const [isSyncingWithPartner, setIsSyncingWithPartner] = useState(false);
+
+  // --- Cash Drawer & Shifts Engine ---
+  const [shifts, setShiftsState] = useState<CashShift[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CASH_SHIFTS);
+      return saved ? JSON.parse(saved) : initialShifts;
+    } catch {
+      return initialShifts;
+    }
+  });
+
+  const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID);
+      if (saved) return saved;
+      const openShift = initialShifts.find(s => s.status === 'open');
+      return openShift ? openShift.id : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const activeShift = shifts.find(s => s.id === activeShiftId && s.status === 'open') || null;
+
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const openShiftModal = () => setIsShiftModalOpen(true);
+
+  const startNewShift = (openingFloat: number, notes?: string): CashShift => {
+    const nextShiftNumber = (shifts[0]?.shiftNumber || 100) + 1;
+    const cleanFloat = Math.max(0, openingFloat);
+    const newShift: CashShift = {
+      id: `shift_${Date.now()}`,
+      shiftNumber: nextShiftNumber,
+      cashierId: currentUser.id,
+      cashierName: currentUser.name,
+      openedAt: new Date().toISOString(),
+      status: 'open',
+      openingFloat: cleanFloat,
+      cashIn: 0,
+      cashOut: 0,
+      cashSales: 0,
+      cardSales: 0,
+      creditSales: 0,
+      debtCashCollected: 0,
+      refundsCash: 0,
+      expensesCash: 0,
+      expectedCash: cleanFloat,
+      transactions: [
+        {
+          id: `st_init_${Date.now()}`,
+          type: 'opening',
+          amount: cleanFloat,
+          reason: notes || 'رصيد العهدة النقدية الافتتاحي للدرج',
+          performedBy: currentUser.name,
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    const updated = [newShift, ...shifts];
+    setShiftsState(updated);
+    setActiveShiftId(newShift.id);
+    localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(updated));
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_SHIFT_ID, newShift.id);
+
+    try { soundEffects.playSuccess(); } catch {}
+    notify('تم افتتاح الوردية بنجاح', `الوردية #${nextShiftNumber} نشطة باسم (${currentUser.name}) بعهدة ${cleanFloat.toLocaleString()} ${settings.currency.symbol}`, 'success');
+    logAudit('افتتاح وردية كاشير جديدة', `وردية #${nextShiftNumber} | الكاشير: ${currentUser.name} | العهدة: ${cleanFloat}`, 'high');
+    return newShift;
+  };
+
+  const recordShiftCashMovement = (type: 'cash_in' | 'cash_out', amount: number, reason: string) => {
+    if (!activeShift) {
+      notify('تنبيه', 'لا توجد وردية مفتوحة حالياً لتسجيل حركة الصندوق', 'error');
+      return;
+    }
+    const cleanAmount = Math.max(0, amount);
+    const newTx: CashShiftTransaction = {
+      id: `st_mov_${Date.now()}`,
+      type,
+      amount: cleanAmount,
+      reason,
+      performedBy: currentUser.name,
+      timestamp: new Date().toISOString()
+    };
+
+    const updated = shifts.map(s => {
+      if (s.id !== activeShift.id) return s;
+      const nextCashIn = type === 'cash_in' ? (s.cashIn || 0) + cleanAmount : (s.cashIn || 0);
+      const nextCashOut = type === 'cash_out' ? (s.cashOut || 0) + cleanAmount : (s.cashOut || 0);
+      const nextExpected = s.openingFloat + (s.cashSales || 0) + nextCashIn + (s.debtCashCollected || 0) - nextCashOut - (s.expensesCash || 0) - (s.refundsCash || 0);
+
+      return {
+        ...s,
+        cashIn: nextCashIn,
+        cashOut: nextCashOut,
+        expectedCash: nextExpected,
+        transactions: [newTx, ...(s.transactions || [])]
+      };
+    });
+
+    setShiftsState(updated);
+    localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(updated));
+    try { soundEffects.playBeep(); } catch {}
+    notify(
+      type === 'cash_in' ? 'تم تسجيل الإيداع النقدي' : 'تم تسجيل السحب النقدي',
+      `المبلغ: ${cleanAmount.toLocaleString()} ${settings.currency.symbol} | السبب: ${reason}`,
+      'info'
+    );
+    logAudit(type === 'cash_in' ? 'إيداع نقدي بالدرج' : 'سحب نقدي من الدرج', `المبلغ: ${cleanAmount} | السبب: ${reason}`, 'medium');
+  };
+
+  const closeShift = (
+    actualCash: number,
+    closingNotes?: string,
+    denominationCounts?: Record<string, number>,
+    handoverCashierName?: string
+  ): CashShift => {
+    if (!activeShift) {
+      throw new Error('لا توجد وردية نشطة للإغلاق');
+    }
+
+    const expected = activeShift.expectedCash || 0;
+    const diff = actualCash - expected;
+    let discrepancyReason = 'الجرد متطابق 100%';
+    if (diff > 0) discrepancyReason = `فائض نقدي قدره ${diff.toLocaleString()} ${settings.currency.symbol}`;
+    else if (diff < 0) discrepancyReason = `عجز نقدي قدره ${Math.abs(diff).toLocaleString()} ${settings.currency.symbol}`;
+
+    const closedShift: CashShift = {
+      ...activeShift,
+      status: 'closed',
+      closedAt: new Date().toISOString(),
+      actualCash,
+      discrepancy: diff,
+      discrepancyReason,
+      closingNotes: closingNotes || '',
+      handoverToCashierName: handoverCashierName || '',
+      denominationCounts: denominationCounts || {}
+    };
+
+    const updated = shifts.map(s => s.id === activeShift.id ? closedShift : s);
+    setShiftsState(updated);
+    setActiveShiftId(null);
+    localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(updated));
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SHIFT_ID);
+
+    try { soundEffects.playSuccess(); } catch {}
+    notify('تم إغلاق الوردية وجرد الصندوق بنجاح', `الوردية #${closedShift.shiftNumber} مغلقة | النقد الفعلي: ${actualCash.toLocaleString()} ${settings.currency.symbol} (${discrepancyReason})`, 'success');
+    logAudit('إغلاق وردية كاشير وجرد الصندوق', `الوردية #${closedShift.shiftNumber} | المتوقع: ${expected} | الفعلي: ${actualCash} | الفارق: ${diff}`, 'high');
+    return closedShift;
+  };
+
+  // --- Smart Promotions & Combo Deals Engine ---
+  const [promotions, setPromotionsState] = useState<PromotionDeal[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.PROMOTIONS);
+      return saved ? JSON.parse(saved) : initialPromotions;
+    } catch {
+      return initialPromotions;
+    }
+  });
+
+  const [isPromotionsModalOpen, setIsPromotionsModalOpen] = useState(false);
+  const openPromotionsModal = () => setIsPromotionsModalOpen(true);
+
+  const addPromotion = (promo: Omit<PromotionDeal, 'id' | 'usageCount'>): PromotionDeal => {
+    const newPromo: PromotionDeal = {
+      ...promo,
+      id: `promo_${Date.now()}`,
+      usageCount: 0
+    };
+    const updated = [newPromo, ...promotions];
+    setPromotionsState(updated);
+    localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify(updated));
+    try { soundEffects.playSuccess(); } catch {}
+    notify('تمت إضافة العرض الترويجي', `تم تفعيل عرض "${promo.title}" بنجاح`, 'success');
+    logAudit('إضافة عرض ترويجي جديد', `العرض: ${promo.title} (${promo.dealType})`, 'medium');
+    return newPromo;
+  };
+
+  const updatePromotion = (id: string, partial: Partial<PromotionDeal>) => {
+    const updated = promotions.map(p => p.id === id ? { ...p, ...partial } : p);
+    setPromotionsState(updated);
+    localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify(updated));
+    notify('تم حفظ التعديل', 'تم تحديث بيانات العرض الترويجي بنجاح', 'success');
+  };
+
+  const deletePromotion = (id: string) => {
+    const updated = promotions.filter(p => p.id !== id);
+    setPromotionsState(updated);
+    localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify(updated));
+    notify('تم حذف العرض', 'تمت إزالة العرض الترويجي من النظام', 'info');
+  };
+
+  const togglePromotionActive = (id: string) => {
+    const updated = promotions.map(p => p.id === id ? { ...p, isActive: !p.isActive } : p);
+    setPromotionsState(updated);
+    localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify(updated));
+    try { soundEffects.playToggle(); } catch {}
+  };
+
+  const calculateCartPromotions = (cartItems: CartItem[], subtotal: number) => {
+    const activePromos = promotions.filter(p => p.isActive);
+    if (activePromos.length === 0 || cartItems.length === 0) {
+      return { appliedPromotion: null, discountAmount: 0, finalTotal: subtotal };
+    }
+
+    for (const promo of activePromos) {
+      // 1. Spend threshold
+      if (promo.dealType === 'spend_threshold' && promo.minOrderTotal && subtotal >= promo.minOrderTotal) {
+        let discount = 0;
+        if (promo.discountPercent) discount = Math.round((subtotal * promo.discountPercent) / 100);
+        else if (promo.discountAmount) discount = Math.min(subtotal, promo.discountAmount);
+        return { appliedPromotion: promo, discountAmount: discount, finalTotal: Math.max(0, subtotal - discount) };
+      }
+
+      // 2. Bundle discount
+      if (promo.dealType === 'bundle_discount') {
+        if (promo.minOrderTotal && subtotal >= promo.minOrderTotal && promo.discountAmount) {
+          const discount = Math.min(subtotal, promo.discountAmount);
+          return { appliedPromotion: promo, discountAmount: discount, finalTotal: Math.max(0, subtotal - discount) };
+        }
+      }
+
+      // 3. Buy X Get Y Free
+      if (promo.dealType === 'buy_x_get_y' && promo.buyQuantity && promo.getQuantity) {
+        const threshold = (promo.buyQuantity || 2) + (promo.getQuantity || 1);
+        const eligibleItem = cartItems.find(it => it.quantity >= threshold);
+        if (eligibleItem) {
+          const freeCount = Math.floor(eligibleItem.quantity / threshold) * (promo.getQuantity || 1);
+          const discount = freeCount * eligibleItem.unitPrice;
+          return { appliedPromotion: promo, discountAmount: discount, finalTotal: Math.max(0, subtotal - discount) };
+        }
+      }
+    }
+
+    return { appliedPromotion: null, discountAmount: 0, finalTotal: subtotal };
+  };
 
   const saveSyncPartner = (partner: SavedSyncPartner) => {
     const updated = {
@@ -4363,6 +4744,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         verifyCashierPin,
         isDataTransferModalOpen,
         setIsDataTransferModalOpen,
+        isStorageCleanupModalOpen,
+        setIsStorageCleanupModalOpen,
+        openStorageCleanupModal,
         offlineQueueCount,
         isSyncingOffline,
         syncOfflineQueueNow,
@@ -4390,6 +4774,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exportDataJson: exportDatabaseJson,
         importDataJson: importDatabaseJson,
         resetToDemoData: resetToDefaultData,
+        // Shifts & Promotions
+        shifts,
+        activeShift,
+        isShiftModalOpen,
+        setIsShiftModalOpen,
+        openShiftModal,
+        startNewShift,
+        recordShiftCashMovement,
+        closeShift,
+        promotions,
+        isPromotionsModalOpen,
+        setIsPromotionsModalOpen,
+        openPromotionsModal,
+        addPromotion,
+        updatePromotion,
+        deletePromotion,
+        togglePromotionActive,
+        calculateCartPromotions,
       }}
     >
       {children}
