@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Product, Category, TradeType } from '../../types';
 import {
   Plus,
+  Minus,
   Search,
   Filter,
   Edit2,
@@ -40,6 +41,7 @@ export const ProductsView: React.FC = () => {
     addProduct,
     updateProduct,
     deleteProduct,
+    adjustStock,
     addCategory,
     deleteCategory,
     formatCurrency,
@@ -452,20 +454,44 @@ export const ProductsView: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* Stock Level */}
+                      {/* Stock Level with Decrement (-) & Increment (+) Buttons */}
                       <td className="py-3 px-3 text-center">
-                        <span
-                          className={`font-mono font-bold text-xs px-2.5 py-1 rounded-xl inline-flex items-center gap-1 ${
-                            isOutOfStock
-                              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900'
-                              : isLowStock
-                              ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900'
-                              : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
-                          }`}
-                        >
-                          {isLowStock && <AlertTriangle className="w-3 h-3 text-amber-600" />}
-                          {product.stock} {product.unit}
-                        </span>
+                        <div className="inline-flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                          <button
+                            type="button"
+                            onClick={() => adjustStock(product.id, -1, 'adjustment', 'تنقيص سريع للمنتج من صفحة الأصناف')}
+                            disabled={product.stock <= 0}
+                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
+                            title="تنقيص مخزون المنتج (-1)"
+                            aria-label="تنقيص مخزون المنتج"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+
+                          <span
+                            className={`font-mono tabular-nums font-bold text-xs px-2 py-0.5 rounded-lg inline-flex items-center gap-1 min-w-[64px] justify-center ${
+                              isOutOfStock
+                                ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                                : isLowStock
+                                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                                : 'text-emerald-700 dark:text-emerald-400'
+                            }`}
+                          >
+                            {isLowStock && <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />}
+                            <span>{product.stock}</span>
+                            <span className="text-[10px]">{product.unit}</span>
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => adjustStock(product.id, 1, 'restock', 'زيادة سريعة للمنتج من صفحة الأصناف')}
+                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
+                            title="زيادة مخزون المنتج (+1)"
+                            aria-label="زيادة مخزون المنتج"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Actions */}

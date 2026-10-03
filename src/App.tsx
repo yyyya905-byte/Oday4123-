@@ -81,7 +81,7 @@ const AppContent: React.FC = () => {
   // PWA Service Worker Registration & Background Sync Listener
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      if (import.meta.env.DEV) {
+      if ((import.meta as any).env?.DEV) {
         navigator.serviceWorker.getRegistrations().then((regs) => {
           regs.forEach((reg) => reg.unregister());
         });

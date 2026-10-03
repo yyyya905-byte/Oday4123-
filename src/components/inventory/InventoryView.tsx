@@ -553,19 +553,40 @@ export const InventoryView: React.FC = () => {
                           </td>
 
                           {/* Current Stock & Visual Health Indicator Bar */}
-                          <td className="py-3 px-3 text-center min-w-[130px]">
-                            <div className="space-y-1">
-                              <div
-                                className={`font-mono font-black text-sm flex items-center justify-center gap-1 ${
-                                  isOutOfStock
-                                    ? 'text-rose-600 dark:text-rose-400'
-                                    : isLowStock
-                                    ? 'text-amber-600 dark:text-amber-400'
-                                    : 'text-slate-900 dark:text-white'
-                                }`}
-                              >
-                                <span>{product.stock}</span>
-                                <span className="text-[10px] font-medium text-slate-500">{product.unit}</span>
+                          <td className="py-3 px-3 text-center min-w-[155px]">
+                            <div className="space-y-1.5">
+                              <div className="inline-flex items-center justify-center gap-1.5 bg-slate-100/80 dark:bg-slate-800/80 px-1.5 py-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                                <button
+                                  type="button"
+                                  onClick={() => adjustStock(product.id, -1, 'adjustment', 'تنقيص سريع من جدول المخزون')}
+                                  disabled={product.stock <= 0}
+                                  className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
+                                  title="تنقيص المخزون (-1)"
+                                  aria-label="تنقيص المنتج"
+                                >
+                                  <Minus className="w-3.5 h-3.5" />
+                                </button>
+                                <div
+                                  className={`font-mono tabular-nums font-black text-sm flex items-center justify-center gap-1 min-w-[54px] ${
+                                    isOutOfStock
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : isLowStock
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-slate-900 dark:text-white'
+                                  }`}
+                                >
+                                  <span>{product.stock}</span>
+                                  <span className="text-[10px] font-medium text-slate-500">{product.unit}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => adjustStock(product.id, 1, 'restock', 'زيادة سريعة من جدول المخزون')}
+                                  className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
+                                  title="زيادة المخزون (+1)"
+                                  aria-label="زيادة المنتج"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
                               </div>
 
                               {/* Progress bar visual indicating stock health vs minStock */}

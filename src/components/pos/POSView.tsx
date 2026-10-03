@@ -1044,13 +1044,39 @@ export const POSView: React.FC = () => {
                           {product.unit || 'وجبة / طلب'}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className="w-10 h-10 sm:w-9 sm:h-9 min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 dark:bg-slate-800 group-hover:bg-emerald-600 group-hover:text-white text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors shadow-xs active:scale-90 cursor-pointer"
-                        aria-label="إضافة للطلب"
-                      >
-                        <Plus className="w-5 h-5 sm:w-4 sm:h-4" />
-                      </button>
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        {inCart && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateCartItemQuantity(product.id, inCart.quantity - 1);
+                              }}
+                              className="w-9 h-9 sm:w-8 sm:h-8 min-w-[34px] min-h-[34px] rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 flex items-center justify-center transition-colors shadow-2xs active:scale-90 cursor-pointer border border-rose-200/80 dark:border-rose-800/60"
+                              title="تنقيص الكمية (-1)"
+                              aria-label="تنقيص المنتج"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <span className="min-w-[24px] text-center text-xs font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
+                              {inCart.quantity}
+                            </span>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToCart(product);
+                          }}
+                          className="w-10 h-10 sm:w-9 sm:h-9 min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 hover:text-white group-hover:bg-emerald-600 group-hover:text-white text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors shadow-xs active:scale-90 cursor-pointer"
+                          title="إضافة للطلب (+1)"
+                          aria-label="إضافة للطلب"
+                        >
+                          <Plus className="w-5 h-5 sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1152,8 +1178,23 @@ export const POSView: React.FC = () => {
                         </button>
                       </div>
 
-                      {/* Quick Bulk Add Actions (Col 3) */}
+                      {/* Quick Bulk Add & Decrement Actions (Col 3) */}
                       <div className="sm:col-span-3 flex items-center justify-end sm:justify-center gap-1.5 flex-wrap">
+                        {inCart && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateCartItemQuantity(product.id, inCart.quantity - 1);
+                            }}
+                            className="px-2.5 py-2 min-h-[38px] rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 border border-rose-200/80 dark:border-rose-800/60"
+                            title="تنقيص قطعة واحدة (-1)"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                            <span>-1</span>
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1279,8 +1320,22 @@ export const POSView: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* Add Button (Col 2) */}
-                    <div className="sm:col-span-2 flex items-center justify-end sm:justify-center">
+                    {/* Add & Decrement Buttons (Col 2) */}
+                    <div className="sm:col-span-2 flex items-center justify-end sm:justify-center gap-1.5">
+                      {inCart && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateCartItemQuantity(product.id, inCart.quantity - 1);
+                          }}
+                          className="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer min-h-[40px] border border-rose-200/80 dark:border-rose-800/60"
+                          title="تنقيص المنتج من السلة (-1)"
+                        >
+                          <Minus className="w-4 h-4" />
+                          <span>{language === 'ar' ? 'تنقيص' : 'Remove'}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1556,7 +1611,17 @@ export const POSView: React.FC = () => {
                     </button>
 
                     <div className="flex items-center gap-1">
-                      <span className="text-slate-400">إضافة سريعة:</span>
+                      <span className="text-slate-400">تعديل سريع:</span>
+                      {item.quantity > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => updateCartItemQuantity(item.productId, Math.max(1, item.quantity - 5))}
+                          className="px-2 py-1 min-h-[30px] rounded-lg bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-300 font-mono font-bold active:scale-95 cursor-pointer transition-colors"
+                          title="تنقيص 5 قطع"
+                        >
+                          -5
+                        </button>
+                      )}
                       {[5, 10].map(cnt => (
                         <button
                           key={cnt}
