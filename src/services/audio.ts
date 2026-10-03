@@ -238,6 +238,10 @@ class SoundService {
     this.playClick();
   }
 
+  public playToggle() {
+    this.playClick();
+  }
+
   public warning() {
     this.playWarning();
   }

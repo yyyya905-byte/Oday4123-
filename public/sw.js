@@ -1,7 +1,7 @@
 // KIAN CASHIER - Service Worker
-// Version 1.1.0 - Offline-First POS & Caching Strategy
+// Version 1.2.0 - Offline-First POS & Safe Dev Module Strategy
 
-const CACHE_NAME = 'kian-cashier-cache-v2';
+const CACHE_NAME = 'kian-cashier-cache-v4';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -12,13 +12,13 @@ const STATIC_ASSETS = [
 
 // Install Event: Pre-cache core shell
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Pre-caching offline shell and assets');
       return cache.addAll(STATIC_ASSETS).catch((err) => {
         console.warn('[Service Worker] Asset pre-cache partial warning:', err);
       });
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -38,16 +38,44 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event: Network-first for API, Stale-While-Revalidate for app assets
+// Fetch Event: Network-first for API & Vite modules, fallback to cache when offline
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. Bypass Service Worker for Server-Sent Events (SSE) and server API write requests
-  if (url.pathname.startsWith('/api/devices/stream') || (url.pathname.startsWith('/api/') && event.request.method !== 'GET')) {
+  // 1. Bypass Service Worker for Server-Sent Events (SSE), HMR/Vite internals, and non-GET requests
+  if (
+    event.request.method !== 'GET' ||
+    url.pathname.startsWith('/api/devices/stream') ||
+    url.pathname.startsWith('/@vite') ||
+    url.pathname.startsWith('/@react-refresh') ||
+    url.pathname.startsWith('/@fs') ||
+    url.pathname.startsWith('/node_modules/')
+  ) {
     return;
   }
 
-  // 2. API GET requests (network first, fallback to cached response if offline)
+  // 2. Source files & JS/TS modules -> Always Network-First to prevent duplicate React hook instances
+  if (
+    url.pathname.startsWith('/src/') ||
+    url.pathname.endsWith('.tsx') ||
+    url.pathname.endsWith('.ts') ||
+    url.pathname.endsWith('.js')
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // 3. API GET requests (network first, fallback to cached response if offline)
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request)
@@ -63,7 +91,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Navigation requests (HTML pages) -> Network first with cache fallback
+  // 4. Navigation requests (HTML pages) -> Network first with cache fallback
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -74,40 +102,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Static assets (JS, CSS, Fonts, Images) -> Cache first, fallback to network and update cache
+  // 5. Static assets (CSS, Fonts, Images, Icons) -> Network first with cache fallback
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Return cached and fetch in background to update cache
-        fetch(event.request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
-            }
-          })
-          .catch(() => {});
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
         }
-        const responseClone = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
         return networkResponse;
-      }).catch((err) => {
-        // Silent catch for offline image/asset failure
-        console.warn('[Service Worker] Fetch failed while offline:', event.request.url);
-      });
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 
 // Background Sync Event: Triggered when device regains connectivity
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-pos-data') {
-    console.log('[Service Worker] Background sync event triggered: sync-pos-data');
     event.waitUntil(
       self.clients.matchAll().then((clients) => {
         clients.forEach((client) => {

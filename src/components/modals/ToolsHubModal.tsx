@@ -6,35 +6,17 @@ import {
   Coins,
   Banknote,
   Tag,
-  Calculator,
   Barcode as BarcodeIcon,
-  Radio,
   ArrowLeftRight,
   HardDrive,
-  Cloud,
-  Sparkles,
   Leaf,
   SlidersHorizontal,
   Database,
   RefreshCw,
-  Printer,
-  ShieldCheck,
-  ChevronLeft,
-  ChevronRight,
-  Wifi,
-  WifiOff,
-  Battery,
-  BatteryCharging,
-  Zap,
-  ExternalLink,
   Store,
   UtensilsCrossed,
-  Building2,
-  CheckCircle2,
-  Palette
+  Building2
 } from 'lucide-react';
-import { canAccessTab } from '../../utils/permissions';
-import { GoogleIcon } from '../common/GoogleIcon';
 
 interface ToolsHubModalProps {
   isOpen: boolean;
@@ -54,16 +36,12 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
     settings,
     businessMode,
     setIsModeModalOpen,
-    setActiveTab,
     isOnline,
     offlineQueueCount,
     isSyncingOffline,
     syncOfflineQueueNow,
     isPowerSavingActive,
     togglePowerSaving,
-    batteryInfo,
-    devices,
-    currentUser,
     setIsDataTransferModalOpen,
     setIsButtonCustomizerModalOpen,
     openStorageCleanupModal,
@@ -75,24 +53,22 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
   if (!isOpen) return null;
 
   const isRtl = language === 'ar';
-  const onlineDevicesCount = devices.filter(d => d.isOnline).length;
-  const isGoogleDriveConnected = Boolean(settings.googleDriveConnected);
 
   const modeBadge = {
     restaurant: {
       label: language === 'ar' ? 'نمط المطاعم والكافيهات' : 'Restaurant Mode',
       icon: UtensilsCrossed,
-      color: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+      color: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
     },
     wholesale: {
       label: language === 'ar' ? 'نمط تجارة الجملة والتوزيع' : 'Wholesale Mode',
       icon: Building2,
-      color: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+      color: 'bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/25'
     },
     retail: {
       label: language === 'ar' ? 'نمط التجزئة والسوبرماركت' : 'Retail Mode',
       icon: Store,
-      color: 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+      color: 'bg-blue-500/12 text-blue-700 dark:text-blue-300 border-blue-500/25'
     }
   }[businessMode];
 
@@ -108,26 +84,27 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="tools-hub-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-200"
     >
-      <div 
-        className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-slate-100 animate-in zoom-in-95 duration-200"
+      <div
+        className="relative w-full max-w-2xl max-h-[92dvh] flex flex-col apple-glass-card rounded-3xl shadow-2xl overflow-hidden text-slate-900 dark:text-slate-100 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-xs">
-              <Wrench className="w-5 h-5" />
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-slate-200/70 dark:border-white/[0.08]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center shadow-xs">
+              <Wrench className="w-4 h-4" />
             </div>
             <div>
-              <h2 id="tools-hub-title" className="text-base font-black tracking-tight">
-                {language === 'ar' ? 'قائمة الأدوات والميزات الذكية' : 'Tools & Smart Utilities'}
+              <h2 id="tools-hub-title" className="text-sm sm:text-base font-black tracking-tight">
+                {language === 'ar' ? 'الأدوات المساعدة' : 'System Utilities & Tools'}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {language === 'ar'
-                  ? 'الوصول السريع لجميع الأدوات المساعدة وحاسبات الأسعار والربط'
-                  : 'Quick access to utilities, calculators, and device links'}
+                  ? 'أدوات الصندوق، أسعار الصرف، الباركود، وإدارة الذاكرة'
+                  : 'Cash drawer, exchange calculator, barcode labels, and storage'}
               </p>
             </div>
           </div>
@@ -135,22 +112,22 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.08] transition-colors cursor-pointer"
             aria-label={language === 'ar' ? 'إغلاق' : 'Close'}
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Body: Scrollable Tools Grid */}
-        <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4">
-          {/* Active Mode & System Status Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+        {/* Modal Body */}
+        <div className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-4">
+          {/* Active Operating Mode Switcher */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-slate-200/50 dark:bg-white/[0.04] border border-white/60 dark:border-white/[0.07]">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                {language === 'ar' ? 'النمط التشغيلي:' : 'Active Mode:'}
+                {language === 'ar' ? 'وضع التشغيل:' : 'Operating Mode:'}
               </span>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black border ${modeBadge.color}`}>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border ${modeBadge.color}`}>
                 <ModeIcon className="w-3.5 h-3.5" />
                 <span>{modeBadge.label}</span>
               </span>
@@ -159,457 +136,219 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
             <button
               type="button"
               onClick={() => handleToolAction(() => setIsModeModalOpen(true))}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 rounded-xl border border-amber-200 dark:border-amber-800 transition-all cursor-pointer"
+              className="px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-white bg-white dark:bg-white/[0.08] hover:opacity-90 rounded-xl border border-slate-200/80 dark:border-white/[0.1] transition-all cursor-pointer shadow-2xs"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>{language === 'ar' ? 'تبديل النمط' : 'Change Mode'}</span>
+              {language === 'ar' ? 'تغيير الوضع' : 'Switch Mode'}
             </button>
           </div>
 
-          {/* SECTION 1: المالية والعملات والملصقات */}
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
-              {language === 'ar' ? 'المالية والطباعة السريعة' : 'Finance & Quick Printing'}
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Currency Bulletin & Calculator */}
-              <button
-                type="button"
-                onClick={() => handleToolAction(onOpenBulletin)}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Coins className="w-5 h-5" />
+          {/* Core Cashier & Financial Utilities Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* 1. Shift Handover & Cash Drawer Balancing */}
+            <button
+              type="button"
+              onClick={() => handleToolAction(() => openShiftModal())}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <Banknote className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    {language === 'ar' ? 'الوردية ومطابقة الصندوق' : 'Shift & Cash Drawer'}
+                  </h4>
+                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 shrink-0">
+                    {activeShift ? `#${activeShift.shiftNumber}` : (language === 'ar' ? 'مغلق' : 'Closed')}
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'نشرة أسعار الصرف وحاسبة العملات' : 'Exchange Rates & Calculator'}
-                    </h4>
-                    <span className="text-[10px] font-mono font-black bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-md">
-                      {settings.currency.symbol}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'متابعة أسعار صرف الدولار واليورو وتحويل المبالغ بين العملات'
-                      : 'Live multi-currency exchange rates and conversion tool'}
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'عد النقد، الإيداع والسحب، وتقرير التسليم' : 'Count cash drawer and handover shift'}
+                </p>
+              </div>
+            </button>
+
+            {/* 2. Currency Exchange Bulletin & Calculator */}
+            <button
+              type="button"
+              onClick={() => handleToolAction(onOpenBulletin)}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Coins className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    {language === 'ar' ? 'نشرة الصرف وحاسبة العملات' : 'Currency & Exchange'}
+                  </h4>
+                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0">
+                    {settings.currency.symbol}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'أسعار الدولار واليورو والذهب وتحويل المبالغ' : 'Live USD/EUR rates and converter'}
+                </p>
+              </div>
+            </button>
+
+            {/* 3. Smart Promotions & Deals */}
+            <button
+              type="button"
+              onClick={() => handleToolAction(() => openPromotionsModal())}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {language === 'ar' ? 'العروض والخصومات الترويجية' : 'Promotions & Deals'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'خصومات السلة التلقائية وعروض الهدايا' : 'Automatic cart discounts and BOGO deals'}
+                </p>
+              </div>
+            </button>
+
+            {/* 4. Barcode Designer & Label Printer */}
+            <button
+              type="button"
+              onClick={() => handleToolAction(onOpenBarcodeDesigner)}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-500/12 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <BarcodeIcon className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {language === 'ar' ? 'تصميم وطباعة ملصقات الباركود' : 'Barcode Label Printer'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'تخصيص وطباعة لصاقات الباركود والأسعار' : 'Design and print product barcode stickers'}
+                </p>
+              </div>
+            </button>
+
+            {/* 5. Cross-Device Data Transfer */}
+            <button
+              type="button"
+              onClick={() => handleToolAction(() => setIsDataTransferModalOpen(true))}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/12 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <ArrowLeftRight className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {language === 'ar' ? 'نقل البيانات بين الأجهزة' : 'Device Data Transfer'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'مزامنة وتصدير البيانات عبر كود الربط أو QR' : 'Sync store data across devices via QR'}
+                </p>
+              </div>
+            </button>
+
+            {/* 6. Storage Health & Smart Cleanup */}
+            <button
+              type="button"
+              onClick={() => handleToolAction(() => openStorageCleanupModal())}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/12 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
+                <HardDrive className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {language === 'ar' ? 'فحص وتنظيف الذاكرة' : 'Storage & Memory Cleaner'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'مراقبة سعة IndexedDB وتفريغ السجلات القديمة' : 'Inspect storage usage and free space'}
+                </p>
+              </div>
+            </button>
+
+            {/* 7. UI & Button Layout Customizer */}
+            <button
+              type="button"
+              id="btn-tools-customize-buttons"
+              onClick={() => handleToolAction(() => setIsButtonCustomizerModalOpen(true))}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+            >
+              <div className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <SlidersHorizontal className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {language === 'ar' ? 'تخصيص تخطيط الواجهة والأزرار' : 'Customize UI Layout'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                  {language === 'ar' ? 'ترتيب أزرار الكاشير وموقع السلة يمين أو يسار' : 'Configure cart position and POS buttons'}
+                </p>
+              </div>
+            </button>
+
+            {/* 8. Power Saving Mode Toggle */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] border border-slate-200/70 dark:border-white/[0.07]">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  isPowerSavingActive
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-slate-500/12 text-slate-600 dark:text-slate-300'
+                }`}>
+                  <Leaf className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    {language === 'ar' ? 'وضع توفير الطاقة' : 'Eco Power Saver'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {isPowerSavingActive
+                      ? (language === 'ar' ? 'مفعل لحفظ البطارية' : 'Active')
+                      : (language === 'ar' ? 'إضاءة وأداء كامل' : 'Full brightness')}
                   </p>
                 </div>
-              </button>
+              </div>
 
-              {/* Shift Handover & Cash Drawer Balancing */}
               <button
                 type="button"
-                onClick={() => handleToolAction(() => openShiftModal())}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-emerald-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all text-start cursor-pointer group shadow-2xs"
+                onClick={togglePowerSaving}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isPowerSavingActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+                }`}
+                aria-label="تبديل وضع توفير الطاقة"
               >
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Banknote className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'إدارة وتسليم الوردية ومطابقة الدرج' : 'Shift Handover & Cash Drawer'}
-                    </h4>
-                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                      activeShift
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                    }`}>
-                      {activeShift ? (language === 'ar' ? `وردية #${activeShift.shiftNumber}` : `Shift #${activeShift.shiftNumber}`) : (language === 'ar' ? 'لا توجد وردية' : 'Inactive')}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'متابعة النقد لحظياً، عد الفئات، كشف العجز والفائض، وطباعة إيصال التسليم'
-                      : 'Live drawer balance, denomination counter, and shift closing slips'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Smart Promotions & Deals */}
-              <button
-                type="button"
-                onClick={() => handleToolAction(() => openPromotionsModal())}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-rose-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-rose-300 dark:hover:border-rose-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Tag className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'العروض الترويجية والخصومات الذكية' : 'Smart Promotions & Deals'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded-md">
-                      BOGO / %
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'خصومات سلة المشتريات التلقائية، وعروض اشترِ واحصل على هدية مجاناً'
-                      : 'Volume thresholds, buy-x-get-y, and category bundle discounts'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Barcode Designer & Label Printer */}
-              <button
-                type="button"
-                onClick={() => handleToolAction(onOpenBarcodeDesigner)}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <BarcodeIcon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'مصمم وطباعة ملصقات الباركود' : 'Barcode Designer & Labels'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded-md">
-                      ESC/POS
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'تخصيص قياسات الملصق وطباعة الباركود للمنتجات على طابعات الليبل'
-                      : 'Custom barcode sticker design and batch printing'}
-                  </p>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* SECTION 2: ربط الأجهزة ونقل البيانات والنسخ السحابي */}
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
-              {language === 'ar' ? 'الربط ونقل البيانات والسحابة' : 'Devices, Sync & Cloud'}
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Linked Devices Hub */}
-              <button
-                type="button"
-                onClick={() => handleToolAction(() => setActiveTab('devices'))}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Radio className="w-5 h-5 animate-pulse" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'مركز ربط الشاشات والأجهزة' : 'Multi-Device Terminals'}
-                    </h4>
-                    <span className="text-[10px] font-black bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">
-                      {onlineDevicesCount} متصل
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'شاشات المطبخ KDS، شاشة العميل، هاتف النادل، وماسح المخزون'
-                      : 'Sync kitchen displays, customer terminals, and mobile waiters'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Data Transfer via Link Code */}
-              <button
-                type="button"
-                onClick={() => handleToolAction(() => setIsDataTransferModalOpen(true))}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <ArrowLeftRight className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'نقل البيانات برمز الربط' : 'Cross-Device Data Transfer'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md">
-                      P2P Sync
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'تصدير ونقل المنتجات والفواتير فورياً لجهاز آخر عبر QR أو الرمز'
-                      : 'Send or receive store database using direct pairing code'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Storage Health & Smart Cleanup */}
-              <button
-                type="button"
-                onClick={() => handleToolAction(() => openStorageCleanupModal())}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-cyan-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-cyan-300 dark:hover:border-cyan-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <HardDrive className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'تقرير وتنظيف الذاكرة الذكي' : 'Smart Storage & Cleaner'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-1.5 py-0.5 rounded-md">
-                      IndexedDB
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'مراقبة سعة الذاكرة، والتنبيه الاستباقي قبل النفاد، ومسح الفواتير القديمة بأمان'
-                      : 'Monitor storage quota, proactive low-memory alerts, and safe data purge'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Cloud Backup Google Drive (Admins/Managers) */}
-              {canAccessTab('settings', currentUser.role) && (
-                <button
-                  type="button"
-                  onClick={() => handleToolAction(() => setActiveTab('settings'))}
-                  className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                    <Cloud className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                        {language === 'ar' ? 'النسخ السحابي (Google Drive)' : 'Cloud Backup (Google Drive)'}
-                      </h4>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
-                        isGoogleDriveConnected
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                      }`}>
-                        {isGoogleDriveConnected ? (language === 'ar' ? 'سحابة نشطة' : 'Connected') : (language === 'ar' ? 'غير متصل' : 'Offline')}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                      {language === 'ar'
-                        ? 'حفظ وتأمين نسخ احتياطية تلقائية من قاعدة البيانات على حساب Google'
-                        : 'Secure automated cloud backups to Google Drive'}
-                    </p>
-                  </div>
-                </button>
-              )}
-
-              {/* Gemini AI Intelligence (Managers) */}
-              {canAccessTab('ai', currentUser.role) && (
-                <button
-                  type="button"
-                  onClick={() => handleToolAction(() => setActiveTab('ai'))}
-                  className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-xs">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                        {language === 'ar' ? 'المساعد الذكي (Gemini AI)' : 'Smart AI Insights (Gemini)'}
-                      </h4>
-                      <span className="text-[10px] font-black bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.5 rounded-md">
-                        AI Pro
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                      {language === 'ar'
-                        ? 'اقتراح استراتيجيات التسعير، تنبؤ نفاد المنتجات، وتحليل الأرباح'
-                        : 'AI-driven business analytics, forecasting and pricing advice'}
-                    </p>
-                  </div>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* SECTION 3: توفير الطاقة والمزامنة والتخزين */}
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
-              {language === 'ar' ? 'طاقة النظام والتخزين المحلي' : 'System Power & Offline Storage'}
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Power Saving Mode Toggle */}
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    isPowerSavingActive
-                      ? 'bg-amber-500 text-slate-950 shadow-xs'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}>
-                    <Leaf className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'وضع توفير الطاقة والاستعداد' : 'Eco Power Saver Mode'}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {isPowerSavingActive
-                        ? (language === 'ar' ? 'مفعل — تعتيم الشاشة لحفظ البطارية' : 'Active — Screen dimmed to save battery')
-                        : (language === 'ar' ? 'معطل — أداء كامل وشاشة ساطعة' : 'Disabled — Full screen brightness')}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={togglePowerSaving}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    isPowerSavingActive ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                    isPowerSavingActive ? (isRtl ? '-translate-x-5' : 'translate-x-5') : 'translate-x-0'
                   }`}
-                  aria-label="تبديل وضع توفير الطاقة"
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Offline Queue Sync Bar (Only shown if there are queued offline actions) */}
+          {offlineQueueCount > 0 && (
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25">
+              <div className="flex items-center gap-2.5">
+                <Database className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {language === 'ar' ? `${offlineQueueCount} عملية معلقة للمزامنة` : `${offlineQueueCount} pending offline actions`}
+                </span>
+              </div>
+              {isOnline && (
+                <button
+                  type="button"
+                  onClick={syncOfflineQueueNow}
+                  disabled={isSyncingOffline}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-slate-900 dark:bg-white dark:text-slate-950 rounded-xl transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      isPowerSavingActive ? (isRtl ? '-translate-x-5' : 'translate-x-5') : 'translate-x-0'
-                    }`}
-                  />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
+                  <span>{language === 'ar' ? 'مزامنة الآن' : 'Sync Now'}</span>
                 </button>
-              </div>
-
-              {/* Offline Sync & Storage Status */}
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                    <Database className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                        {language === 'ar' ? 'قاعدة بيانات IndexedDB' : 'IndexedDB Local Cache'}
-                      </h4>
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {offlineQueueCount > 0
-                        ? (language === 'ar' ? `${offlineQueueCount} عملية تنتظر المزامنة` : `${offlineQueueCount} queued offline`)
-                        : (language === 'ar' ? 'كافة البيانات محفوظة ومحدثة محلياً' : 'All data safe & cached locally')}
-                    </p>
-                  </div>
-                </div>
-
-                {isOnline && offlineQueueCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={syncOfflineQueueNow}
-                    disabled={isSyncingOffline}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
-                    <span>{isSyncingOffline ? '...' : (language === 'ar' ? 'مزامنة' : 'Sync')}</span>
-                  </button>
-                )}
-              </div>
+              )}
             </div>
-          </div>
-
-          {/* SECTION 4: تخصيص مواقع الأزرار وهوية المتجر وسجل التحسينات */}
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
-              {language === 'ar' ? 'تخصيص الواجهة وهوية المتجر' : 'Store Branding & UI Customization'}
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {/* Store Theme Color */}
-              <button
-                type="button"
-                id="btn-tools-theme-color"
-                onClick={() => handleToolAction(() => setActiveTab('settings'))}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Palette className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'نظام ألوان المتجر 🎨' : 'Theme Color'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded-md">
-                      12 لوحة
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'تغيير ألوان التطبيق ليتطابق مع شعار ونشاط متجرك (سوبرماركت، كافيه، إلكترونيات)'
-                      : 'Customize app primary colors to match your store branding & logo'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Button Positions & Layout Customizer */}
-              <button
-                type="button"
-                id="btn-tools-customize-buttons"
-                onClick={() => handleToolAction(() => setIsButtonCustomizerModalOpen(true))}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <SlidersHorizontal className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'تخصيص وترتيب مواقع الأزرار 🎛️' : 'Customize UI & Button Layout'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded-md">
-                      {language === 'ar' ? 'تحكم كامل' : 'Custom'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'نقل لوحة السلة يمين أو يسار الشاشة، ترتيب أزرار الكاشير، الشريط العلوي، والزر العائم'
-                      : 'Move cart left/right, reorder cashier command cluster, header, and floating tools'}
-                  </p>
-                </div>
-              </button>
-
-              {/* Periodic Changelog & Updates Log */}
-              <button
-                type="button"
-                id="btn-tools-changelog"
-                onClick={() => handleToolAction(() => setActiveTab('about'))}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-amber-50/50 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700/80 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-start cursor-pointer group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      {language === 'ar' ? 'سجل التحسينات والتحديثات الدورية ✨' : 'What\'s New & Release Log'}
-                    </h4>
-                    <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-md">
-                      v2.6.0 Pro
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
-                    {language === 'ar'
-                      ? 'استعراض سجل كامل ومفصل لكافة الميزات والإضافات المطورة دورياً داخل صفحة حول'
-                      : 'Browse complete periodic changelog and feature history inside the About screen'}
-                  </p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Modal Footer */}
-        <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
-          <span className="text-[11px] text-slate-400 dark:text-slate-500">
-            {language === 'ar' ? 'نظام كيان كاشير الذكي المتكامل' : 'Kian Cashier Smart System'}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-          >
-            {language === 'ar' ? 'إغلاق القائمة' : 'Close Menu'}
-          </button>
+          )}
         </div>
       </div>
     </div>

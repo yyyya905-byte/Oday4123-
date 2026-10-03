@@ -81,6 +81,13 @@ const AppContent: React.FC = () => {
   // PWA Service Worker Registration & Background Sync Listener
   useEffect(() => {
     if ('serviceWorker' in navigator) {
+      if (import.meta.env.DEV) {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((reg) => reg.unregister());
+        });
+        return;
+      }
+
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
           .then((registration) => {
@@ -172,7 +179,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans antialiased text-slate-900 dark:text-slate-100 select-none">
+    <div className="flex h-screen w-screen overflow-hidden bg-transparent font-sans antialiased text-slate-900 dark:text-slate-100 select-none">
       {/* Sidebar for Desktop / Tablet */}
       <Sidebar />
 
@@ -213,14 +220,11 @@ const AppContent: React.FC = () => {
         onClose={() => setIsConnectToCashierModalOpen(false)}
       />
 
-      {/* Mandatory First-Time Login Modal */}
+      {/* First-Time Login Modal (Only when explicitly triggered) */}
       <FirstTimeLoginModal
         isOpen={!isFirstLoginCompleted || isFirstLoginModalOpen}
         onOpenPurchaseModal={() => setIsPurchaseModalOpen(true)}
       />
-
-      {/* Subscription & Trial Alert Toast on App Opening */}
-      <SubscriptionAlertToast />
 
       {/* Proactive Low Storage Warning Toast & Smart Cleaner */}
       <StorageProactiveAlertToast onOpenCleanupModal={openStorageCleanupModal} />
@@ -252,9 +256,6 @@ const AppContent: React.FC = () => {
 
       {/* Button Layout & UI Customizer Modal */}
       <ButtonLayoutModal />
-
-      {/* Smart Floating Action Hub */}
-      <FloatingActionHub />
 
       {/* Floating Offline Sync & Storage Status Banner */}
       {(!isOnline || offlineQueueCount > 0) && (

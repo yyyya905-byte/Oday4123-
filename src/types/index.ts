@@ -324,6 +324,7 @@ export interface Expense {
   title: string;
   category: ExpenseCategory;
   amount: number;
+  paymentMethod?: string;
   date?: string;
   notes?: string;
   recordedBy?: string;

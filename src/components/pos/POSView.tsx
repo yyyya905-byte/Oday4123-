@@ -692,75 +692,19 @@ export const POSView: React.FC = () => {
           </button>
         );
       case 'priceEdit':
-        return (
-          <button
-            key="priceEdit"
-            id="btn-pos-quick-price-edit"
-            type="button"
-            onClick={() => {
-              haptics.buttonPress();
-              if (cart.length > 0) {
-                handleOpenCartItemPriceEdit(cart[cart.length - 1]);
-              } else if (filteredProducts.length > 0) {
-                handleOpenProductPriceEdit(filteredProducts[0]);
-              }
-            }}
-            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
-            title="تعديل السعر السريع"
-          >
-            <Edit3 className="w-4 h-4 text-emerald-500" />
-            <span className="hidden lg:inline">{language === 'ar' ? 'السعر' : 'Price'}</span>
-          </button>
-        );
       case 'favorites':
-        return (
-          <button
-            key="favorites"
-            id="btn-pos-favorites-toggle"
-            type="button"
-            onClick={() => {
-              haptics.buttonPress();
-              setShowFavoritesOnly(!showFavoritesOnly);
-            }}
-            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
-              showFavoritesOnly
-                ? 'bg-amber-500 text-slate-950 border-amber-600 font-black'
-                : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-            }`}
-            title="المفضلة والأكثر طلباً"
-          >
-            <Star className={`w-4 h-4 ${showFavoritesOnly ? 'fill-slate-950 text-slate-950' : 'text-amber-500'}`} />
-            <span className="hidden xl:inline">{language === 'ar' ? 'المفضلة' : 'Favorites'}</span>
-          </button>
-        );
       case 'customizeButtons':
-        return (
-          <button
-            key="customizeButtons"
-            id="btn-pos-customize-buttons"
-            type="button"
-            onClick={() => {
-              haptics.buttonPress();
-              setIsButtonCustomizerModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-1 px-2.5 min-h-[40px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold rounded-xl border border-amber-300/80 dark:border-amber-700/80 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer group"
-            title="تخصيص وترتيب مواقع الأزرار"
-          >
-            <Sliders className="w-4 h-4 text-amber-600 dark:text-amber-400 group-hover:rotate-90 transition-transform" />
-            <span className="hidden 2xl:inline">{language === 'ar' ? 'تخصيص الأزرار' : 'Buttons'}</span>
-          </button>
-        );
       default:
         return null;
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden bg-slate-100/70 dark:bg-slate-950 max-w-full w-full">
+    <div className="pos-split-layout flex-1 flex flex-col lg:flex-row h-full overflow-hidden bg-transparent max-w-full w-full">
       {/* LEFT / CENTER: Products Catalog & Categories */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden p-2.5 sm:p-3 md:p-4 space-y-2.5 sm:space-y-3 min-w-0 max-w-full">
+      <div className="flex-1 flex flex-col h-full overflow-hidden p-2 sm:p-3 md:p-4 space-y-2 sm:space-y-2.5 min-w-0 max-w-full">
         
-        {/* MODE-SPECIALIZED HEADER BANNER */}
+        {/* MODE-SPECIALIZED HEADER BANNER (Only for Restaurant & Wholesale) */}
         {businessMode === 'restaurant' && (
           <RestaurantPOSHeader 
             onOpenKitchenTicket={() => {
@@ -780,18 +724,6 @@ export const POSView: React.FC = () => {
         )}
         {businessMode === 'wholesale' && (
           <WholesalePOSHeader />
-        )}
-        {businessMode === 'retail' && (
-          <RetailPOSHeader
-            onScanBarcode={() => {
-              haptics.buttonPress();
-              setIsBarcodeModalOpen(true);
-            }}
-            onScanCustomerQR={() => {
-              haptics.buttonPress();
-              setIsCustomerQRModalOpen(true);
-            }}
-          />
         )}
 
         {/* Live Barcode Scanned Floating Alert */}
@@ -911,14 +843,14 @@ export const POSView: React.FC = () => {
             </div>
           )}
 
-          {/* 2. Unified Cashier Command Cluster (محطة أدوات الكاشير المنظمة القابلة للتخصيص والترتيب) */}
-          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs shrink-0 overflow-x-auto no-scrollbar">
+          {/* 2. Unified Cashier Command Cluster */}
+          <div className="flex items-center gap-1.5 apple-glass-card p-1 rounded-2xl shrink-0 overflow-x-auto no-scrollbar">
             {posActionButtonsOrder.map((btnId) => {
               if (posActionButtonsVisibility[btnId] === false) return null;
               return renderCashierButton(btnId);
             })}
 
-            {/* Mobile Cart Toggle Button */}
+            {/* Mobile Cart Toggle Button (Hidden on Desktop & Mobile Landscape where Cart is side-by-side) */}
             <button
               id="btn-mobile-cart-top"
               type="button"
@@ -926,14 +858,12 @@ export const POSView: React.FC = () => {
                 haptics.buttonPress();
                 setIsMobileCartOpen(true);
               }}
-              data-longpress-title={language === 'ar' ? 'سلة الفاتورة الحالية' : 'Current Cart'}
-              data-longpress-desc={language === 'ar' ? 'فتح درج السلة لمشاهدة الأصناف وتعديل الكميات وإتمام عملية البيع.' : 'Open mobile cart drawer to review items and complete payment.'}
-              className={`lg:hidden flex items-center justify-center gap-1.5 px-3.5 min-h-[40px] text-white font-bold text-xs rounded-xl shadow-md shrink-0 active:scale-95 transition-all cursor-pointer ${
+              className={`pos-mobile-cart-trigger lg:hidden flex items-center justify-center gap-1.5 px-3.5 min-h-[40px] text-white font-bold text-xs rounded-xl shadow-xs shrink-0 active:scale-95 transition-all cursor-pointer ${
                 businessMode === 'restaurant'
-                  ? 'bg-emerald-600 shadow-emerald-600/20'
+                  ? 'bg-emerald-600'
                   : businessMode === 'wholesale'
-                  ? 'bg-amber-600 shadow-amber-600/20'
-                  : 'bg-blue-600 shadow-blue-600/20'
+                  ? 'bg-amber-600'
+                  : 'bg-slate-900 dark:bg-blue-600'
               }`}
               aria-label="عرض سلة التسوق"
             >
@@ -1382,126 +1312,83 @@ export const POSView: React.FC = () => {
         </div>
       </div>
 
-      {/* RIGHT: POS Register Cart & Checkout Panel */}
+      {/* RIGHT: POS Register Cart & Checkout Panel (Side-by-side on Desktop & Mobile Landscape) */}
       <div
-        className={`w-full lg:w-96 xl:w-[420px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col h-full shadow-lg z-30 transition-transform ${cartOrderClass} ${
-          isMobileCartOpen ? 'fixed inset-0 z-50' : 'hidden lg:flex'
+        className={`pos-cart-panel w-full lg:w-96 xl:w-[410px] apple-glass border-slate-200/80 dark:border-white/[0.08] flex flex-col h-full z-30 transition-transform ${cartOrderClass} ${
+          isMobileCartOpen ? 'fixed inset-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl' : 'hidden lg:flex'
         }`}
       >
-        {/* Cart Header with Mode Badge */}
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShoppingBag className={`w-5 h-5 ${
-              businessMode === 'restaurant' ? 'text-emerald-600' : businessMode === 'wholesale' ? 'text-amber-500' : 'text-blue-600'
-            }`} />
-            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-              {businessMode === 'restaurant' ? (language === 'ar' ? 'طلب الطاولة والتجهيز' : 'Table Order') : businessMode === 'wholesale' ? (language === 'ar' ? 'فاتورة إرسالية الجملة' : 'Wholesale Invoice') : t('currentOrder')}
+        {/* Clean Cart Header */}
+        <div className="px-3.5 py-2.5 border-b border-slate-200/70 dark:border-white/[0.08] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShoppingBag className="w-4 h-4 text-slate-700 dark:text-slate-200 shrink-0" />
+            <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+              {businessMode === 'restaurant'
+                ? (language === 'ar' ? 'طلب الطاولة' : 'Table Order')
+                : businessMode === 'wholesale'
+                ? (language === 'ar' ? 'فاتورة الجملة' : 'Wholesale Order')
+                : t('currentOrder')}
             </h3>
             {cartItemsCount > 0 && (
-              <span className={`text-[10px] text-white font-bold px-2 py-0.5 rounded-full ${
-                businessMode === 'restaurant' ? 'bg-emerald-600' : businessMode === 'wholesale' ? 'bg-amber-500 text-slate-950' : 'bg-blue-600'
-              }`}>
-                {cartItemsCount} {t('itemsCount')}
+              <span className="text-xs font-mono tabular-nums font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                · {cartItemsCount}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Shift Quick Status & Open Modal */}
             <button
               type="button"
               onClick={openShiftModal}
-              data-longpress-title={language === 'ar' ? 'إدارة وتسليم الوردية' : 'Shift Handover'}
-              data-longpress-desc={language === 'ar' ? 'عرض رصيد الدرج، تسجيل إيداع/سحب، وجرد الصندوق لتسليم الوردية.' : 'View live drawer balance and manage cashier shifts.'}
-              className="p-2 min-h-[36px] rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/50 text-slate-700 hover:text-emerald-700 dark:text-slate-300 dark:hover:text-emerald-300 border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95"
+              className="px-2.5 py-1.5 min-h-[34px] rounded-xl bg-slate-200/60 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] text-slate-700 dark:text-slate-200 border border-white/60 dark:border-white/[0.08] transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95 whitespace-nowrap"
               title={language === 'ar' ? 'إدارة الوردية والدرج' : 'Shift Manager'}
             >
-              <Banknote className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden xl:inline">{activeShift ? `وردية #${activeShift.shiftNumber}` : (language === 'ar' ? 'الوردية' : 'Shift')}</span>
+              <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>{activeShift ? `#${activeShift.shiftNumber}` : (language === 'ar' ? 'الوردية' : 'Shift')}</span>
             </button>
 
             {/* Smart Promotions Shortcut */}
             <button
               type="button"
               onClick={openPromotionsModal}
-              data-longpress-title={language === 'ar' ? 'العروض الترويجية والخصومات' : 'Promotions'}
-              data-longpress-desc={language === 'ar' ? 'إدارة وتفعيل خصومات سلة المشتريات وعروض الهدايا التلقائية.' : 'Manage automatic bundle and cart discounts.'}
-              className="p-2 min-h-[36px] rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95"
+              className="px-2.5 py-1.5 min-h-[34px] rounded-xl bg-slate-200/60 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] text-slate-700 dark:text-slate-200 border border-white/60 dark:border-white/[0.08] transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95 whitespace-nowrap"
               title={language === 'ar' ? 'العروض الترويجية' : 'Promotions'}
             >
               <Tag className="w-3.5 h-3.5 text-rose-500" />
-              <span className="hidden xl:inline">{promotions.filter(p => p.isActive).length > 0 ? `${promotions.filter(p => p.isActive).length} عروض` : (language === 'ar' ? 'عروض' : 'Deals')}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('ai')}
-              data-longpress-title={language === 'ar' ? 'المستشار الذكي (Gemini AI)' : 'AI Smart Advisor'}
-              data-longpress-desc={language === 'ar' ? 'اقتراحات ذكية للبيع المتبادل بناءً على محتويات السلة الحالية.' : 'Smart cross-selling suggestions based on cart items.'}
-              className="p-2 min-h-[36px] rounded-xl bg-gradient-to-r from-amber-500/10 to-indigo-500/10 hover:from-amber-500/20 hover:to-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95"
-              title={language === 'ar' ? 'المستشار الذكي (Gemini AI)' : 'AI Smart Advisor'}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden xl:inline">{language === 'ar' ? 'اقتراحات AI' : 'AI Advisor'}</span>
+              <span className="hidden sm:inline">{language === 'ar' ? 'عروض' : 'Deals'}</span>
             </button>
 
             {cart.length > 0 && (
               <button
                 type="button"
-                onClick={() => handleOpenQuantityKeypad(cart[cart.length - 1])}
-                data-longpress-title={language === 'ar' ? 'لوحة الأرقام اللمسية' : 'Touch Keypad'}
-                data-longpress-desc={language === 'ar' ? 'تعديل كمية أو سعر آخر صنف في السلة بلوحة أرقام لمسية كبيرة.' : 'Edit quantity or price with large touch keypad.'}
-                className="p-2 min-h-[36px] rounded-xl bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer active:scale-95"
-                title={language === 'ar' ? 'لوحة أرقام لمسية' : 'Touch Keypad'}
-              >
-                <Calculator className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="hidden xl:inline">{language === 'ar' ? 'لوحة لمسية' : 'Keypad'}</span>
-              </button>
-            )}
-
-            {cart.length > 0 && (
-              <button
                 onClick={clearCart}
-                data-longpress-title={language === 'ar' ? 'تفريغ السلة' : 'Clear Cart'}
-                data-longpress-desc={language === 'ar' ? 'حذف جميع الأصناف الموجودة في السلة والبدء بفاتورة فارغة جديدة.' : 'Remove all items from current cart.'}
-                className="text-xs text-rose-500 hover:text-rose-700 font-bold px-2.5 py-1.5 min-h-[36px] rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
+                className="text-xs text-rose-500 hover:text-rose-700 font-bold px-2 py-1.5 min-h-[34px] rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
                 title={t('clearCart')}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>{t('clearCart')}</span>
               </button>
             )}
-            {/* Close for mobile drawer */}
+
+            {/* Close for mobile portrait drawer */}
             <button
               id="btn-close-mobile-cart"
               type="button"
               onClick={() => setIsMobileCartOpen(false)}
-              className="lg:hidden flex items-center gap-1 px-3 py-2 min-h-[38px] rounded-xl bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-300 active:scale-95 text-xs font-bold transition-all cursor-pointer"
-              aria-label="إغلاق السلة والعودة للأصناف"
+              className="pos-mobile-cart-close lg:hidden flex items-center gap-1 px-2.5 py-1.5 min-h-[34px] rounded-xl bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-300 active:scale-95 text-xs font-bold transition-all cursor-pointer"
+              aria-label="إغلاق السلة"
             >
               <X className="w-4 h-4" />
-              <span>{language === 'ar' ? 'إغلاق' : 'Close'}</span>
             </button>
           </div>
         </div>
 
-        {/* RESTAURANT MODE: Dining Type & Table Bar */}
+        {/* RESTAURANT MODE: Compact Dining Info Bar (No duplicate KOT button) */}
         {businessMode === 'restaurant' && (
-          <div className="p-2.5 bg-emerald-50/80 dark:bg-emerald-950/40 border-b border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-emerald-800 dark:text-emerald-300">
-                {restaurantDiningType === 'dine_in' ? `🍽️ ${selectedTable} (${guestCount} ضيوف)` : restaurantDiningType === 'takeaway' ? '🥡 طلب سفري' : '🛵 توصيل دليفري'}
-              </span>
-            </div>
-            <button
-              type="button"
-              disabled={cart.length === 0}
-              onClick={() => setIsKitchenTicketModalOpen(true)}
-              className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-900 hover:bg-emerald-100 px-2 py-1 rounded-lg border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 transition-all"
-            >
-              <Printer className="w-3 h-3" />
-              <span>{language === 'ar' ? 'معاينة بون المطبخ' : 'Preview KOT'}</span>
-            </button>
+          <div className="px-3.5 py-2 bg-emerald-500/10 border-b border-emerald-500/20 flex items-center justify-between text-xs">
+            <span className="font-bold text-emerald-800 dark:text-emerald-300">
+              {restaurantDiningType === 'dine_in' ? `🍽️ ${selectedTable} · ${guestCount} ضيوف` : restaurantDiningType === 'takeaway' ? '🥡 طلب سفري' : '🛵 توصيل دليفري'}
+            </span>
           </div>
         )}
 
@@ -1940,7 +1827,7 @@ export const POSView: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsMobileCartOpen(false)}
-              className="lg:hidden w-full py-2.5 text-center text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 active:scale-95 transition-all mt-1"
+              className="pos-mobile-cart-close lg:hidden w-full py-2 text-center text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 active:scale-95 transition-all mt-1"
             >
               {language === 'ar' ? '← العودة ومتابعة إضافة الأصناف' : '← Back to keep adding items'}
             </button>
@@ -1948,88 +1835,49 @@ export const POSView: React.FC = () => {
         </div>
       </div>
 
-      {/* MOBILE FLOATING ACTION DOCK (Ergonomic thumb-accessible bottom bar for POS) */}
+      {/* MOBILE PORTRAIT FLOATING CART DOCK (Automatically hidden in Landscape & Desktop) */}
       {!isMobileCartOpen && (
         <aside
           aria-label="لوحة كاشير الجوال السريعة"
-          className="lg:hidden fixed bottom-16 inset-x-0 z-30 p-2.5 pointer-events-none"
+          className="pos-mobile-dock lg:hidden fixed bottom-15 inset-x-0 z-30 p-2 pointer-events-none"
         >
-          <div className="max-w-md mx-auto pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl p-2 shadow-2xl border border-slate-200/90 dark:border-slate-800/90 flex items-center justify-between gap-2 animate-in slide-in-from-bottom-3 duration-200">
-            {/* 1. Barcode Camera Button */}
-            <button
-              type="button"
-              id="mobile-dock-barcode-btn"
-              onClick={() => setIsBarcodeModalOpen(true)}
-              data-longpress-title={language === 'ar' ? 'مسح باركود بالكاميرا' : 'Barcode Camera'}
-              data-longpress-desc={language === 'ar' ? 'تشغيل كاميرا الهاتف لمسح باركود المنتج وإضافته مباشرة إلى الفاتورة.' : 'Open camera to scan barcodes directly.'}
-              className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 active:scale-90 transition-all shadow-xs cursor-pointer"
-              title={language === 'ar' ? 'مسح باركود بالكاميرا' : 'Camera Barcode Scanner'}
-              aria-label="مسح باركود بالكاميرا"
-            >
-              <ScanBarcode className="w-5 h-5 text-amber-500" />
-            </button>
-
-            {/* Quick Invoice Return Shortcut on Mobile Dock */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('returns')}
-              data-longpress-title={language === 'ar' ? 'إرجاع واسترجاع فاتورة' : 'Sales Return'}
-              data-longpress-desc={language === 'ar' ? 'فتح شاشة إرجاع الفواتير بمسح الباركود أو إدخال رقم الفاتورة.' : 'Jump to return items and refund money.'}
-              className="w-11 h-11 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-300 flex items-center justify-center shrink-0 active:scale-90 transition-all shadow-xs cursor-pointer border border-rose-200/60 dark:border-rose-800/40"
-              title="إرجاع بضاعة بمسح الباركود"
-              aria-label="إرجاع بضاعة بمسح الباركود"
-            >
-              <RotateCcw className="w-5 h-5 text-rose-500" />
-            </button>
-
-            {/* 2. Cart Summary Button */}
+          <div className="max-w-md mx-auto pointer-events-auto apple-glass-card rounded-2xl p-2 shadow-2xl flex items-center justify-between gap-2 animate-in slide-in-from-bottom-3 duration-200">
+            {/* 1. Cart Summary Drawer Button */}
             <button
               type="button"
               id="mobile-dock-cart-btn"
               onClick={() => setIsMobileCartOpen(true)}
-              data-longpress-title={language === 'ar' ? 'درج سلة المشتريات' : 'Cart Drawer'}
-              data-longpress-desc={language === 'ar' ? 'فتح درج السلة لمراجعة الأصناف وحذفها أو تعديل كمياتها وأسعارها.' : 'Open cart drawer to modify quantities and details.'}
-              className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all text-start min-w-0 cursor-pointer"
+              className="flex-1 flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-200/60 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] active:scale-95 transition-all text-start min-w-0 cursor-pointer"
               aria-label="عرض سلة التسوق"
             >
               <div className="relative shrink-0">
-                <ShoppingBag className={`w-5 h-5 ${
-                  businessMode === 'restaurant' ? 'text-emerald-600' : businessMode === 'wholesale' ? 'text-amber-500' : 'text-blue-600'
-                }`} />
+                <ShoppingBag className="w-5 h-5 text-slate-800 dark:text-white" />
                 {cartItemsCount > 0 && (
-                  <span className={`absolute -top-1.5 -end-2 text-[9px] font-black text-white px-1.5 py-0.2 rounded-full ${
-                    businessMode === 'restaurant' ? 'bg-emerald-600' : businessMode === 'wholesale' ? 'bg-amber-500 text-slate-950' : 'bg-blue-600'
-                  }`}>
+                  <span className="absolute -top-1.5 -end-2 text-[9px] font-black font-mono text-white bg-blue-600 px-1.5 py-0.2 rounded-full">
                     {cartItemsCount}
                   </span>
                 )}
               </div>
               <div className="min-w-0 flex-1 leading-tight">
-                <span className="text-[10px] text-slate-400 font-bold block truncate">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block truncate">
                   {cartItemsCount > 0 ? `${cartItemsCount} ${t('itemsCount')}` : (language === 'ar' ? 'السلة فارغة' : 'Cart Empty')}
                 </span>
-                <span className="text-xs font-black font-mono text-slate-900 dark:text-white truncate block">
+                <span className="text-xs font-black font-mono tabular-nums text-slate-900 dark:text-white truncate block">
                   {formatCurrency(grandTotal)}
                 </span>
               </div>
             </button>
 
-            {/* 3. Direct Instant Pay Button (Single Tap Checkout) */}
+            {/* 2. Direct Instant Pay Button */}
             <button
               type="button"
               id="mobile-dock-pay-btn"
               disabled={cart.length === 0}
               onClick={() => setIsPaymentModalOpen(true)}
-              data-longpress-title={language === 'ar' ? 'محاسبة ودفع سريع' : 'Instant Checkout'}
-              data-longpress-desc={language === 'ar' ? 'فتح شاشة الدفع واختيار طريقة المحاسبة نقد أو آجل وحساب الباقي.' : 'Open checkout modal to choose payment method and finish sale.'}
-              className={`h-11 px-4 rounded-xl font-extrabold text-xs sm:text-sm text-white flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all shrink-0 cursor-pointer ${
+              className={`h-11 px-5 rounded-xl font-extrabold text-xs sm:text-sm text-white flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all shrink-0 cursor-pointer ${
                 cart.length === 0
-                  ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
-                  : businessMode === 'restaurant'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-700 shadow-emerald-600/30'
-                  : businessMode === 'wholesale'
-                  ? 'bg-gradient-to-r from-amber-600 to-amber-700 shadow-amber-600/30'
-                  : 'bg-gradient-to-r from-blue-600 to-indigo-700 shadow-blue-600/30'
+                  ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed shadow-none'
+                  : 'bg-slate-900 dark:bg-blue-600'
               }`}
             >
               <Banknote className="w-4 h-4" />

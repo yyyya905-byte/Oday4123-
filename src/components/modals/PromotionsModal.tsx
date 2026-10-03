@@ -308,7 +308,7 @@ export const PromotionsModal: React.FC<PromotionsModalProps> = ({
                     >
                       <option value="">{language === 'ar' ? '-- اختر القسم --' : '-- Select Category --'}</option>
                       {categories.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id}>{language === 'ar' ? c.nameAr : c.nameEn}</option>
                       ))}
                     </select>
                   </div>

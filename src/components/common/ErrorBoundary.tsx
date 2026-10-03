@@ -28,10 +28,38 @@ export class ErrorBoundary extends React.Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught React Error in POS System:', error, errorInfo);
     this.setState({ errorInfo });
+
+    // Self-heal if caused by stale Vite pre-bundled React chunks in Service Worker cache
+    if (error?.message?.includes('useState') || error?.message?.includes('Invalid hook call')) {
+      try {
+        const alreadyRetried = sessionStorage.getItem('kian_chunk_recovery_retry');
+        if (!alreadyRetried) {
+          sessionStorage.setItem('kian_chunk_recovery_retry', '1');
+          this.clearCachesAndReload();
+        }
+      } catch {}
+    }
   }
 
-  private handleReload = () => {
+  private clearCachesAndReload = async () => {
+    try {
+      if ('caches' in window) {
+        const names = await caches.keys();
+        await Promise.all(names.map(name => caches.delete(name)));
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(reg => reg.unregister()));
+      }
+    } catch {}
     window.location.reload();
+  };
+
+  private handleReload = () => {
+    try {
+      sessionStorage.removeItem('kian_chunk_recovery_retry');
+    } catch {}
+    this.clearCachesAndReload();
   };
 
   private handleResetState = () => {

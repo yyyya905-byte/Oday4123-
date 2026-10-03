@@ -4,12 +4,12 @@
 
 @layer base {
   :root {
-    --font-cairo: 'Cairo', 'Plus Jakarta Sans', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
-    /* Eye-friendly, soothing, calm palette */
-    --bg-light-canvas: #f8fafc;
-    --bg-light-card: #ffffff;
-    --border-light-subtle: #e2e8f0;
+    --font-cairo: 'Cairo', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+    /* Apple Glass Light Palette */
+    --bg-light-canvas: #f2f4f8;
+    --bg-light-card: rgba(255, 255, 255, 0.78);
+    --border-light-subtle: rgba(226, 232, 240, 0.85);
     --text-light-primary: #0f172a;
     --text-light-secondary: #334155;
     --text-light-muted: #64748b;
@@ -22,9 +22,19 @@
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     background-color: var(--bg-light-canvas);
+    background-image:
+      radial-gradient(at 12% 8%, rgba(59, 130, 246, 0.06) 0px, transparent 48%),
+      radial-gradient(at 88% 12%, rgba(245, 158, 11, 0.05) 0px, transparent 48%),
+      radial-gradient(at 50% 90%, rgba(16, 185, 129, 0.04) 0px, transparent 50%);
+    background-attachment: fixed;
     color: var(--text-light-primary);
-    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Smooth cross-fade transition class for theme toggle */
@@ -388,7 +398,58 @@ html, body, #root {
 /* Short height screens (POS terminals, netbooks, laptops 1366x768, landscape tablets) */
 @media (max-height: 768px) {
   .app-header {
-    height: 3.25rem !important; /* 52px */
+    height: 3.15rem !important; /* 50px */
+  }
+}
+
+/* =========================================================
+   Mobile Landscape Orientation Support (الهاتف بالعرض)
+   Optimizes vertical space & enables side-by-side POS view
+   ========================================================= */
+@media (max-height: 540px) and (orientation: landscape) {
+  .app-header {
+    height: 2.65rem !important; /* 42px compact header */
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .app-bottom-nav {
+    height: calc(2.45rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .app-bottom-nav button {
+    flex-direction: row !important;
+    gap: 0.375rem !important;
+  }
+
+  .app-bottom-nav button span {
+    margin-top: 0 !important;
+    font-size: 0.7rem !important;
+  }
+
+  .app-main-viewport {
+    padding-bottom: calc(2.55rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Side-by-side POS split screen on landscape phones */
+  .pos-split-layout {
+    flex-direction: row !important;
+  }
+
+  .pos-cart-panel {
+    display: flex !important;
+    position: relative !important;
+    inset: auto !important;
+    width: 19.5rem !important; /* 312px side-by-side cart on landscape phone */
+    max-width: 44vw !important;
+    height: 100% !important;
+    z-index: 20 !important;
+  }
+
+  .pos-mobile-dock,
+  .pos-mobile-cart-trigger,
+  .pos-mobile-cart-close {
+    display: none !important;
   }
 }
 
@@ -409,9 +470,9 @@ html, body, #root {
 }
 
 /* Mobile & Tablet spacing adjustments to prevent bottom navigation overlap */
-@media (max-width: 1023px) {
+@media (max-width: 1023px) and (min-height: 541px) {
   .app-main-viewport {
-    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(3.85rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -420,45 +481,90 @@ html, body, #root {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 640px) and (min-height: 541px) {
   .app-bottom-nav {
-    height: calc(3.75rem + env(safe-area-inset-bottom, 0px)) !important;
+    height: calc(3.65rem + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
 /* =========================================================
-   Apple Semantic Materials & Modern Design System Tokens
+   Apple Liquid Glass & Semantic Materials (Cupertino Style)
    ========================================================= */
 
 .material-header {
-  background-color: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  background-color: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 .dark .material-header {
-  background-color: rgba(15, 23, 42, 0.82);
-  border-bottom-color: rgba(30, 41, 59, 0.8);
+  background-color: rgba(15, 23, 42, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .material-sidebar {
-  background-color: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(24px) saturate(190%);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
-  border-inline-end: 1px solid rgba(226, 232, 240, 0.7);
+  background-color: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border-inline-end: 1px solid rgba(226, 232, 240, 0.75);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.6);
 }
 .dark .material-sidebar {
-  background-color: rgba(11, 15, 25, 0.88);
-  border-inline-end-color: rgba(30, 41, 59, 0.7);
+  background-color: rgba(11, 15, 25, 0.74);
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
 .material-panel {
-  background-color: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-color: rgba(226, 232, 240, 0.75);
+  box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 .dark .material-panel {
-  background-color: rgba(17, 24, 39, 0.92);
+  background-color: rgba(15, 23, 42, 0.78);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.apple-glass {
+  background-color: rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(24px) saturate(185%);
+  -webkit-backdrop-filter: blur(24px) saturate(185%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.dark .apple-glass {
+  background-color: rgba(17, 24, 39, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.apple-glass-card {
+  background-color: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+.dark .apple-glass-card {
+  background-color: rgba(17, 24, 39, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.apple-segmented {
+  background-color: rgba(226, 232, 240, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+.dark .apple-segmented {
+  background-color: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 /* Realistic Thermal Receipt Paper Styling & Authentic Jagged Serrated Tear Edge */

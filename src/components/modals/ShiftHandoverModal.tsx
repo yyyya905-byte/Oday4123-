@@ -55,7 +55,7 @@ export const ShiftHandoverModal: React.FC<ShiftHandoverModalProps> = ({
     closeShift,
     currentUser,
     settings,
-    staff,
+    users,
     formatCurrency,
     language,
     notify
@@ -738,7 +738,7 @@ ${shiftToShare.closingNotes ? `📝 ملاحظات: ${shiftToShare.closingNotes}
                       className="w-full text-xs py-2.5 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-bold"
                     >
                       <option value="">{language === 'ar' ? '-- تسليم للإدارة / إغلاق نهائي --' : '-- Management / Final Close --'}</option>
-                      {staff.filter(st => st.id !== currentUser.id && st.status === 'active').map(st => (
+                      {users.filter(st => st.id !== currentUser.id && st.active).map(st => (
                         <option key={st.id} value={st.name}>
                           {st.name} ({st.role})
                         </option>

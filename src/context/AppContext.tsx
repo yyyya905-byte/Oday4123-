@@ -342,6 +342,7 @@ interface AppContextType {
     paymentMethod: string;
     paidAmount: number;
     notes?: string;
+    appliedPromotion?: { promoId: string; title: string };
   }) => Sale | null;
 
   // Refunds & Returns
@@ -354,6 +355,7 @@ interface AppContextType {
     totalRefundAmount: number;
     reason: string;
     restock: boolean;
+    refundMethod?: string;
   }) => Refund | null;
   processReturn: (returnData: any) => any;
 
@@ -596,15 +598,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return (saved === 'restaurant' || saved === 'wholesale' || saved === 'retail') ? saved : 'retail';
   });
 
-  const [isModeModalOpen, setIsModeModalOpen] = useState<boolean>(() => {
-    const remembered = localStorage.getItem(STORAGE_KEYS.REMEMBER_BUSINESS_MODE);
-    const savedMode = localStorage.getItem(STORAGE_KEYS.BUSINESS_MODE);
-    if (remembered === 'true' && savedMode) {
-      return false;
-    }
-    // Default open on startup so user chooses upon entering!
-    return true;
-  });
+  const [isModeModalOpen, setIsModeModalOpen] = useState<boolean>(false);
 
   // Restaurant & Cafe Options
   const [restaurantDiningType, setRestaurantDiningType] = useState<DiningType>('dine_in');
@@ -1111,12 +1105,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Mandatory First-Time Login & 1-Week Guest Trial Mode & Purchase Activation
   const [isFirstLoginCompleted, setIsFirstLoginCompletedState] = useState<boolean>(() => {
-    return localStorage.getItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED) === 'true';
+    const saved = localStorage.getItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED);
+    return saved !== 'false';
   });
 
-  const [isFirstLoginModalOpen, setIsFirstLoginModalOpen] = useState<boolean>(() => {
-    return localStorage.getItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED) !== 'true';
-  });
+  const [isFirstLoginModalOpen, setIsFirstLoginModalOpen] = useState<boolean>(false);
 
   const [licenseKey, setLicenseKey] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
@@ -2391,7 +2384,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const processSale = (saleData: { paymentMethod: string; paidAmount: number; notes?: string }): Sale | null => {
+  const processSale = (saleData: { paymentMethod: string; paidAmount: number; notes?: string; appliedPromotion?: { promoId: string; title: string } }): Sale | null => {
     if (cart.length === 0) {
       notify('السلة فارغة', 'أضف منتجات إلى السلة قبل إتمام البيع', 'warning');
       return null;
@@ -2661,6 +2654,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     totalRefundAmount: number;
     reason: string;
     restock: boolean;
+    refundMethod?: string;
   }): Refund | null => {
     const refundNum = `REF-${new Date().getFullYear()}-${String(refunds.length + 1).padStart(5, '0')}`;
 
