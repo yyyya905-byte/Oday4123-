@@ -42,7 +42,9 @@ import {
   CashShift,
   CashShiftTransaction,
   PromotionDeal,
-  PromotionType
+  PromotionType,
+  TradeType,
+  PaymentMethod
 } from '../types';
 import {
   applyThemeColor,
@@ -377,6 +379,33 @@ interface AppContextType {
   addCustomerManualDebt: (customerId: string, amount: number, referenceInvoice?: string, notes?: string) => DebtTransaction | null;
   recordSupplierDebtPayment: (supplierId: string, amount: number, paymentMethod?: 'cash' | 'card' | 'transfer' | 'check', notes?: string, discountAmount?: number) => DebtTransaction | null;
   addSupplierInvoiceDebt: (supplierId: string, amount: number, referenceInvoice?: string, notes?: string) => DebtTransaction | null;
+  recordSupplierPurchaseInvoice: (payload: {
+    supplierMode: 'existing' | 'new';
+    supplierId?: string;
+    newSupplierName?: string;
+    newSupplierCompany?: string;
+    newSupplierPhone?: string;
+    newSupplierCategory?: string;
+    referenceInvoice?: string;
+    paymentType: 'credit' | 'cash' | 'partial';
+    paidAmount: number;
+    paymentMethod?: 'cash' | 'card' | 'transfer' | 'check';
+    notes?: string;
+    items: {
+      mode: 'existing' | 'new';
+      productId?: string;
+      productName: string;
+      categoryId?: string;
+      barcode?: string;
+      unit?: string;
+      quantity: number;
+      costPrice: number;
+      wholesalePrice: number;
+      retailPrice: number;
+      minStock?: number;
+    }[];
+    manualTotalAmount?: number;
+  }) => { supplier: Supplier; totalAmount: number; remainingDebt: number; updatedProductsCount: number } | null;
 
   // Inventory
   inventoryLogs: InventoryTransaction[];
@@ -1693,24 +1722,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addProduct = (prod: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Product => {
     const newProd: Product = {
       ...prod,
-      id: `prod_${Date.now()}`,
+      id: `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const updated = [newProd, ...products];
-    setProductsState(updated);
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+    setProductsState(prev => {
+      const updated = [newProd, ...prev];
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
     logAudit('إضافة منتج جديد', `الاسم: ${newProd.nameAr} - السعر: ${newProd.price} - الباركود: ${newProd.barcode}`, 'medium');
     notify('تمت إضافة المنتج بنجاح', newProd.nameAr, 'success');
     return newProd;
   };
 
   const updateProduct = (id: string, prod: Partial<Product>) => {
-    const updated = products.map(p => p.id === id ? { ...p, ...prod, updatedAt: new Date().toISOString() } : p);
-    setProductsState(updated);
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+    setProductsState(prev => {
+      const updated = prev.map(p => p.id === id ? { ...p, ...prod, updatedAt: new Date().toISOString() } : p);
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
     logAudit('تعديل منتج', `معرف المنتج: ${id}`, 'low');
-    notify('تم تحديث المنتج', '', 'success');
   };
 
   const deleteProduct = (id: string) => {
@@ -1961,24 +1993,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const randomCode = `SUP-${Math.floor(100 + Math.random() * 900)}`;
     const newSup: Supplier = {
       ...supplierData,
-      id: `sup_${Date.now()}`,
+      id: `sup_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
       code: supplierData.code || randomCode,
       currentDebt: Number(supplierData.currentDebt) || 0,
       totalPurchases: Number(supplierData.totalPurchases) || 0,
       createdAt: new Date().toISOString(),
     };
-    const updated = [newSup, ...suppliers];
-    setSuppliersState(updated);
-    localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(updated));
+    setSuppliersState(prev => {
+      const updated = [newSup, ...prev];
+      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(updated));
+      return updated;
+    });
     logAudit('إضافة مورد جديد', `المورد: ${newSup.name} (${newSup.code}) - الرصيد الافتتاحي المستحق: ${newSup.currentDebt.toLocaleString()} ${settings.currency.symbol}`, 'medium');
     notify('تم تسجيل المورد بنجاح', newSup.name, 'success');
     return newSup;
   };
 
   const updateSupplier = (id: string, sup: Partial<Supplier>) => {
-    const updated = suppliers.map(s => s.id === id ? { ...s, ...sup } : s);
-    setSuppliersState(updated);
-    localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(updated));
+    setSuppliersState(prev => {
+      const updated = prev.map(s => s.id === id ? { ...s, ...sup } : s);
+      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(updated));
+      return updated;
+    });
     notify('تم تحديث بيانات المورد', '', 'success');
   };
 
@@ -2416,12 +2452,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const costTotal = cart.reduce((acc, it) => acc + (it.product.costPrice * it.quantity), 0);
     const profitTotal = grandTotal - costTotal;
 
-    // Change and paid calculations
-    const isCredit = saleData.paymentMethod === 'credit' || saleData.paymentMethod === 'آجل';
-    const rawPaid = typeof saleData.paidAmount === 'number' ? saleData.paidAmount : (isCredit ? 0 : grandTotal);
-    const paidAmount = isCredit ? Math.min(rawPaid, grandTotal) : (rawPaid >= grandTotal ? rawPaid : grandTotal);
-    const changeAmount = isCredit ? 0 : Math.max(0, rawPaid - grandTotal);
-    const remainingCreditDebt = isCredit ? Math.max(0, grandTotal - paidAmount) : 0;
+    // Change and paid calculations (supports Cash, Card, Transfer, Credit, and Split Cash + Credit)
+    const isCreditOrSplit =
+      saleData.paymentMethod === 'credit' ||
+      saleData.paymentMethod === 'آجل' ||
+      saleData.paymentMethod === 'split' ||
+      saleData.paymentMethod === 'نقد وآجل';
+    const rawPaid =
+      typeof saleData.paidAmount === 'number'
+        ? Math.max(0, saleData.paidAmount)
+        : isCreditOrSplit
+        ? 0
+        : grandTotal;
+    const paidAmount = isCreditOrSplit
+      ? Math.min(rawPaid, grandTotal)
+      : rawPaid >= grandTotal
+      ? rawPaid
+      : grandTotal;
+    const changeAmount = isCreditOrSplit ? 0 : Math.max(0, rawPaid - grandTotal);
+    const remainingCreditDebt = isCreditOrSplit ? Math.max(0, grandTotal - paidAmount) : 0;
+    const resolvedPaymentMethod: PaymentMethod =
+      isCreditOrSplit && paidAmount > 0 && remainingCreditDebt > 0
+        ? 'split'
+        : isCreditOrSplit && remainingCreditDebt > 0
+        ? 'credit'
+        : saleData.paymentMethod;
 
     // Loyalty Points Earned (e.g. 1 point per 10,000 SYP)
     let pointsEarned = 0;
@@ -2478,7 +2533,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       total: grandTotal,
       costTotal,
       profitTotal,
-      paymentMethod: saleData.paymentMethod,
+      paymentMethod: resolvedPaymentMethod,
       paidAmount,
       changeAmount,
       pointsEarned,
@@ -2524,7 +2579,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           newBalance: newDebt,
           paymentMethod: 'cash',
           referenceInvoice: invoiceNum,
-          notes: `مبيعات آجلة بموجب فاتورة ${invoiceNum} (المسدد: ${paidAmount} - المتبقي كدين: ${remainingCreditDebt})`,
+          notes:
+            paidAmount > 0
+              ? `تقسيم فاتورة ${invoiceNum} بين النقد والآجل (إجمالي: ${grandTotal.toLocaleString()} | مدفوع نقداً: ${paidAmount.toLocaleString()} | المتبقي كدين آجل: ${remainingCreditDebt.toLocaleString()})`
+              : `مبيعات آجلة بموجب فاتورة ${invoiceNum} (المتبقي كدين: ${remainingCreditDebt.toLocaleString()})`,
           recordedBy: currentUser.name,
           createdAt: new Date().toISOString(),
         };
@@ -2574,12 +2632,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Update active cash shift
     if (activeShift) {
-      const isCash = saleData.paymentMethod === 'cash';
-      const isCard = saleData.paymentMethod === 'card';
-      const isCredit = saleData.paymentMethod === 'credit';
-      const cashAmount = isCash ? grandTotal : 0;
+      const isCash = resolvedPaymentMethod === 'cash';
+      const isCard = resolvedPaymentMethod === 'card';
+      const cashAmount = isCash ? grandTotal : isCreditOrSplit ? paidAmount : 0;
       const cardAmount = isCard ? grandTotal : 0;
-      const creditAmount = isCredit ? grandTotal : 0;
+      const creditAmount = isCreditOrSplit ? remainingCreditDebt : 0;
 
       const updatedShifts = shifts.map(s => {
         if (s.id !== activeShift.id) return s;
@@ -2590,8 +2647,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const shiftTx: CashShiftTransaction = {
           id: `st_sale_${Date.now()}`,
           type: 'sale',
-          amount: isCash ? grandTotal : 0,
-          reason: `فاتورة مبيعات ${invoiceNum} (${saleData.paymentMethod})`,
+          amount: cashAmount,
+          reason:
+            resolvedPaymentMethod === 'split'
+              ? `فاتورة مقسمة نقد + آجل ${invoiceNum} (نقداً: ${cashAmount.toLocaleString()} | آجل: ${creditAmount.toLocaleString()})`
+              : `فاتورة مبيعات ${invoiceNum} (${resolvedPaymentMethod})`,
           performedBy: currentUser.name,
           timestamp: new Date().toISOString(),
           referenceId: newSale.id
@@ -2812,8 +2872,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const previousStock = product.stock || 0;
     const newStock = Math.max(0, previousStock + quantityDelta);
 
-    // Update product stock
-    updateProduct(productId, { stock: newStock });
+    // Update product stock atomically
+    setProductsState(prev => {
+      const updated = prev.map(p =>
+        p.id === productId
+          ? { ...p, stock: Math.max(0, (p.stock || 0) + quantityDelta), updatedAt: new Date().toISOString() }
+          : p
+      );
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
 
     // Record inventory transaction
     const log: InventoryTransaction = {
@@ -2830,9 +2898,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
 
-    const updatedLogs = [log, ...(inventoryLogs || [])];
-    setInventoryLogsState(updatedLogs);
-    localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(updatedLogs));
+    setInventoryLogsState(prev => {
+      const updatedLogs = [log, ...(prev || [])];
+      localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(updatedLogs));
+      return updatedLogs;
+    });
 
     // Alert if stock is low
     if (newStock <= product.minStock && newStock > 0 && quantityDelta < 0) {
@@ -2896,6 +2966,322 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setExpensesState(updated);
     localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(updated));
     notify('تم حذف المصروف', '', 'info');
+  };
+
+  // نظام الشراء المتكامل من الشركات والموردين (توريد مخزون + تحديث أسعار الشراء والجملة والمفرق + ذمم الموردين)
+  const recordSupplierPurchaseInvoice = (payload: {
+    supplierMode: 'existing' | 'new';
+    supplierId?: string;
+    newSupplierName?: string;
+    newSupplierCompany?: string;
+    newSupplierPhone?: string;
+    newSupplierCategory?: string;
+    referenceInvoice?: string;
+    paymentType: 'credit' | 'cash' | 'partial';
+    paidAmount: number;
+    paymentMethod?: 'cash' | 'card' | 'transfer' | 'check';
+    notes?: string;
+    items: {
+      mode: 'existing' | 'new';
+      productId?: string;
+      productName: string;
+      categoryId?: string;
+      barcode?: string;
+      unit?: string;
+      quantity: number;
+      costPrice: number;
+      wholesalePrice: number;
+      retailPrice: number;
+      minStock?: number;
+    }[];
+    manualTotalAmount?: number;
+  }): { supplier: Supplier; totalAmount: number; remainingDebt: number; updatedProductsCount: number } | null => {
+    const nowIso = new Date().toISOString();
+
+    // 1. Resolve or create supplier
+    let targetSupplier: Supplier | undefined;
+    if (payload.supplierMode === 'new') {
+      const supName = (payload.newSupplierName || payload.newSupplierCompany || '').trim();
+      if (!supName) {
+        notify('بيانات ناقصة', 'يرجى إدخال اسم المورد أو الشركة', 'warning');
+        return null;
+      }
+      const randomCode = `SUP-${Math.floor(100 + Math.random() * 900)}`;
+      targetSupplier = {
+        id: `sup_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        code: randomCode,
+        name: supName,
+        companyName: (payload.newSupplierCompany || supName).trim(),
+        phone: (payload.newSupplierPhone || '').trim(),
+        category: payload.newSupplierCategory || 'توريد عام',
+        currentDebt: 0,
+        totalPurchases: 0,
+        createdAt: nowIso,
+      };
+    } else {
+      targetSupplier = suppliers.find(s => s.id === payload.supplierId);
+      if (!targetSupplier) {
+        notify('بيانات ناقصة', 'يرجى اختيار المورد أو الشركة', 'warning');
+        return null;
+      }
+    }
+
+    // 2. Calculate totals from items or manual amount
+    const validItems = (payload.items || []).filter(item =>
+      item.quantity > 0 && (item.mode === 'existing' ? Boolean(item.productId) : Boolean(item.productName?.trim()))
+    );
+
+    const itemsTotal = validItems.reduce(
+      (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.costPrice) || 0),
+      0
+    );
+
+    const totalAmount = validItems.length > 0 ? itemsTotal : (Number(payload.manualTotalAmount) || 0);
+    if (totalAmount <= 0 && validItems.length === 0) {
+      notify('قيمة الفاتورة غير صالحة', 'يرجى إضافة أصناف للفاتورة أو تحديد إجمالي الفاتورة', 'warning');
+      return null;
+    }
+
+    let paid = 0;
+    if (payload.paymentType === 'cash') {
+      paid = totalAmount;
+    } else if (payload.paymentType === 'credit') {
+      paid = 0;
+    } else {
+      paid = Math.min(totalAmount, Math.max(0, Number(payload.paidAmount) || 0));
+    }
+    const remainingDebt = Math.max(0, totalAmount - paid);
+
+    // 3. Update existing products & create new products atomically + generate inventory logs
+    const newLogs: InventoryTransaction[] = [];
+    const createdProducts: Product[] = [];
+
+    if (validItems.length > 0) {
+      setProductsState(prev => {
+        const updatedList = prev.map(p => {
+          const matchingItems = validItems.filter(it => it.mode === 'existing' && it.productId === p.id);
+          if (matchingItems.length === 0) return p;
+
+          let addedQty = 0;
+          let latestCost = p.costPrice;
+          let latestWholesale = p.wholesalePrice ?? p.price;
+          let latestRetail = p.price;
+
+          matchingItems.forEach(it => {
+            const q = Math.max(1, Number(it.quantity) || 1);
+            addedQty += q;
+            if (Number(it.costPrice) > 0) latestCost = Number(it.costPrice);
+            if (Number(it.wholesalePrice) > 0) latestWholesale = Number(it.wholesalePrice);
+            if (Number(it.retailPrice) > 0) latestRetail = Number(it.retailPrice);
+          });
+
+          const previousStock = Number(p.stock) || 0;
+          const newStock = previousStock + addedQty;
+
+          newLogs.push({
+            id: `inv_log_${Date.now()}_${p.id}_${Math.random().toString(36).slice(2, 5)}`,
+            productId: p.id,
+            productName: p.nameAr,
+            type: 'purchase',
+            quantity: addedQty,
+            previousStock,
+            newStock,
+            reason: `فاتورة شراء من ${targetSupplier!.name}${payload.referenceInvoice ? ` (#${payload.referenceInvoice})` : ''}`,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            createdAt: nowIso,
+          });
+
+          return {
+            ...p,
+            stock: newStock,
+            costPrice: latestCost,
+            wholesalePrice: latestWholesale,
+            price: latestRetail,
+            tradeType: 'both' as TradeType,
+            updatedAt: nowIso,
+          };
+        });
+
+        validItems
+          .filter(it => it.mode === 'new' && it.productName.trim())
+          .forEach((it, idx) => {
+            const qty = Math.max(1, Number(it.quantity) || 1);
+            const costPrice = Math.max(0, Number(it.costPrice) || 0);
+            const retailPrice = Math.max(0, Number(it.retailPrice) || Number(it.wholesalePrice) || costPrice);
+            const wholesalePrice = Math.max(0, Number(it.wholesalePrice) || costPrice);
+            const prodId = `prod_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 5)}`;
+            const generatedBarcode = it.barcode?.trim() || `${Math.floor(620000000000 + Math.random() * 99999999999)}`;
+
+            const newProd: Product = {
+              id: prodId,
+              nameAr: it.productName.trim(),
+              nameEn: it.productName.trim(),
+              barcode: generatedBarcode,
+              sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+              categoryId: it.categoryId || categories[0]?.id || 'cat_1',
+              costPrice,
+              wholesalePrice,
+              price: retailPrice,
+              wholesaleMinQty: 5,
+              wholesaleUnit: 'كرتونة',
+              wholesaleUnitMultiplier: 12,
+              tradeType: 'both',
+              stock: qty,
+              minStock: Number(it.minStock) || 5,
+              unit: it.unit || 'قطعة',
+              isFavorite: false,
+              status: 'active',
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+
+            createdProducts.push(newProd);
+            newLogs.push({
+              id: `inv_log_${Date.now()}_new_${idx}`,
+              productId: prodId,
+              productName: newProd.nameAr,
+              type: 'purchase',
+              quantity: qty,
+              previousStock: 0,
+              newStock: qty,
+              reason: `توريد صنف جديد من المورد ${targetSupplier!.name}${payload.referenceInvoice ? ` (#${payload.referenceInvoice})` : ''}`,
+              userId: currentUser.id,
+              userName: currentUser.name,
+              createdAt: nowIso,
+            });
+          });
+
+        const finalProducts = [...createdProducts, ...updatedList];
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(finalProducts));
+        return finalProducts;
+      });
+
+      if (newLogs.length > 0) {
+        setInventoryLogsState(prev => {
+          const updatedLogs = [...newLogs, ...(prev || [])];
+          localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(updatedLogs));
+          return updatedLogs;
+        });
+      }
+    }
+
+    // 4. Update Supplier balance & totalPurchases
+    const previousBalance = targetSupplier.currentDebt || 0;
+    const finalBalance = previousBalance + remainingDebt;
+    const finalTotalPurchases = (targetSupplier.totalPurchases || 0) + totalAmount;
+
+    const updatedSupplierObj: Supplier = {
+      ...targetSupplier,
+      currentDebt: finalBalance,
+      totalPurchases: finalTotalPurchases,
+      lastPaymentDate: paid > 0 ? nowIso : targetSupplier.lastPaymentDate,
+    };
+
+    setSuppliersState(prev => {
+      const exists = prev.some(s => s.id === updatedSupplierObj.id);
+      const updated = exists
+        ? prev.map(s => (s.id === updatedSupplierObj.id ? updatedSupplierObj : s))
+        : [updatedSupplierObj, ...prev];
+      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(updated));
+      return updated;
+    });
+
+    // 5. Record Debt Transaction(s)
+    const itemsSummaryText =
+      validItems.length > 0
+        ? `توريد (${validItems.length} أصناف): ` +
+          validItems.map(i => `${i.productName} × ${i.quantity}`).join('، ')
+        : 'فاتورة شراء بضاعة من المورد';
+
+    const fullNotes = [itemsSummaryText, payload.notes?.trim()].filter(Boolean).join(' — ');
+    const invVoucher = `VCH-SUP-INV-${new Date().getFullYear().toString().slice(-2)}${String(debtTransactions.length + 3001).padStart(4, '0')}`;
+
+    const newTxs: DebtTransaction[] = [];
+
+    // Charge transaction for the invoice
+    const chargeTx: DebtTransaction = {
+      id: `dt_chg_${Date.now()}`,
+      voucherNumber: invVoucher,
+      partyType: 'supplier',
+      partyId: updatedSupplierObj.id,
+      partyName: updatedSupplierObj.name,
+      type: 'charge',
+      amount: totalAmount,
+      previousBalance,
+      newBalance: previousBalance + totalAmount,
+      paymentMethod: payload.paymentMethod || 'cash',
+      referenceInvoice: payload.referenceInvoice,
+      notes: fullNotes,
+      recordedBy: currentUser.name,
+      createdAt: nowIso,
+    };
+    newTxs.push(chargeTx);
+
+    // If paid (cash or partial), also record the payment voucher and expense
+    if (paid > 0) {
+      const payVoucher = `VCH-PAY-${new Date().getFullYear().toString().slice(-2)}${String(debtTransactions.length + 2002).padStart(4, '0')}`;
+      const payTx: DebtTransaction = {
+        id: `dt_pay_${Date.now() + 1}`,
+        voucherNumber: payVoucher,
+        partyType: 'supplier',
+        partyId: updatedSupplierObj.id,
+        partyName: updatedSupplierObj.name,
+        type: 'payment',
+        amount: paid,
+        previousBalance: previousBalance + totalAmount,
+        newBalance: finalBalance,
+        paymentMethod: payload.paymentMethod || 'cash',
+        referenceInvoice: payload.referenceInvoice,
+        notes: `دفعة مسددة من فاتورة شراء (${payload.paymentType === 'cash' ? 'نقداً بالكامل' : 'دفعة جزئية'}) - ${itemsSummaryText}`,
+        recordedBy: currentUser.name,
+        createdAt: nowIso,
+      };
+      newTxs.unshift(payTx);
+
+      // Record in expenses
+      const newExp: Expense = {
+        id: `exp_${Date.now()}`,
+        title: `مشتريات بضاعة من المورد: ${updatedSupplierObj.name}`,
+        category: 'purchases',
+        amount: paid,
+        paymentMethod: payload.paymentMethod || 'cash',
+        date: nowIso,
+        notes: `${fullNotes} (سند ${payVoucher})`,
+        recordedBy: currentUser.name,
+        createdAt: nowIso,
+      };
+      setExpensesState(prev => {
+        const updatedExp = [newExp, ...prev];
+        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(updatedExp));
+        return updatedExp;
+      });
+    }
+
+    setDebtTransactionsState(prev => {
+      const updatedTxs = [...newTxs, ...prev];
+      localStorage.setItem(STORAGE_KEYS.DEBT_TRANSACTIONS, JSON.stringify(updatedTxs));
+      return updatedTxs;
+    });
+
+    soundEffects.playSuccess();
+    logAudit(
+      'فاتورة شراء وتوريد بضاعة من مورد',
+      `المورد: ${updatedSupplierObj.name} | الأصناف: ${validItems.length} | الإجمالي: ${totalAmount.toLocaleString()} | المسدد: ${paid.toLocaleString()} | المتبقي ذمة: ${remainingDebt.toLocaleString()}`,
+      'high'
+    );
+    notify(
+      'تم اعتماد فاتورة الشراء وتحديث المخزون',
+      `${updatedSupplierObj.name} • تم توريد ${validItems.length} صنف بإجمالي ${totalAmount.toLocaleString()} ${settings.currency.symbol}`,
+      'success'
+    );
+
+    return {
+      supplier: updatedSupplierObj,
+      totalAmount,
+      remainingDebt,
+      updatedProductsCount: validItems.length,
+    };
   };
 
   // 14. Audit Logs
@@ -4703,6 +5089,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCustomerManualDebt,
         recordSupplierDebtPayment,
         addSupplierInvoiceDebt,
+        recordSupplierPurchaseInvoice,
         inventoryLogs,
         stockMovements: inventoryLogs || [],
         adjustStock,

@@ -66,6 +66,32 @@ export const defaultButtonLayout: ButtonLayoutConfig = {
   },
   floatingActionPosition: 'bottom-right',
   floatingActionEnabled: true,
+  floatingActionButtonsOrder: [
+    'pos',
+    'debts',
+    'products',
+    'inventory',
+    'reports',
+    'shift',
+    'search',
+    'themeToggle',
+    'themeColor',
+    'customizeButtons',
+    'about'
+  ],
+  floatingActionButtonsVisibility: {
+    pos: true,
+    debts: true,
+    products: true,
+    inventory: true,
+    reports: true,
+    shift: true,
+    search: true,
+    themeToggle: true,
+    themeColor: true,
+    customizeButtons: true,
+    about: true
+  },
   activePreset: 'standard'
 };
 
@@ -431,8 +457,8 @@ export const initialProducts: Product[] = [
     wholesaleUnitMultiplier: 6,
     tradeType: 'both',
     costPrice: 14000,
-    stock: 15,
-    minStock: 4,
+    stock: 3,
+    minStock: 5,
     unit: 'شريحة',
     image: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=400&q=80',
     isFavorite: true,

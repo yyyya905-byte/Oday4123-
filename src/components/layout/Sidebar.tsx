@@ -64,6 +64,12 @@ export const Sidebar: React.FC = () => {
           badge: cartItemsCount > 0 ? cartItemsCount : undefined
         },
         {
+          id: 'dashboard',
+          labelKey: 'navDashboard',
+          customLabel: language === 'ar' ? 'لوحة القيادة' : 'Dashboard',
+          icon: LayoutDashboard
+        },
+        {
           id: 'invoices',
           labelKey: 'navInvoices',
           customLabel: language === 'ar' ? 'سجل الفواتير' : 'Invoices',
@@ -132,11 +138,6 @@ export const Sidebar: React.FC = () => {
     {
       title: language === 'ar' ? 'الإدارة والنظام' : 'System & Admin',
       items: [
-        {
-          id: 'dashboard',
-          labelKey: 'navDashboard',
-          icon: LayoutDashboard
-        },
         {
           id: 'ai',
           labelKey: 'navAI',

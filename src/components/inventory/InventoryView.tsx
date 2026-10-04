@@ -33,6 +33,7 @@ import {
 import { VehicleDispatchTab } from './VehicleDispatchTab';
 import { WholesaleWarehousesTab } from './WholesaleWarehousesTab';
 import { LowStockAlertsCenter } from './LowStockAlertsCenter';
+import { SupplierPurchaseModal } from '../debts/SupplierPurchaseModal';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import {
   CivilDateRange,
@@ -63,6 +64,7 @@ export const InventoryView: React.FC = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [isSupplierPurchaseModalOpen, setIsSupplierPurchaseModalOpen] = useState(false);
   const [movementType, setMovementType] = useState<StockMovementType>('purchase');
   const [quantity, setQuantity] = useState<number>(10);
   const [reason, setReason] = useState<string>('');
@@ -147,6 +149,17 @@ export const InventoryView: React.FC = () => {
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             تنبيهات النقص التلقائي، متابعة وتفريغ حمولات سيارات النقل، مستودعات الجملة، ومستويات المخزون
           </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsSupplierPurchaseModalOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+          >
+            <Truck className="w-4 h-4" />
+            <span>+ شراء وتوريد من الشركات والموردين</span>
+          </button>
         </div>
       </div>
 
@@ -1194,6 +1207,12 @@ export const InventoryView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Smart Supplier Purchase & Inventory Restock Modal */}
+      <SupplierPurchaseModal
+        isOpen={isSupplierPurchaseModalOpen}
+        onClose={() => setIsSupplierPurchaseModalOpen(false)}
+      />
     </div>
   );
 };

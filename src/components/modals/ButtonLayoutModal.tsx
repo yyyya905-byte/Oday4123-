@@ -30,9 +30,16 @@ import {
   Compass,
   Zap,
   CheckCircle2,
-  Maximize2
+  Maximize2,
+  ReceiptText,
+  Wallet,
+  Package,
+  BarChart3,
+  Coins,
+  Palette
 } from 'lucide-react';
 import { ButtonLayoutConfig, ButtonLayoutPreset, POSCartPosition, POSPayButtonAlignment, FloatingActionPosition } from '../../types';
+import { DEFAULT_FLOATING_HUB_ORDER, DEFAULT_FLOATING_HUB_VISIBILITY } from '../common/FloatingActionHub';
 
 interface CashierButtonMeta {
   id: string;
@@ -170,6 +177,20 @@ const HEADER_BUTTONS_CATALOG: Record<string, HeaderButtonMeta> = {
   }
 };
 
+const FLOATING_BUTTONS_CATALOG: Record<string, HeaderButtonMeta> = {
+  pos: { id: 'pos', nameAr: 'شاشة الكاشير (نقطة البيع)', nameEn: 'POS Register', icon: ReceiptText },
+  debts: { id: 'debts', nameAr: 'الديون والشراء من الموردين', nameEn: 'Debts & Suppliers', icon: Wallet },
+  products: { id: 'products', nameAr: 'المنتجات وتنبيهات النواقص', nameEn: 'Products & Alerts', icon: Package },
+  inventory: { id: 'inventory', nameAr: 'إدارة المخزون والمستودع', nameEn: 'Inventory Hub', icon: Layers },
+  reports: { id: 'reports', nameAr: 'لوحة التقارير والأرباح', nameEn: 'Analytics & Reports', icon: BarChart3 },
+  shift: { id: 'shift', nameAr: 'صندوق النقد والوردية', nameEn: 'Cash Shift Drawer', icon: Coins },
+  search: { id: 'search', nameAr: 'البحث الشامل السريع', nameEn: 'Global Search', icon: Search },
+  themeToggle: { id: 'themeToggle', nameAr: 'الوضع الليلي / النهاري', nameEn: 'Dark / Light Mode', icon: Sun },
+  themeColor: { id: 'themeColor', nameAr: 'ألوان المتجر والهوية', nameEn: 'Theme Color', icon: Palette },
+  customizeButtons: { id: 'customizeButtons', nameAr: 'تخصيص مواقع الأزرار', nameEn: 'Customize Layout', icon: Sliders },
+  about: { id: 'about', nameAr: 'سجل التحسينات والدليل', nameEn: "What's New", icon: Sparkles }
+};
+
 export const ButtonLayoutModal: React.FC = () => {
   const {
     settings,
@@ -276,6 +297,39 @@ export const ButtonLayoutModal: React.FC = () => {
     updateButtonLayout({
       headerButtonsVisibility: {
         ...layout.headerButtonsVisibility,
+        [btnId]: !current
+      }
+    });
+  };
+
+  const floatingOrder =
+    layout.floatingActionButtonsOrder && layout.floatingActionButtonsOrder.length > 0
+      ? [
+          ...layout.floatingActionButtonsOrder.filter(id => DEFAULT_FLOATING_HUB_ORDER.includes(id)),
+          ...DEFAULT_FLOATING_HUB_ORDER.filter(id => !layout.floatingActionButtonsOrder!.includes(id))
+        ]
+      : DEFAULT_FLOATING_HUB_ORDER;
+
+  const floatingVisibility = {
+    ...DEFAULT_FLOATING_HUB_VISIBILITY,
+    ...(layout.floatingActionButtonsVisibility || {})
+  };
+
+  const moveFloatingButton = (index: number, direction: 'up' | 'down') => {
+    const list = [...floatingOrder];
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIdx];
+    list[targetIdx] = temp;
+    updateButtonLayout({ floatingActionButtonsOrder: list });
+  };
+
+  const toggleFloatingButtonVisibility = (btnId: string) => {
+    const current = floatingVisibility[btnId] !== false;
+    updateButtonLayout({
+      floatingActionButtonsVisibility: {
+        ...floatingVisibility,
         [btnId]: !current
       }
     });
@@ -878,6 +932,85 @@ export const ButtonLayoutModal: React.FC = () => {
                         <span>↖️</span>
                         <span>أعلى اليسار</span>
                       </button>
+                    </div>
+
+                    {/* Floating Action Hub Icon Order & Visibility */}
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2.5">
+                      <div>
+                        <h5 className="text-xs font-black text-slate-900 dark:text-white">
+                          ترتيب وإظهار أيقونات قائمة الوصول السريع (FloatingActionHub):
+                        </h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          رتّب الأيقونات حسب العمليات الأكثر تكراراً لديك لسهولة الوصول السريع
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {floatingOrder.map((btnId, index) => {
+                          const meta = FLOATING_BUTTONS_CATALOG[btnId];
+                          if (!meta) return null;
+                          const Icon = meta.icon;
+                          const isVisible = floatingVisibility[btnId] !== false;
+
+                          return (
+                            <div
+                              key={btnId}
+                              className={`p-2.5 rounded-2xl border flex items-center justify-between gap-3 transition-colors ${
+                                isVisible
+                                  ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                                  : 'bg-slate-100/60 dark:bg-slate-800/40 border-dashed border-slate-300 dark:border-slate-700 opacity-60'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-mono font-bold text-slate-500 shrink-0">
+                                  {index + 1}
+                                </span>
+                                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                                  {language === 'ar' ? meta.nameAr : meta.nameEn}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFloatingButtonVisibility(btnId)}
+                                  className={`p-1.5 rounded-xl border text-xs transition-colors cursor-pointer ${
+                                    isVisible
+                                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800'
+                                      : 'bg-slate-200 text-slate-500 border-slate-300 dark:bg-slate-700 dark:border-slate-600'
+                                  }`}
+                                  title={isVisible ? 'إخفاء الأيقونة' : 'إظهار الأيقونة'}
+                                >
+                                  {isVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={index === 0}
+                                  onClick={() => moveFloatingButton(index, 'up')}
+                                  className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                                  title="تحريك لأعلى"
+                                >
+                                  <ChevronUp className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={index === floatingOrder.length - 1}
+                                  onClick={() => moveFloatingButton(index, 'down')}
+                                  className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                                  title="تحريك لأسفل"
+                                >
+                                  <ChevronDown className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}

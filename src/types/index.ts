@@ -504,6 +504,8 @@ export interface ButtonLayoutConfig {
   headerButtonsVisibility: Record<string, boolean>;
   floatingActionPosition: FloatingActionPosition;
   floatingActionEnabled: boolean;
+  floatingActionButtonsOrder?: string[];
+  floatingActionButtonsVisibility?: Record<string, boolean>;
   activePreset?: ButtonLayoutPreset;
 }
 

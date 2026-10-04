@@ -57,6 +57,7 @@ import {
   Legend
 } from 'recharts';
 import { DailySalesSummaryWidget } from './DailySalesSummaryWidget';
+import { DailyProfitVsExpensesWidget } from './DailyProfitVsExpensesWidget';
 import { SubscriptionStatusWidget } from './SubscriptionStatusWidget';
 import { getRoleInfo, hasActionPermission } from '../../utils/permissions';
 
@@ -859,6 +860,9 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Daily Profit vs. Expenses Interactive Recharts Widget */}
+      <DailyProfitVsExpensesWidget />
 
       {/* Visual Analytics Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Product, Category, DiningType } from '../../types';
+import { Product, Category, DiningType, PaymentMethod } from '../../types';
 import { soundEffects } from '../../services/audio';
 import { haptics } from '../../services/haptics';
 import {
@@ -46,7 +46,8 @@ import {
   Bluetooth,
   Sliders,
   Volume2,
-  VolumeX
+  VolumeX,
+  Split
 } from 'lucide-react';
 import { voiceAnnouncer } from '../../services/voiceAnnouncer';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -122,6 +123,10 @@ export const POSView: React.FC = () => {
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [isCustomerQRModalOpen, setIsCustomerQRModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentModalInit, setPaymentModalInit] = useState<{
+    method?: PaymentMethod;
+    paidAmount?: number | null;
+  }>({});
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isKitchenTicketModalOpen, setIsKitchenTicketModalOpen] = useState(false);
   const [isBluetoothModalOpen, setIsBluetoothModalOpen] = useState(false);
@@ -1807,6 +1812,7 @@ export const POSView: React.FC = () => {
                   type="button"
                   onClick={() => {
                     soundEffects.playCash();
+                    setPaymentModalInit({ method: 'cash', paidAmount: grandTotal });
                     setIsPaymentModalOpen(true);
                   }}
                   className="px-2 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs"
@@ -1823,6 +1829,7 @@ export const POSView: React.FC = () => {
                     type="button"
                     onClick={() => {
                       soundEffects.playCash();
+                      setPaymentModalInit({ method: 'cash', paidAmount: note.amount });
                       setIsPaymentModalOpen(true);
                     }}
                     className="px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300 dark:hover:border-amber-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs"
@@ -1864,12 +1871,37 @@ export const POSView: React.FC = () => {
               </button>
             )}
 
+            {/* Quick Split Cash + Credit Button */}
+            <button
+              type="button"
+              id="btn-pos-split-cash-credit"
+              disabled={cart.length === 0}
+              onClick={() => {
+                setPaymentModalInit({ method: 'split', paidAmount: null });
+                setIsPaymentModalOpen(true);
+              }}
+              data-longpress-title={language === 'ar' ? 'تقسيم الفاتورة (نقد + آجل)' : 'Split Cash & Credit'}
+              data-longpress-desc={language === 'ar' ? 'فتح نافذة تقسيم سعر الفاتورة مباشرة بين دفعة نقدية والباقي دين آجل على العميل.' : 'Split invoice total between instant cash and deferred credit.'}
+              className={`py-3.5 px-3 min-h-[48px] rounded-2xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition-all active:scale-95 cursor-pointer shrink-0 ${
+                cart.length === 0
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed'
+                  : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 shadow-xs'
+              }`}
+              title="تقسيم سعر الفاتورة بين النقد والآجل"
+            >
+              <Split className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="whitespace-nowrap">{language === 'ar' ? 'نقد + آجل' : 'Split'}</span>
+            </button>
+
             {/* Pay Now Button */}
             <button
               type="button"
               id="btn-pos-pay-now"
               disabled={cart.length === 0}
-              onClick={() => setIsPaymentModalOpen(true)}
+              onClick={() => {
+                setPaymentModalInit({ method: 'cash', paidAmount: grandTotal });
+                setIsPaymentModalOpen(true);
+              }}
               data-longpress-title={language === 'ar' ? 'محاسبة ودفع الفاتورة' : 'Pay & Complete'}
               data-longpress-desc={language === 'ar' ? 'فتح نافذة الدفع، اختيار الدفع كاش أو شبكة أو آجل، وطباعة الفاتورة.' : 'Proceed to payment dialog, calculate change and issue invoice.'}
               className={`flex-1 py-3.5 min-h-[48px] rounded-2xl text-white font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 cursor-pointer ${
@@ -1933,13 +1965,36 @@ export const POSView: React.FC = () => {
               </div>
             </button>
 
-            {/* 2. Direct Instant Pay Button */}
+            {/* 2. Quick Split Cash + Credit Button on Mobile */}
+            <button
+              type="button"
+              id="mobile-dock-split-btn"
+              disabled={cart.length === 0}
+              onClick={() => {
+                setPaymentModalInit({ method: 'split', paidAmount: null });
+                setIsPaymentModalOpen(true);
+              }}
+              className={`h-11 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1 border active:scale-95 transition-all shrink-0 cursor-pointer ${
+                cart.length === 0
+                  ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700 cursor-not-allowed'
+                  : 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
+              }`}
+              title="تقسيم الفاتورة بين النقد والآجل"
+            >
+              <Split className="w-3.5 h-3.5 text-emerald-500" />
+              <span>{language === 'ar' ? 'نقد+آجل' : 'Split'}</span>
+            </button>
+
+            {/* 3. Direct Instant Pay Button */}
             <button
               type="button"
               id="mobile-dock-pay-btn"
               disabled={cart.length === 0}
-              onClick={() => setIsPaymentModalOpen(true)}
-              className={`h-11 px-5 rounded-xl font-extrabold text-xs sm:text-sm text-white flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all shrink-0 cursor-pointer ${
+              onClick={() => {
+                setPaymentModalInit({ method: 'cash', paidAmount: grandTotal });
+                setIsPaymentModalOpen(true);
+              }}
+              className={`h-11 px-4 rounded-xl font-extrabold text-xs sm:text-sm text-white flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all shrink-0 cursor-pointer ${
                 cart.length === 0
                   ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed shadow-none'
                   : 'bg-slate-900 dark:bg-blue-600'
@@ -1973,6 +2028,8 @@ export const POSView: React.FC = () => {
         isOpen={isPaymentModalOpen}
         onClose={() => setIsPaymentModalOpen(false)}
         totalAmount={grandTotal}
+        initialPaymentMethod={paymentModalInit.method}
+        initialPaidAmount={paymentModalInit.paidAmount}
       />
 
       {businessMode === 'restaurant' && (

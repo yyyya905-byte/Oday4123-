@@ -5,7 +5,6 @@ import {
   Plus,
   Minus,
   Search,
-  Filter,
   Edit2,
   Trash2,
   Star,
@@ -13,25 +12,23 @@ import {
   Layers,
   Sparkles,
   X,
-  Check,
   Tag,
-  ScanBarcode,
-  UploadCloud,
-  Copy,
-  Boxes,
-  Percent,
   Coins,
-  DollarSign,
-  TrendingUp,
   AlertTriangle,
+  AlertOctagon,
   Barcode as BarcodeIcon,
   Printer,
-  ListPlus,
-  Hash,
-  Camera
+  Download,
+  Camera,
+  BellRing,
+  FileSpreadsheet,
+  Truck,
+  CheckCircle2,
+  RefreshCw
 } from 'lucide-react';
 import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
 import { ProductBarcodeScannerModal } from './ProductBarcodeScannerModal';
+import { SupplierPurchaseModal } from '../debts/SupplierPurchaseModal';
 import { generateBarcodeSvg, generateRandomEan13 } from '../../utils/barcodeUtils';
 
 export const ProductsView: React.FC = () => {
@@ -45,6 +42,7 @@ export const ProductsView: React.FC = () => {
     addCategory,
     deleteCategory,
     formatCurrency,
+    setActiveTab,
     t,
     language,
     settings,
@@ -54,6 +52,11 @@ export const ProductsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCat, setSelectedCat] = useState('all');
   const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
+
+  // Quick Low Stock Report Modal State
+  const [isLowStockReportOpen, setIsLowStockReportOpen] = useState(false);
+  const [isSupplierPurchaseModalOpen, setIsSupplierPurchaseModalOpen] = useState(false);
+  const [productsToRestockInPurchase, setProductsToRestockInPurchase] = useState<Product[]>([]);
 
   // Product Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -91,7 +94,7 @@ export const ProductsView: React.FC = () => {
   const [image, setImage] = useState('');
   const [isFavorite, setIsFavorite] = useState(false);
 
-  // Identification codes (supporting 100+ codes per product for wholesale / retail)
+  // Identification codes
   const [identificationCodes, setIdentificationCodes] = useState<string[]>([]);
   const [newCodeInput, setNewCodeInput] = useState<string>('');
   const [bulkCodesInput, setBulkCodesInput] = useState<string>('');
@@ -104,6 +107,69 @@ export const ProductsView: React.FC = () => {
   // Live profit calculation
   const profitAmount = Math.max(0, price - costPrice);
   const profitMarginPercent = costPrice > 0 ? ((profitAmount / costPrice) * 100).toFixed(1) : '100';
+
+  // LOW STOCK ALERT SYSTEM COMPUTATIONS (Products where stock <= minStock)
+  const lowStockAlertProducts = useMemo(() => {
+    return products
+      .filter(p => p.stock <= p.minStock)
+      .sort((a, b) => a.stock - b.stock);
+  }, [products]);
+
+  const outOfStockCount = useMemo(
+    () => lowStockAlertProducts.filter(p => p.stock <= 0).length,
+    [lowStockAlertProducts]
+  );
+
+  const criticalThresholdCount = useMemo(
+    () => lowStockAlertProducts.filter(p => p.stock > 0 && p.stock <= p.minStock).length,
+    [lowStockAlertProducts]
+  );
+
+  const totalEstimatedRestockCost = useMemo(() => {
+    return lowStockAlertProducts.reduce((sum, p) => {
+      const targetStock = Math.max(p.minStock * 2, p.minStock + 10);
+      const neededQty = Math.max(1, targetStock - p.stock);
+      return sum + neededQty * (p.costPrice || Math.round(p.price * 0.7));
+    }, 0);
+  }, [lowStockAlertProducts]);
+
+  // Export Quick Low Stock Report to CSV
+  const handleExportLowStockCSV = () => {
+    const headers = [
+      'اسم المنتج,الباركود,الرمز SKU,الرصيد الحالي,الحد الأدنى,الحالة,الكمية المقترحة للشراء,سعر الشراء,التكلفة التقديرية\n'
+    ];
+    const rows = lowStockAlertProducts.map(p => {
+      const targetStock = Math.max(p.minStock * 2, p.minStock + 10);
+      const neededQty = Math.max(1, targetStock - p.stock);
+      const statusText = p.stock <= 0 ? 'نافذ تماماً (0)' : 'وصل للحد الأدنى';
+      const totalCost = neededQty * (p.costPrice || 0);
+      return `"${p.nameAr}","${p.barcode}","${p.sku}",${p.stock},${p.minStock},"${statusText}",${neededQty},${p.costPrice},${totalCost}`;
+    });
+    const blob = new Blob([headers.concat(rows).join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `low-stock-quick-report-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    notify('تم تصدير التقرير السريع', 'تم تحميل قائمة المنتجات التي وصلت للحد الأدنى بصيغة CSV', 'success');
+  };
+
+  // Restock all low-stock products to safe level in 1 click
+  const handleRestockAllLowProducts = () => {
+    if (lowStockAlertProducts.length === 0) return;
+    lowStockAlertProducts.forEach(p => {
+      const targetStock = Math.max(p.minStock * 2, p.minStock + 10);
+      const delta = Math.max(1, targetStock - p.stock);
+      adjustStock(p.id, delta, 'restock', 'توريد تعويضي سريع من تقرير النواقص');
+    });
+    notify(
+      'تم تعويض المخزون بنجاح',
+      `تمت إعادة تعبئة ${lowStockAlertProducts.length} منتجات إلى المستوى الآمن`,
+      'success'
+    );
+  };
 
   const openAddModal = (initialBarcode?: string) => {
     setEditingProduct(null);
@@ -122,7 +188,7 @@ export const ProductsView: React.FC = () => {
     setStock(25);
     setMinStock(5);
     setUnit('قطعة');
-    setImage('https://images.unsplash.com/photo-1544816155-12df9643f363?w=500&auto=format&fit=crop&q=60');
+    setImage('');
     setIsFavorite(false);
     setIdentificationCodes([]);
     setNewCodeInput('');
@@ -217,7 +283,7 @@ export const ProductsView: React.FC = () => {
     return products.filter(p => {
       if (selectedCat !== 'all' && p.categoryId !== selectedCat) return false;
       if (stockFilter === 'in_stock' && p.stock <= p.minStock) return false;
-      if (stockFilter === 'low_stock' && (p.stock > p.minStock || p.stock <= 0)) return false;
+      if (stockFilter === 'low_stock' && p.stock > p.minStock) return false;
       if (stockFilter === 'out_of_stock' && p.stock > 0) return false;
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -232,23 +298,65 @@ export const ProductsView: React.FC = () => {
   }, [products, selectedCat, stockFilter, searchQuery]);
 
   return (
-    <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-5 bg-slate-50/50 dark:bg-slate-950">
+    <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-5 bg-transparent">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
             <span>{t('productsTitle')}</span>
-            <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-0.5 rounded-full font-mono">
-              العملة: {currencySymbol} ({currencyCode})
+            <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+              · {currencySymbol} ({currencyCode})
             </span>
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            إدارة كتالوج الأصناف، أسعار المفرق والجملة بالعملة، وحدود تنبيهات النقص
+            إدارة كتالوج الأصناف، أسعار الشراء والمفرق والجملة، ونظام الإنذار المبكر لنقص المخزون
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Camera Barcode Scanner (Auto Add / Stock Increment) */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* RED LOW STOCK ALERT BUTTON IN HEADER */}
+          <button
+            type="button"
+            id="btn-open-low-stock-quick-report"
+            onClick={() => setIsLowStockReportOpen(true)}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer active:scale-95 whitespace-nowrap ${
+              lowStockAlertProducts.length > 0
+                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/35 ring-2 ring-rose-400/60'
+                : 'apple-glass-card text-emerald-700 dark:text-emerald-400'
+            }`}
+            title="عرض التقرير السريع للمنتجات التي وصلت للحد الأدنى"
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              {lowStockAlertProducts.length > 0 && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-85" />
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                  lowStockAlertProducts.length > 0 ? 'bg-white' : 'bg-emerald-500'
+                }`}
+              />
+            </span>
+            <BellRing className="w-4 h-4" />
+            <span>
+              تقرير النواقص السريع ({lowStockAlertProducts.length})
+            </span>
+          </button>
+
+          {/* Shortcut to Purchase from Companies & Suppliers */}
+          <button
+            type="button"
+            onClick={() => {
+              setProductsToRestockInPurchase([]);
+              setIsSupplierPurchaseModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-black rounded-xl shadow-xs transition-all cursor-pointer whitespace-nowrap"
+            title="فتح نافذة الشراء والتوريد من الشركات والموردين"
+          >
+            <Truck className="w-4 h-4" />
+            <span>الشراء من الشركات والموردين</span>
+          </button>
+
+          {/* Camera Barcode Scanner */}
           <button
             type="button"
             id="btn-scan-product-camera"
@@ -256,11 +364,11 @@ export const ProductsView: React.FC = () => {
               setCameraScanTarget('catalog');
               setIsCameraScannerOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs font-black rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
-            title="ماسح الباركود بالكاميرا - إضافة المنتجات تلقائياً وتحديث الرصيد"
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer whitespace-nowrap"
+            title="ماسح الباركود بالكاميرا"
           >
             <Camera className="w-4 h-4" />
-            <span>ماسح الكاميرا (إضافة تلقائية)</span>
+            <span>ماسح الكاميرا</span>
           </button>
 
           {/* Barcode Designer & Sticker Printer */}
@@ -270,21 +378,21 @@ export const ProductsView: React.FC = () => {
               setBarcodeProductTarget(products[0] || null);
               setIsBarcodeDesignerOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 dark:bg-amber-500 text-white dark:text-slate-950 text-xs font-black rounded-xl shadow-sm hover:opacity-90 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 apple-glass-card text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap"
             title="مصمم وطباعة ملصقات الباركود للمنتجات"
           >
             <BarcodeIcon className="w-4 h-4" />
-            <span>طباعة الباركودات</span>
+            <span>طباعة الباركود</span>
           </button>
 
           {/* Manage Categories */}
           <button
             type="button"
             onClick={() => setIsCategoryModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 apple-glass-card text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap"
           >
             <Layers className="w-4 h-4 text-amber-500" />
-            <span>إدارة التصنيفات</span>
+            <span>التصنيفات</span>
           </button>
 
           {/* Add Product Button */}
@@ -292,16 +400,83 @@ export const ProductsView: React.FC = () => {
             type="button"
             id="btn-add-new-product"
             onClick={() => openAddModal()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-xs font-black rounded-xl shadow-md shadow-amber-500/20 transition-all cursor-pointer whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
-            <span>{t('addProduct')} (مع السعر والعملة)</span>
+            <span>{t('addProduct')}</span>
           </button>
         </div>
       </div>
 
+      {/* RED ILLUMINATED LOW STOCK ALERT BANNER (يضيء باللون الأحمر عند وصول أي منتج للحد الأدنى) */}
+      {lowStockAlertProducts.length > 0 && (
+        <div
+          id="low-stock-red-alert-banner"
+          className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-rose-600/15 via-rose-500/10 to-red-600/15 dark:from-rose-950/70 dark:via-red-950/50 dark:to-rose-900/60 border-2 border-rose-500 dark:border-rose-500/90 p-4 sm:p-5 shadow-lg shadow-rose-500/15 transition-all"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              {/* Glowing Red Siren Icon */}
+              <div className="relative w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-600/50">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-2xl bg-rose-500 opacity-40" />
+                <AlertOctagon className="w-6 h-6 relative z-10 animate-pulse" />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-600 text-white text-[11px] font-black shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                    إنذار أحمر للمخزون (Low Stock Alert)
+                  </span>
+                  <h3 className="text-sm sm:text-base font-black text-rose-950 dark:text-rose-100">
+                    تنبيه: وصلت كمية {lowStockAlertProducts.length} منتجات إلى مستوى المخزون الأدنى!
+                  </h3>
+                </div>
+
+                <p className="text-xs text-rose-800 dark:text-rose-200/90 font-semibold">
+                  يوجد <strong className="font-mono underline">{outOfStockCount}</strong> صنف نافذ تماماً (رصيد 0) و{' '}
+                  <strong className="font-mono underline">{criticalThresholdCount}</strong> صنف عند الحد الأدنى للطلب:{' '}
+                  <span className="font-bold text-rose-950 dark:text-white">
+                    {lowStockAlertProducts
+                      .slice(0, 4)
+                      .map(p => `${p.nameAr} (${p.stock} ${p.unit})`)
+                      .join(' · ')}
+                    {lowStockAlertProducts.length > 4 ? ` · +${lowStockAlertProducts.length - 4} أخرى` : ''}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsLowStockReportOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/30 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>عرض قائمة النواقص في تقرير سريع</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setStockFilter(stockFilter === 'low_stock' ? 'all' : 'low_stock')
+                }
+                className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer whitespace-nowrap ${
+                  stockFilter === 'low_stock'
+                    ? 'bg-rose-900 text-white border-rose-800'
+                    : 'bg-white/90 dark:bg-slate-900/90 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 hover:bg-rose-50'
+                }`}
+              >
+                {stockFilter === 'low_stock' ? 'إلغاء حصر الجدول وعرض الكل' : 'حصر الجدول بالنواقص فقط'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center gap-3">
+      <div className="apple-glass-card p-4 rounded-3xl flex flex-col sm:flex-row items-center gap-3">
         {/* Search */}
         <div className="relative flex-1 w-full">
           <input
@@ -309,7 +484,7 @@ export const ProductsView: React.FC = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="بحث بالاسم، الباركود، أو الرمز (SKU)..."
-            className="w-full pl-10 pr-9 py-2 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
+            className="w-full ps-10 pe-9 py-2 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
           />
           <Search className="w-4 h-4 text-slate-400 absolute start-3 top-2.5" />
           <button
@@ -346,29 +521,29 @@ export const ProductsView: React.FC = () => {
           <select
             value={stockFilter}
             onChange={e => setStockFilter(e.target.value as any)}
-            className="w-full sm:w-44 py-2 px-3 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
+            className="w-full sm:w-48 py-2 px-3 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
           >
             <option value="all">كل الحالات ({products.length})</option>
-            <option value="in_stock">متوفر بالمخزون</option>
-            <option value="low_stock">⚠️ قارب على النفاد (حد الطلب)</option>
-            <option value="out_of_stock">⛔ نفد من المخزون (0)</option>
+            <option value="in_stock">متوفر بالمخزون الآمن</option>
+            <option value="low_stock">🚨 وصل للحد الأدنى أو نفد ({lowStockAlertProducts.length})</option>
+            <option value="out_of_stock">⛔ نفد تماماً (0) ({outOfStockCount})</option>
           </select>
         </div>
       </div>
 
       {/* Products Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-hidden">
+      <div className="apple-glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-start text-xs">
             <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-                <th className="py-3.5 px-4 text-start">المنتج</th>
+              <tr className="bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                <th className="py-3.5 px-4 text-start">المنتج وحالة الإنذار</th>
                 <th className="py-3.5 px-3 text-start">التصنيف</th>
                 <th className="py-3.5 px-3 text-start">الباركود / SKU</th>
-                <th className="py-3.5 px-3 text-end">سعر التكلفة ({currencySymbol})</th>
+                <th className="py-3.5 px-3 text-end">سعر الشراء ({currencySymbol})</th>
                 <th className="py-3.5 px-3 text-end">سعر المفرق ({currencySymbol})</th>
                 <th className="py-3.5 px-3 text-end">سعر الجملة ({currencySymbol})</th>
-                <th className="py-3.5 px-3 text-center">المخزون الحالي</th>
+                <th className="py-3.5 px-3 text-center">المخزون والحد الأدنى</th>
                 <th className="py-3.5 px-4 text-end">إجراءات</th>
               </tr>
             </thead>
@@ -384,37 +559,60 @@ export const ProductsView: React.FC = () => {
                 filteredProducts.map(product => {
                   const cat = categories.find(c => c.id === product.categoryId);
                   const isOutOfStock = product.stock <= 0;
-                  const isLowStock = product.stock <= product.minStock && !isOutOfStock;
+                  const isLowStock = product.stock <= product.minStock;
 
                   return (
                     <tr
                       key={product.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                      className={`transition-colors ${
+                        isLowStock
+                          ? 'bg-rose-50/75 dark:bg-rose-950/30 border-s-4 border-s-rose-600 hover:bg-rose-100/60 dark:hover:bg-rose-950/45'
+                          : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                      }`}
                     >
-                      {/* Product Name & Photo */}
+                      {/* Product Name & Red Low Stock Indicator */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
+                          <div
+                            className={`relative w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden ${
+                              isLowStock
+                                ? 'bg-rose-600 text-white ring-2 ring-rose-400 shadow-md shadow-rose-600/30'
+                                : 'bg-amber-500/10 text-amber-600'
+                            }`}
+                          >
                             {product.image ? (
-                              <img src={product.image} alt={product.nameAr} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              <img
+                                src={product.image}
+                                alt={product.nameAr}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
                             ) : (
                               product.nameAr.charAt(0)
                             )}
                           </div>
                           <div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-bold text-slate-900 dark:text-white">
                                 {language === 'ar' ? product.nameAr : product.nameEn}
                               </span>
                               {product.isFavorite && (
                                 <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                               )}
+                              {isLowStock && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black shadow-xs animate-pulse">
+                                  <AlertOctagon className="w-3 h-3" />
+                                  <span>{isOutOfStock ? 'نافذ (0)' : 'وصل للحد الأدنى'}</span>
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 text-[10px] text-slate-400">
                               <span>الوحدة: {product.unit}</span>
+                              <span>·</span>
+                              <span>الحد الأدنى: {product.minStock}</span>
                               {product.wholesaleUnit && (
                                 <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                                  • {product.wholesaleUnit} ({product.wholesaleUnitMultiplier || 1} قطعة)
+                                  · {product.wholesaleUnit} ({product.wholesaleUnitMultiplier || 1})
                                 </span>
                               )}
                             </div>
@@ -424,44 +622,48 @@ export const ProductsView: React.FC = () => {
 
                       {/* Category */}
                       <td className="py-3 px-3">
-                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                           {cat ? (language === 'ar' ? cat.nameAr : cat.nameEn) : 'عام'}
                         </span>
                       </td>
 
                       {/* Barcode & SKU */}
-                      <td className="py-3 px-3 font-mono">
+                      <td className="py-3 px-3 font-mono tabular-nums">
                         <p className="text-slate-900 dark:text-white font-bold">{product.barcode}</p>
                         <span className="text-[10px] text-slate-400">{product.sku}</span>
                       </td>
 
                       {/* Cost Price with Currency */}
-                      <td className="py-3 px-3 text-end font-mono text-slate-500 dark:text-slate-400">
-                        <span className="font-semibold">{formatCurrency(product.costPrice)}</span>
+                      <td className="py-3 px-3 text-end font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                        <span className="font-bold">{formatCurrency(product.costPrice)}</span>
                       </td>
 
                       {/* Retail Price with Currency */}
-                      <td className="py-3 px-3 text-end font-mono font-bold text-blue-600 dark:text-blue-400">
-                        <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/40">
-                          {formatCurrency(product.price)}
-                        </span>
+                      <td className="py-3 px-3 text-end font-mono tabular-nums font-black text-blue-600 dark:text-blue-400">
+                        {formatCurrency(product.price)}
                       </td>
 
                       {/* Wholesale Price with Currency */}
-                      <td className="py-3 px-3 text-end font-mono font-bold text-amber-600 dark:text-amber-400">
-                        <span className="px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40">
-                          {formatCurrency(product.wholesalePrice || product.price)}
-                        </span>
+                      <td className="py-3 px-3 text-end font-mono tabular-nums font-black text-amber-600 dark:text-amber-400">
+                        {formatCurrency(product.wholesalePrice || product.price)}
                       </td>
 
-                      {/* Stock Level with Decrement (-) & Increment (+) Buttons */}
+                      {/* Stock Level with Decrement (-) & Increment (+) Buttons & Red Alert Glow */}
                       <td className="py-3 px-3 text-center">
-                        <div className="inline-flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                        <div
+                          className={`inline-flex items-center gap-1 p-1 rounded-xl border transition-all ${
+                            isLowStock
+                              ? 'bg-rose-600/15 dark:bg-rose-950/80 border-rose-500 shadow-sm shadow-rose-500/25'
+                              : 'bg-slate-100/80 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700/80'
+                          }`}
+                        >
                           <button
                             type="button"
-                            onClick={() => adjustStock(product.id, -1, 'adjustment', 'تنقيص سريع للمنتج من صفحة الأصناف')}
+                            onClick={() =>
+                              adjustStock(product.id, -1, 'adjustment', 'تنقيص سريع للمنتج من صفحة الأصناف')
+                            }
                             disabled={product.stock <= 0}
-                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
+                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-400 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
                             title="تنقيص مخزون المنتج (-1)"
                             aria-label="تنقيص مخزون المنتج"
                           >
@@ -469,22 +671,22 @@ export const ProductsView: React.FC = () => {
                           </button>
 
                           <span
-                            className={`font-mono tabular-nums font-bold text-xs px-2 py-0.5 rounded-lg inline-flex items-center gap-1 min-w-[64px] justify-center ${
-                              isOutOfStock
-                                ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
-                                : isLowStock
-                                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                            className={`font-mono tabular-nums font-black text-xs px-2.5 py-1 rounded-lg inline-flex items-center gap-1 min-w-[70px] justify-center ${
+                              isLowStock
+                                ? 'bg-rose-600 text-white shadow-xs animate-pulse'
                                 : 'text-emerald-700 dark:text-emerald-400'
                             }`}
                           >
-                            {isLowStock && <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />}
+                            {isLowStock && <AlertTriangle className="w-3 h-3 text-white shrink-0" />}
                             <span>{product.stock}</span>
                             <span className="text-[10px]">{product.unit}</span>
                           </span>
 
                           <button
                             type="button"
-                            onClick={() => adjustStock(product.id, 1, 'restock', 'زيادة سريعة للمنتج من صفحة الأصناف')}
+                            onClick={() =>
+                              adjustStock(product.id, 1, 'restock', 'زيادة سريعة للمنتج من صفحة الأصناف')
+                            }
                             className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 flex items-center justify-center transition-colors shadow-2xs cursor-pointer active:scale-90"
                             title="زيادة مخزون المنتج (+1)"
                             aria-label="زيادة مخزون المنتج"
@@ -538,6 +740,218 @@ export const ProductsView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* QUICK LOW-STOCK REPORT MODAL (تقرير سريع للمنتجات التي وصلت للحد الأدنى) */}
+      {isLowStockReportOpen && (
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full shadow-2xl border-2 border-rose-500/80 overflow-hidden my-4">
+            {/* Report Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-rose-600 to-red-600 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                  <AlertOctagon className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base sm:text-lg">
+                    التقرير السريع للمنتجات المنخفضة والنافذة (Low Stock Quick Report)
+                  </h3>
+                  <p className="text-xs text-rose-100">
+                    قائمة فورية بجميع الأصناف التي وصلت إلى الحد الأدنى للمخزون أو نفدت تماماً مع تكلفة إعادة الشراء
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={handleExportLowStockCSV}
+                  disabled={lowStockAlertProducts.length === 0}
+                  className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>تصدير CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>طباعة</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLowStockReportOpen(false)}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/25 text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Summary KPIs inside Quick Report */}
+            <div className="p-4 sm:p-5 bg-rose-50/40 dark:bg-rose-950/20 border-b border-rose-200/70 dark:border-rose-900/50 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/80">
+                <span className="text-[11px] font-bold text-slate-500 block">إجمالي الأصناف الحرجة</span>
+                <span className="text-xl font-black font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                  {lowStockAlertProducts.length} صنف
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/80">
+                <span className="text-[11px] font-bold text-slate-500 block">أصناف رصيدها صفر (نافذة)</span>
+                <span className="text-xl font-black font-mono tabular-nums text-red-600 dark:text-red-400">
+                  {outOfStockCount} صنف
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/80">
+                <span className="text-[11px] font-bold text-slate-500 block">وصلت للحد الأدنى</span>
+                <span className="text-xl font-black font-mono tabular-nums text-amber-600 dark:text-amber-400">
+                  {criticalThresholdCount} صنف
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/80">
+                <span className="text-[11px] font-bold text-slate-500 block">تكلفة التعويض التقديرية</span>
+                <span className="text-lg font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                  {formatCurrency(totalEstimatedRestockCost)}
+                </span>
+              </div>
+            </div>
+
+            {/* Report Table */}
+            <div className="p-4 sm:p-5 max-h-[55vh] overflow-y-auto">
+              {lowStockAlertProducts.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                    جميع المنتجات في المستوى الآمن!
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    لا يوجد حالياً أي منتج وصل إلى الحد الأدنى للمخزون.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-start">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                        <th className="py-2.5 px-3 text-start">المنتج</th>
+                        <th className="py-2.5 px-3 text-center">الرصيد الحالي</th>
+                        <th className="py-2.5 px-3 text-center">الحد الأدنى</th>
+                        <th className="py-2.5 px-3 text-center">الكمية المقترحة</th>
+                        <th className="py-2.5 px-3 text-end">سعر الشراء</th>
+                        <th className="py-2.5 px-3 text-end">تكلفة التوريد</th>
+                        <th className="py-2.5 px-3 text-end">توريد فوري</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800">
+                      {lowStockAlertProducts.map(item => {
+                        const targetStock = Math.max(item.minStock * 2, item.minStock + 10);
+                        const suggestedOrder = Math.max(1, targetStock - item.stock);
+                        const lineCost = suggestedOrder * (item.costPrice || 0);
+
+                        return (
+                          <tr key={item.id} className="hover:bg-rose-50/40 dark:hover:bg-rose-950/20">
+                            <td className="py-3 px-3">
+                              <div className="font-black text-slate-900 dark:text-white">{item.nameAr}</div>
+                              <div className="text-[10px] font-mono text-slate-400">
+                                {item.barcode} · {item.sku}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-mono tabular-nums font-black text-xs inline-block">
+                                {item.stock} {item.unit}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono tabular-nums font-bold text-slate-600 dark:text-slate-300">
+                              {item.minStock} {item.unit}
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono tabular-nums font-black text-emerald-600 dark:text-emerald-400">
+                              +{suggestedOrder} {item.unit}
+                            </td>
+                            <td className="py-3 px-3 text-end font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                              {formatCurrency(item.costPrice)}
+                            </td>
+                            <td className="py-3 px-3 text-end font-mono tabular-nums font-black text-slate-900 dark:text-white">
+                              {formatCurrency(lineCost)}
+                            </td>
+                            <td className="py-3 px-3 text-end">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    adjustStock(item.id, 10, 'restock', 'توريد سريع (+10) من تقرير النواقص')
+                                  }
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[11px] cursor-pointer active:scale-95"
+                                >
+                                  +10
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    adjustStock(
+                                      item.id,
+                                      suggestedOrder,
+                                      'restock',
+                                      'تعويض للمستوى الآمن من تقرير النواقص'
+                                    )
+                                  }
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-[11px] cursor-pointer active:scale-95"
+                                >
+                                  تعويض (+{suggestedOrder})
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Report Footer Actions */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {lowStockAlertProducts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRestockAllLowProducts}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>تعويض وتوريد جميع النواقص دفعة واحدة</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLowStockReportOpen(false);
+                    setProductsToRestockInPurchase(lowStockAlertProducts);
+                    setIsSupplierPurchaseModalOpen(true);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>شراء وتوريد النواقص من الشركات والموردين</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsLowStockReportOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold cursor-pointer"
+              >
+                إغلاق التقرير
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Product Add / Edit Modal with explicit Currency inputs and Wholesale controls */}
       {isProductModalOpen && (
@@ -646,7 +1060,6 @@ export const ProductsView: React.FC = () => {
                           setIsCameraScannerOpen(true);
                         }}
                         className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
-                        title="مسح الباركود باستخدام كاميرا الجهاز"
                       >
                         <Camera className="w-3 h-3" />
                         مسح بالكاميرا
@@ -674,7 +1087,12 @@ export const ProductsView: React.FC = () => {
                       <div
                         className="w-full flex justify-center"
                         dangerouslySetInnerHTML={{
-                          __html: generateBarcodeSvg(barcode, { width: 180, height: 35, showText: true })
+                          __html: generateBarcodeSvg(barcode, {
+                            height: 28,
+                            width: 1.5,
+                            showText: true,
+                            fontSize: 10
+                          })
                         }}
                       />
                     </div>
@@ -683,133 +1101,26 @@ export const ProductsView: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    رمز الصنف SKU
+                    الرمز المخزني (SKU)
                   </label>
                   <input
                     type="text"
                     value={sku}
                     onChange={e => setSku(e.target.value)}
-                    className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
+                    placeholder="SKU-101"
+                    className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                   />
                 </div>
               </div>
 
-              {/* Identification Codes Section (Supports 100+ codes per product for wholesale / retail) */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <BarcodeIcon className="w-3.5 h-3.5 text-blue-500" />
-                    <span>الأكواد والباركودات التعريفية الإضافية (يدعم أكثر من 100 كود تعريفي):</span>
-                  </label>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300">
-                    {identificationCodes.length} كود مسجل
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="أدخل كود تعريفي إضافي أو باركود كرتونة..."
-                    value={newCodeInput}
-                    onChange={e => setNewCodeInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        const trimmed = newCodeInput.trim();
-                        if (trimmed && !identificationCodes.includes(trimmed)) {
-                          setIdentificationCodes(prev => [trimmed, ...prev]);
-                          setNewCodeInput('');
-                        }
-                      }
-                    }}
-                    className="flex-1 text-xs font-mono px-3 py-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const trimmed = newCodeInput.trim();
-                      if (trimmed && !identificationCodes.includes(trimmed)) {
-                        setIdentificationCodes(prev => [trimmed, ...prev]);
-                        setNewCodeInput('');
-                      }
-                    }}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer"
-                  >
-                    إضافة
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowBulkCodesBox(!showBulkCodesBox)}
-                    className="px-3 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
-                  >
-                    <ListPlus className="w-3.5 h-3.5" />
-                    <span>لصق مجمع</span>
-                  </button>
-                </div>
-
-                {showBulkCodesBox && (
-                  <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 space-y-2">
-                    <textarea
-                      rows={3}
-                      value={bulkCodesInput}
-                      onChange={e => setBulkCodesInput(e.target.value)}
-                      placeholder="الصق هنا أكثر من 100 كود (كل كود بسطر أو مفصول بفواصل)..."
-                      className="w-full text-xs font-mono p-2 bg-white dark:bg-slate-900 rounded-lg border border-amber-300 dark:border-amber-800"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const tokens = bulkCodesInput.split(/[\r\n,\t;]+/).map(t => t.trim()).filter(Boolean);
-                          const seen = new Set(identificationCodes);
-                          const added: string[] = [];
-                          for (const tok of tokens) {
-                            if (!seen.has(tok)) {
-                              seen.add(tok);
-                              added.push(tok);
-                            }
-                          }
-                          setIdentificationCodes(prev => [...added, ...prev]);
-                          setBulkCodesInput('');
-                          setShowBulkCodesBox(false);
-                        }}
-                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold cursor-pointer"
-                      >
-                        إدراج الأكواد
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {identificationCodes.length > 0 && (
-                  <div className="max-h-28 overflow-y-auto p-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-wrap gap-1">
-                    {identificationCodes.map(code => (
-                      <span
-                        key={code}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-mono border border-slate-200 dark:border-slate-700"
-                      >
-                        <span>{code}</span>
-                        <button
-                          type="button"
-                          onClick={() => setIdentificationCodes(prev => prev.filter(c => c !== code))}
-                          className="text-slate-400 hover:text-rose-500 cursor-pointer"
-                        >
-                          <X className="w-2.5 h-2.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* PRICING SECTION WITH CLEAR CURRENCY BADGES */}
+              {/* PRICING SECTION */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <Coins className="w-4 h-4 text-amber-500" />
                     <span>تسعير المنتج بالعملة ({currencySymbol}):</span>
                   </span>
-                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-900">
+                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                     هامش الربح: +{profitMarginPercent}% ({formatCurrency(profitAmount)})
                   </span>
                 </div>
@@ -818,7 +1129,7 @@ export const ProductsView: React.FC = () => {
                   {/* 1. Cost Price */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
-                      سعر التكلفة والشراء
+                      سعر الشراء (التكلفة)
                     </label>
                     <div className="relative">
                       <input
@@ -837,7 +1148,7 @@ export const ProductsView: React.FC = () => {
                   {/* 2. Retail Sale Price */}
                   <div>
                     <label className="block text-[11px] font-bold text-blue-600 dark:text-blue-400 mb-1">
-                      سعر البيع بالمفرق (تجزئة) *
+                      سعر البيع بالمفرق *
                     </label>
                     <div className="relative">
                       <input
@@ -890,7 +1201,7 @@ export const ProductsView: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
-                      عدد القطع في وحدة الجملة (الكرتونة)
+                      عدد القطع في وحدة الجملة
                     </label>
                     <input
                       type="number"
@@ -909,56 +1220,44 @@ export const ProductsView: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     الكمية المتوفرة بالمستودع حالياً
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={stock || ''}
-                    onChange={e => setStock(Number(e.target.value))}
-                    className="w-full text-sm font-bold font-mono px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setStock(Math.max(0, Number(stock) - 1))}
+                      className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 hover:bg-rose-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      value={stock}
+                      onChange={e => setStock(Math.max(0, Number(e.target.value)))}
+                      className="flex-1 text-center text-sm font-black font-mono px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setStock(Number(stock) + 1)}
+                      className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-amber-700 dark:text-amber-400 mb-1 flex items-center gap-1">
+                  <label className="block text-xs font-bold text-rose-600 dark:text-rose-400 mb-1 flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>حد الطلب الأدنى (إشعار النقص التلقائي) *</span>
+                    <span>حد الطلب الأدنى (يضيء بالأحمر عنده) *</span>
                   </label>
                   <input
                     type="number"
                     min={0}
-                    value={minStock || ''}
-                    onChange={e => setMinStock(Number(e.target.value))}
-                    className="w-full text-sm font-bold font-mono px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-amber-300 dark:border-amber-700 focus:outline-none focus:border-amber-500"
+                    value={minStock}
+                    onChange={e => setMinStock(Math.max(0, Number(e.target.value)))}
+                    className="w-full text-sm font-bold font-mono px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-rose-300 dark:border-rose-700 focus:outline-none focus:border-rose-500"
                   />
                 </div>
-              </div>
-
-              {/* Image URL */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  رابط صورة المنتج (اختياري)
-                </label>
-                <input
-                  type="url"
-                  value={image}
-                  onChange={e => setImage(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full text-xs font-mono px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
-                />
-              </div>
-
-              {/* Favorite Checkbox */}
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="fav-checkbox"
-                  checked={isFavorite}
-                  onChange={e => setIsFavorite(e.target.checked)}
-                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
-                />
-                <label htmlFor="fav-checkbox" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
-                  إضافة للمفضلة وشاشة البيع السريع (⭐)
-                </label>
               </div>
 
               {/* Submit Buttons */}
@@ -972,9 +1271,9 @@ export const ProductsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-md shadow-amber-500/20 cursor-pointer"
+                  className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-xs font-black rounded-xl shadow-md shadow-amber-500/20 cursor-pointer"
                 >
-                  {editingProduct ? 'حفظ التعديلات' : 'إضافة المنتج بالعملة'}
+                  {editingProduct ? 'حفظ التعديلات' : 'إضافة المنتج'}
                 </button>
               </div>
             </form>
@@ -999,7 +1298,6 @@ export const ProductsView: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Add New Category Form */}
               <form onSubmit={handleAddCategory} className="flex gap-2">
                 <input
                   type="text"
@@ -1011,13 +1309,12 @@ export const ProductsView: React.FC = () => {
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shrink-0 cursor-pointer"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl shrink-0 cursor-pointer"
                 >
                   إضافة
                 </button>
               </form>
 
-              {/* Existing Categories List */}
               <div className="max-h-60 overflow-y-auto space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800">
                 {categories.filter(c => c.id !== 'cat_all').map(c => (
                   <div key={c.id} className="pt-1.5 flex items-center justify-between text-xs">
@@ -1051,22 +1348,36 @@ export const ProductsView: React.FC = () => {
         />
       )}
 
-      {/* Camera Barcode Scanner Modal with Direct Auto-Add */}
+      {/* Camera Barcode Scanner Modal */}
       <ProductBarcodeScannerModal
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         initialAction={cameraScanTarget === 'modal_field' ? 'field_capture' : 'auto_add'}
-        onScanBarcodeDirect={cameraScanTarget === 'modal_field' ? (code) => {
-          setBarcode(code);
-        } : undefined}
-        onEditProductRequest={(prod) => {
+        onScanBarcodeDirect={
+          cameraScanTarget === 'modal_field'
+            ? code => {
+                setBarcode(code);
+              }
+            : undefined
+        }
+        onEditProductRequest={prod => {
           setIsCameraScannerOpen(false);
           openEditModal(prod);
         }}
-        onOpenAddModalWithBarcode={(scannedBarcode) => {
+        onOpenAddModalWithBarcode={scannedBarcode => {
           setIsCameraScannerOpen(false);
           openAddModal(scannedBarcode);
         }}
+      />
+
+      {/* Smart Supplier Purchase & Inventory Restock Modal */}
+      <SupplierPurchaseModal
+        isOpen={isSupplierPurchaseModalOpen}
+        onClose={() => {
+          setIsSupplierPurchaseModalOpen(false);
+          setProductsToRestockInPurchase([]);
+        }}
+        initialProductsToRestock={productsToRestockInPurchase}
       />
     </div>
   );

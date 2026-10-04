@@ -32,11 +32,15 @@ import {
   ChevronRight,
   MessageSquareShare,
   Send,
-  Sparkles
+  Sparkles,
+  Truck,
+  ShoppingBag,
+  Package
 } from 'lucide-react';
 import { PrintableVoucherModal } from './PrintableVoucherModal';
 import { AccountStatementModal } from './AccountStatementModal';
 import { WhatsAppDebtAutomationDashboard } from './WhatsAppDebtAutomationDashboard';
+import { SupplierPurchaseModal } from './SupplierPurchaseModal';
 import {
   buildDebtPeriodicReminderMessage,
   sendWhatsAppDebtMessage,
@@ -69,8 +73,10 @@ export const DebtView: React.FC = () => {
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterDebtOnly, setFilterDebtOnly] = useState<boolean>(true);
+  const [filterDebtOnly, setFilterDebtOnly] = useState<boolean>(false);
   const [voucherTypeFilter, setVoucherTypeFilter] = useState<'all' | 'payment' | 'charge' | 'customer' | 'supplier'>('all');
+  const [isSmartPurchaseModalOpen, setIsSmartPurchaseModalOpen] = useState<boolean>(false);
+  const [selectedSupplierForSmartPurchase, setSelectedSupplierForSmartPurchase] = useState<Supplier | null>(null);
 
   // Modals state
   const [isCustomerPayModalOpen, setIsCustomerPayModalOpen] = useState(false);
@@ -358,12 +364,9 @@ export const DebtView: React.FC = () => {
     }
   };
 
-  const handleOpenSupplierInvoice = (sup: Supplier) => {
-    setSelectedSupplierForInvoice(sup);
-    setSupplierInvoiceAmount('');
-    setSupplierInvoiceRef('');
-    setSupplierInvoiceNotes('');
-    setIsSupplierInvoiceModalOpen(true);
+  const handleOpenSupplierInvoice = (sup?: Supplier) => {
+    setSelectedSupplierForSmartPurchase(sup || null);
+    setIsSmartPurchaseModalOpen(true);
   };
 
   const handleExecuteSupplierInvoice = (e: React.FormEvent) => {
@@ -454,31 +457,38 @@ export const DebtView: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenSupplierInvoice()}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all active:scale-95 cursor-pointer"
+            >
+              <Truck className="w-4 h-4" />
+              <span>+ فاتورة شراء وتوريد من شركة / مورد</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenAddSupplier}
+              className="px-3.5 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700/60 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ إضافة مورد / شركة</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsWhatsAppAutomationModalOpen(true)}
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
             >
               <MessageSquareShare className="w-4 h-4" />
-              <span>إعدادات التذكير الآلي (واتساب)</span>
+              <span>التذكير الآلي (واتساب)</span>
             </button>
-
-            {activeTab === 'suppliers' && (
-              <button
-                type="button"
-                onClick={handleOpenAddSupplier}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ إضافة مورد جديد</span>
-              </button>
-            )}
 
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>طباعة الملخص</span>
@@ -598,7 +608,7 @@ export const DebtView: React.FC = () => {
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>ديون الموردين ({suppliers.length})</span>
+              <span>الشراء من الشركات والموردين ({suppliers.length})</span>
               {totalSupplierDebt > 0 && (
                 <span className="px-1.5 py-0.2 rounded-md bg-slate-950/20 text-[10px] font-mono">
                   {formatCurrency(totalSupplierDebt)}
@@ -811,9 +821,45 @@ export const DebtView: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: SUPPLIERS DEBTS */}
+        {/* TAB 2: SUPPLIERS DEBTS & PURCHASING */}
         {activeTab === 'suppliers' && (
-          <div className="flex-1 overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 sm:p-4">
+          <div className="flex-1 overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 sm:p-4 space-y-4">
+            {/* Quick Supplier Purchasing & Inventory Restock Header Banner */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent dark:from-amber-950/40 dark:to-slate-900 border border-amber-300/60 dark:border-amber-800/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    مركز الشراء والتوريد من الشركات والموردين
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    أضف اسم المورد أو الشركة، وأدرج منتجات من المخزون أو عرف منتجات جديدة مع الكمية وسعر الشراء وسعر البيع بالجملة والمفرق
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenSupplierInvoice()}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>+ فاتورة شراء بضاعة وتوريد مخزون</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddSupplier}
+                  className="px-3.5 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-amber-500" />
+                  <span>إضافة شركة / مورد جديد</span>
+                </button>
+              </div>
+            </div>
+
             {filteredSuppliers.length === 0 ? (
               <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-slate-400">
                 <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-700 mb-2" />
@@ -921,11 +967,11 @@ export const DebtView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleOpenSupplierInvoice(sup)}
-                          className="py-2 px-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-colors"
-                          title="تسجيل فاتورة شراء بضاعة بالدين"
+                          className="flex-1 py-2 px-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer"
+                          title="شراء وتوريد بضاعة من المورد (تحديث الكميات وأسعار الشراء والجملة والمفرق)"
                         >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>فاتورة شراء</span>
+                          <ShoppingBag className="w-3.5 h-3.5" />
+                          <span>شراء بضاعة</span>
                         </button>
 
                         <button
@@ -1816,6 +1862,15 @@ export const DebtView: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Smart Supplier Purchase & Inventory Restock Modal */}
+      <SupplierPurchaseModal
+        isOpen={isSmartPurchaseModalOpen}
+        onClose={() => {
+          setIsSmartPurchaseModalOpen(false);
+          setSelectedSupplierForSmartPurchase(null);
+        }}
+        initialSupplier={selectedSupplierForSmartPurchase}
+      />
     </div>
   );
 };
