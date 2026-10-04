@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Sale } from '../../types';
+import { Sale, Customer, DebtTransaction } from '../../types';
+import { AccountStatementModal } from '../debts/AccountStatementModal';
+import { PrintableVoucherModal } from '../debts/PrintableVoucherModal';
 import {
   FileSpreadsheet,
   Search,
@@ -41,6 +43,7 @@ import {
 export const InvoicesView: React.FC = () => {
   const {
     sales,
+    customers,
     formatCurrency,
     t,
     language,
@@ -58,6 +61,25 @@ export const InvoicesView: React.FC = () => {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isCustomizerModalOpen, setIsCustomizerModalOpen] = useState(false);
+  const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
+  const [isStatementOpen, setIsStatementOpen] = useState(false);
+  const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<DebtTransaction | null>(null);
+
+  const resolveCustomerFromSale = (sale: Sale): Customer | null => {
+    if (sale.customerId) {
+      const byId = customers.find(c => c.id === sale.customerId);
+      if (byId) return byId;
+    }
+    if (sale.customerCode) {
+      const byCode = customers.find(c => c.customerCode === sale.customerCode);
+      if (byCode) return byCode;
+    }
+    if (sale.customerName) {
+      const byName = customers.find(c => c.name === sale.customerName);
+      if (byName) return byName;
+    }
+    return customers[0] || null;
+  };
 
   // Determine active preset
   const activePreset = useMemo(() => {
@@ -202,6 +224,20 @@ export const InvoicesView: React.FC = () => {
               <span>تصدير CSV</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (customers.length > 0) {
+                setStatementCustomer(customers[0]);
+              }
+              setIsStatementOpen(true);
+            }}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>كشف حساب عميل</span>
+          </button>
 
           <button
             onClick={() => setIsCustomizerModalOpen(true)}
@@ -460,6 +496,21 @@ export const InvoicesView: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-end">
                       <div className="flex items-center justify-end gap-1">
+                        {(sale.customerId || sale.customerName) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cust = resolveCustomerFromSale(sale);
+                              setStatementCustomer(cust);
+                              setIsStatementOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                            title="عرض كشف الحساب التفصيلي للعميل"
+                          >
+                            <FileSpreadsheet className="w-3.5 h-3.5" />
+                            <span>كشف حساب</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => navigateToReturnWithInvoice(sale)}
                           className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
@@ -581,23 +632,36 @@ export const InvoicesView: React.FC = () => {
               </div>
 
               {/* Action buttons */}
-              <div className="pt-3 flex gap-2">
+              <div className="pt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => {
                     setIsDetailModalOpen(false);
                     setIsReceiptModalOpen(true);
                   }}
-                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
                   <span>طباعة الإيصال الحراري</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cust = resolveCustomerFromSale(selectedSale);
+                    setIsDetailModalOpen(false);
+                    setStatementCustomer(cust);
+                    setIsStatementOpen(true);
+                  }}
+                  className="px-3.5 py-2.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>كشف حساب العميل</span>
                 </button>
                 <button
                   onClick={() => {
                     setIsDetailModalOpen(false);
                     navigateToReturnWithInvoice(selectedSale);
                   }}
-                  className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5"
+                  className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>إرجاع بضاعة</span>
@@ -619,6 +683,25 @@ export const InvoicesView: React.FC = () => {
       <ReceiptCustomizerModal
         isOpen={isCustomizerModalOpen}
         onClose={() => setIsCustomizerModalOpen(false)}
+      />
+
+      {/* Account Statement Modal */}
+      <AccountStatementModal
+        isOpen={isStatementOpen}
+        onClose={() => setIsStatementOpen(false)}
+        partyType="customer"
+        party={statementCustomer}
+        onSelectVoucher={voucher => {
+          setIsStatementOpen(false);
+          setSelectedVoucherForPrint(voucher);
+        }}
+      />
+
+      {/* Printable Voucher Modal */}
+      <PrintableVoucherModal
+        isOpen={Boolean(selectedVoucherForPrint)}
+        onClose={() => setSelectedVoucherForPrint(null)}
+        voucher={selectedVoucherForPrint}
       />
     </div>
   );

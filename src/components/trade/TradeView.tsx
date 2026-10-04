@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Product, Customer, Sale, TradeType } from '../../types';
+import { Product, Customer, Sale, TradeType, DebtTransaction } from '../../types';
+import { AccountStatementModal } from '../debts/AccountStatementModal';
+import { PrintableVoucherModal } from '../debts/PrintableVoucherModal';
 import {
   Building2,
   Package,
@@ -48,6 +50,7 @@ export const TradeView: React.FC = () => {
     customers,
     addCustomer,
     updateCustomer,
+    recordCustomerDebtPayment,
     sales,
     formatCurrency,
     t: rawT,
@@ -113,6 +116,11 @@ export const TradeView: React.FC = () => {
 
   // View Invoice Modal
   const [selectedInvoice, setSelectedInvoice] = useState<Sale | null>(null);
+
+  // Account Statement & Voucher Modals
+  const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
+  const [isStatementOpen, setIsStatementOpen] = useState<boolean>(false);
+  const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<DebtTransaction | null>(null);
 
   // Computed Financial Metrics
   const wholesaleSales = useMemo(() => {
@@ -354,19 +362,18 @@ export const TradeView: React.FC = () => {
     e.preventDefault();
     if (!debtTargetCustomer || debtPaymentAmount <= 0) return;
 
-    const currentDebt = debtTargetCustomer.currentDebt || 0;
-    const remaining = Math.max(0, currentDebt - debtPaymentAmount);
-
-    updateCustomer(debtTargetCustomer.id, {
-      currentDebt: remaining,
-    });
-
-    notify(
-      'تم تسجيل سند قبض / تسديد ذمة',
-      `تم سداد ${formatCurrency(debtPaymentAmount)} للتاجر ${debtTargetCustomer.name}. الرصيد المتبقي: ${formatCurrency(remaining)}`,
-      'success'
+    const tx = recordCustomerDebtPayment(
+      debtTargetCustomer.id,
+      Number(debtPaymentAmount),
+      'cash',
+      debtPaymentNote || 'تسديد دفعة حساب تاجر جملة',
+      0
     );
+
     setIsDebtModalOpen(false);
+    if (tx) {
+      setSelectedVoucherForPrint(tx);
+    }
   };
 
   // Launch Wholesale POS Mode
@@ -412,6 +419,22 @@ export const TradeView: React.FC = () => {
             >
               <Percent className="w-4 h-4 text-amber-500" />
               <span>{t('bulkPriceAdjuster')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (wholesaleCustomers.length > 0) {
+                  setStatementCustomer(wholesaleCustomers[0]);
+                } else if (customers.length > 0) {
+                  setStatementCustomer(customers[0]);
+                }
+                setIsStatementOpen(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>كشف حساب تاجر</span>
             </button>
 
             <button
@@ -867,17 +890,32 @@ export const TradeView: React.FC = () => {
                     </div>
 
                     {/* Actions */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5">
                       <button
+                        type="button"
                         onClick={() => handleOpenDebtModal(cust)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 text-xs font-bold transition-all text-center"
+                        className="flex-1 py-2 px-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 text-xs font-bold transition-all text-center cursor-pointer"
                       >
-                        سند قبض / تسديد ذمة
+                        سند قبض
                       </button>
 
                       <button
+                        type="button"
+                        onClick={() => {
+                          setStatementCustomer(cust);
+                          setIsStatementOpen(true);
+                        }}
+                        className="py-2 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 dark:text-indigo-300 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        title="كشف حساب مالي تفصيلي للتاجر"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        <span>كشف حساب</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleStartWholesalePOS(cust)}
-                        className="py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all flex items-center gap-1"
+                        className="py-2 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                         title="إصدار فاتورة جملة جديدة للتاجر"
                       >
                         <Receipt className="w-3.5 h-3.5" />
@@ -1970,6 +2008,24 @@ export const TradeView: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Account Statement Modal */}
+      <AccountStatementModal
+        isOpen={isStatementOpen}
+        onClose={() => setIsStatementOpen(false)}
+        partyType="customer"
+        party={statementCustomer}
+        onSelectVoucher={voucher => {
+          setIsStatementOpen(false);
+          setSelectedVoucherForPrint(voucher);
+        }}
+      />
+
+      {/* Printable Voucher Modal */}
+      <PrintableVoucherModal
+        isOpen={Boolean(selectedVoucherForPrint)}
+        onClose={() => setSelectedVoucherForPrint(null)}
+        voucher={selectedVoucherForPrint}
+      />
     </div>
   );
 };
