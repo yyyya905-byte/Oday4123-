@@ -44,7 +44,9 @@ import {
   PromotionDeal,
   PromotionType,
   TradeType,
-  PaymentMethod
+  PaymentMethod,
+  QrMenuThemeConfig,
+  CustomerFeedbackReview
 } from '../types';
 import {
   applyThemeColor,
@@ -524,6 +526,18 @@ interface AppContextType {
   exportDataJson: () => string;
   importDataJson: (jsonString: string) => boolean;
   resetToDemoData: () => void;
+
+  // Restaurant & Cafe Customer QR Menu & Device Routing
+  isRestaurantQrModalOpen: boolean;
+  setIsRestaurantQrModalOpen: (open: boolean) => void;
+  isCustomerMenuPreviewOpen: boolean;
+  setIsCustomerMenuPreviewOpen: (open: boolean) => void;
+  loadKitchenOrderToCart: (order: KitchenOrder) => void;
+  updateQrMenuTheme: (themeUpdates: Partial<QrMenuThemeConfig>) => void;
+  customerReviews: CustomerFeedbackReview[];
+  addCustomerReview: (review: Omit<CustomerFeedbackReview, 'id' | 'createdAt'>) => CustomerFeedbackReview;
+  deleteCustomerReview: (id: string) => void;
+  clearCustomerReviews: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -565,6 +579,7 @@ const STORAGE_KEYS = {
   ZEROED_OUT: 'kian_pos_zeroed_out',
   INSTALLMENT_PLANS: 'kian_pos_installment_plans_v1',
   DEBT_REMINDER_LOGS: 'kian_pos_debt_reminder_logs_v1',
+  CUSTOMER_REVIEWS: 'kian_pos_customer_reviews',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -4828,6 +4843,192 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [isRestaurantQrModalOpen, setIsRestaurantQrModalOpen] = useState(false);
+  const [isCustomerMenuPreviewOpen, setIsCustomerMenuPreviewOpen] = useState(false);
+
+  // Customer QR Menu Experience Reviews
+  const [customerReviews, setCustomerReviewsState] = useState<CustomerFeedbackReview[]>(() => {
+    try {
+      const isZeroed =
+        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
+      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMER_REVIEWS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      if (isZeroed) return [];
+      return [
+        {
+          id: 'qr-rev-demo-1',
+          orderId: 'k-ord-101',
+          orderNumber: 'QR-201',
+          tableName: 'الطاولة 4',
+          diningType: 'dine_in',
+          customerName: 'سامر الحلبي',
+          customerPhone: '0933445566',
+          rating: 5,
+          foodQualityRating: 5,
+          serviceSpeedRating: 5,
+          menuEaseRating: 5,
+          tags: ['طعم رائع ولذيذ 😋', 'سهولة وسرعة في الطلب ⚡', 'صور الأصناف واضحة وشهية 📸'],
+          comment: 'تجربة الطلب من باركود الطاولة ممتازة جداً والصور بجانب الأسعار واضحة والطلب وصل بسرعة!',
+          createdAt: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
+        },
+        {
+          id: 'qr-rev-demo-2',
+          orderId: 'k-ord-102',
+          orderNumber: 'QR-202',
+          tableName: 'الطاولة 2',
+          diningType: 'dine_in',
+          customerName: 'رانيا الدمشقي',
+          customerPhone: '0944112233',
+          rating: 5,
+          foodQualityRating: 5,
+          serviceSpeedRating: 4,
+          menuEaseRating: 5,
+          tags: ['خدمة ممتازة 🌟', 'تصميم المنيو أنيق ومرتب 🎨'],
+          comment: 'المنيو الرقمي مرتب جداً وألوانه مريحة وصور الوجبات مطابقة للواقع، شكراً لكم.',
+          createdAt: new Date(Date.now() - 1000 * 60 * 110).toISOString(),
+        },
+        {
+          id: 'qr-rev-demo-3',
+          orderId: 'k-ord-103',
+          orderNumber: 'QR-203',
+          tableName: 'طلب سفري',
+          diningType: 'takeaway',
+          customerName: 'مازن العلي',
+          rating: 4,
+          foodQualityRating: 5,
+          serviceSpeedRating: 4,
+          menuEaseRating: 5,
+          tags: ['أسعار مناسبة 💰', 'طعم رائع ولذيذ 😋'],
+          comment: 'الشاورما والبرغر ممتازين، فكرة الطلب المباشر من الجوال وفرت علينا الانتظار.',
+          createdAt: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REVIEWS, JSON.stringify(customerReviews));
+    } catch {}
+  }, [customerReviews]);
+
+  const addCustomerReview = (
+    reviewData: Omit<CustomerFeedbackReview, 'id' | 'createdAt'>
+  ): CustomerFeedbackReview => {
+    const newRev: CustomerFeedbackReview = {
+      ...reviewData,
+      id: `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setCustomerReviewsState(prev => [newRev, ...prev]);
+    return newRev;
+  };
+
+  const deleteCustomerReview = (id: string) => {
+    setCustomerReviewsState(prev => prev.filter(r => r.id !== id));
+  };
+
+  const clearCustomerReviews = () => {
+    setCustomerReviewsState([]);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REVIEWS, JSON.stringify([]));
+    } catch {}
+  };
+
+  const updateQrMenuTheme = (themeUpdates: Partial<QrMenuThemeConfig>) => {
+    const defaultQrTheme: QrMenuThemeConfig = {
+      primaryColor: '#f59e0b',
+      buttonTextColor: '#0f172a',
+      backgroundColor: '#f8fafc',
+      headerBackgroundColor: '#0f172a',
+      cardBackgroundColor: '#ffffff',
+      isDarkBackground: false,
+      presetId: 'classic_amber',
+    };
+    const nextQrTheme: QrMenuThemeConfig = {
+      ...(settings.qrMenuTheme || defaultQrTheme),
+      ...themeUpdates,
+    };
+    updateSettings({ qrMenuTheme: nextQrTheme });
+
+    fetch('/api/menu/update-theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qrMenuTheme: nextQrTheme }),
+    }).catch(() => {});
+
+    try {
+      broadcastChannelRef.current?.postMessage({
+        type: 'MENU_THEME_UPDATED',
+        payload: { qrMenuTheme: nextQrTheme },
+      });
+    } catch {}
+  };
+
+  const loadKitchenOrderToCart = (order: KitchenOrder) => {
+    if (!order || !Array.isArray(order.items)) return;
+    if (order.diningType) setRestaurantDiningType(order.diningType);
+    if (order.tableName) setSelectedTable(order.tableName);
+    if (order.guestCount) setGuestCount(order.guestCount);
+    if (order.notes) setKitchenNote(order.notes);
+
+    const newCartItems: CartItem[] = [];
+    order.items.forEach(item => {
+      const foundProd =
+        products.find(p => p.id === item.productId) ||
+        products.find(p => p.nameAr === item.nameAr);
+      const prodObj: Product = foundProd || {
+        id: item.productId || `qr-prod-${Date.now()}`,
+        nameAr: item.nameAr,
+        nameEn: item.nameEn || item.nameAr,
+        sku: 'QR-ITEM',
+        barcode: '',
+        categoryId: categories[0]?.id || 'cat_all',
+        price: item.unitPrice || 0,
+        wholesalePrice: item.unitPrice || 0,
+        costPrice: 0,
+        stock: 999,
+        minStock: 0,
+        unit: 'وجبة',
+        image: item.image,
+        targetDeviceId: item.targetDeviceId,
+        targetDeviceRole: item.targetDeviceRole,
+        targetStationName: item.targetDeviceName,
+        isFavorite: false,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const qty = Number(item.quantity) || 1;
+      const uPrice = Number(item.unitPrice) || prodObj.price || 0;
+      newCartItems.push({
+        productId: prodObj.id,
+        product: prodObj,
+        quantity: qty,
+        unitPrice: uPrice,
+        discount: 0,
+        discountType: 'fixed',
+        total: qty * uPrice,
+        kitchenNotes: item.notes || '',
+      });
+    });
+
+    setCart(newCartItems);
+    setActiveTab('pos');
+    soundEffects.saleSuccess();
+    notify(
+      'تم سحب طلب الزبون (QR) إلى السلة',
+      `تم تحميل الطلب ${order.orderNumber} (${order.tableName || 'طلب QR'}) لإصدار الفاتورة أو التعديل`,
+      'success'
+    );
+  };
+
   // BroadcastChannel reference for local cross-tab zero-latency mesh
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
@@ -4978,6 +5179,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             notify('🔔 إشارة فحص اتصال من الكاشير', `قام ${payload.senderName || 'الكاشير'} بفحص اتصال هذا الجهاز بنجاح`, 'info');
           } else if (type === 'KITCHEN_ORDERS_UPDATE') {
             if (Array.isArray(payload)) setKitchenOrders(payload);
+          } else if (type === 'QR_CUSTOMER_ORDER_RECEIVED') {
+            if (payload?.order) {
+              setKitchenOrders(prev => {
+                const exists = prev.some(o => o.id === payload.order.id);
+                return exists ? prev : [payload.order, ...prev];
+              });
+              const myRole = dedicatedDeviceRole || 'master_pos';
+              const routedItems = (payload.order.items || []).filter((it: any) => {
+                if (!it.targetDeviceRole || it.targetDeviceRole === 'all') return true;
+                if (it.targetDeviceRole === myRole) return true;
+                if (myRole === 'master_pos') return true;
+                return false;
+              });
+              if (routedItems.length > 0) {
+                soundEffects.saleSuccess();
+                const itemsSummary = routedItems.map((i: any) => `${i.quantity}× ${i.nameAr}`).join('، ');
+                notify(
+                  `📱 طلب QR جديد (${payload.order.tableName || payload.order.orderNumber})`,
+                  `الأصناف الموجهة: ${itemsSummary}`,
+                  'success'
+                );
+              }
+            }
+          } else if (type === 'MENU_PRODUCT_UPDATED') {
+            if (payload?.productId && payload?.updates) {
+              setProductsState(prev =>
+                prev.map(p => (p.id === payload.productId ? { ...p, ...payload.updates } : p))
+              );
+            }
+          } else if (type === 'MENU_THEME_UPDATED') {
+            if (payload?.qrMenuTheme) {
+              setSettingsState(prev => ({ ...prev, qrMenuTheme: payload.qrMenuTheme }));
+            }
+          } else if (type === 'QR_CUSTOMER_REVIEW_RECEIVED') {
+            if (payload?.review) {
+              setCustomerReviewsState(prev => {
+                const exists = prev.some(r => r.id === payload.review.id);
+                return exists ? prev : [payload.review, ...prev];
+              });
+              soundEffects.saleSuccess();
+              notify(
+                `⭐ تقييم جديد من العميل (${payload.review.rating}/5)`,
+                `${payload.review.tableName || 'منيو QR'}: ${payload.review.comment || (payload.review.tags || []).join('، ') || 'شكراً للخدمة الرائعة'}`,
+                'success'
+              );
+            }
           } else if (type === 'CART_UPDATE') {
             if (payload) setLiveRemoteCart(payload);
           } else if (type === 'REFRESH_DEVICES') {
@@ -5053,6 +5300,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
       });
 
+      eventSource.addEventListener('QR_CUSTOMER_ORDER_RECEIVED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.order) {
+            setKitchenOrders(prev => {
+              const exists = prev.some(o => o.id === data.order.id);
+              return exists ? prev : [data.order, ...prev];
+            });
+            const myRole = dedicatedDeviceRole || 'master_pos';
+            const routedItems = (data.order.items || []).filter((it: any) => {
+              if (!it.targetDeviceRole || it.targetDeviceRole === 'all') return true;
+              if (it.targetDeviceRole === myRole) return true;
+              if (myRole === 'master_pos') return true;
+              return false;
+            });
+            if (routedItems.length > 0) {
+              soundEffects.saleSuccess();
+              const itemsSummary = routedItems.map((i: any) => `${i.quantity}× ${i.nameAr}`).join('، ');
+              notify(
+                `📱 طلب زبون عبر QR (${data.order.tableName || data.order.orderNumber})`,
+                `الأصناف الموجهة لهذا الجهاز: ${itemsSummary}`,
+                'success'
+              );
+            }
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('MENU_PRODUCT_UPDATED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.productId && data?.updates) {
+            setProductsState(prev =>
+              prev.map(p => (p.id === data.productId ? { ...p, ...data.updates } : p))
+            );
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('MENU_THEME_UPDATED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.qrMenuTheme) {
+            setSettingsState(prev => ({ ...prev, qrMenuTheme: data.qrMenuTheme }));
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('QR_CUSTOMER_REVIEW_RECEIVED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.review) {
+            setCustomerReviewsState(prev => {
+              const exists = prev.some(r => r.id === data.review.id);
+              return exists ? prev : [data.review, ...prev];
+            });
+            soundEffects.saleSuccess();
+            notify(
+              `⭐ تقييم جديد من الزبون (${data.review.rating}/5)`,
+              `${data.review.tableName || 'منيو QR'}: ${data.review.comment || (data.review.tags || []).join('، ') || 'تقييم ممتاز'}`,
+              'success'
+            );
+          }
+        } catch {}
+      });
+
       eventSource.addEventListener('CART_UPDATE', (e: any) => {
         try {
           const cartData = JSON.parse(e.data);
@@ -5103,6 +5416,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }),
     }).catch(() => {});
   }, [cart, selectedCustomer, orderDiscount, settings]);
+
+  // Sync Restaurant/Cafe Menu Catalog (products, images, target devices, categories, store settings, theme, reviews) to server for Customer QR Menu
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetch('/api/menu/sync-catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products,
+          categories,
+          reviews: customerReviews,
+          settings: {
+            storeName: settings.storeNameAr || settings.storeNameEn,
+            storeSubtitle: settings.tagline,
+            logoUrl: settings.logo,
+            phone: settings.phone,
+            address: settings.address,
+            currency: settings.currency,
+            qrMenuTheme: settings.qrMenuTheme,
+          },
+        }),
+      }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [products, categories, settings, customerReviews]);
 
   // Initial load of devices & fetch interval
   useEffect(() => {
@@ -5359,6 +5697,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deletePromotion,
         togglePromotionActive,
         calculateCartPromotions,
+        isRestaurantQrModalOpen,
+        setIsRestaurantQrModalOpen,
+        isCustomerMenuPreviewOpen,
+        setIsCustomerMenuPreviewOpen,
+        loadKitchenOrderToCart,
+        updateQrMenuTheme,
+        customerReviews,
+        addCustomerReview,
+        deleteCustomerReview,
+        clearCustomerReviews,
       }}
     >
       {children}

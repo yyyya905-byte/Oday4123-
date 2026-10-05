@@ -20,9 +20,15 @@ import {
   Sun,
   Moon,
   Receipt,
-  ShoppingCart
+  ShoppingCart,
+  QrCode,
+  UtensilsCrossed
 } from 'lucide-react';
 import { soundEffects } from '../../services/audio';
+import {
+  QR_MENU_THEME_PRESETS,
+  DEFAULT_QR_MENU_THEME,
+} from '../menu/CustomerQrMenuPage';
 
 interface ThemeColorSelectorProps {
   onColorChanged?: (preset: ThemeColorPreset, hex?: string) => void;
@@ -38,9 +44,16 @@ export const ThemeColorSelector: React.FC<ThemeColorSelectorProps> = ({
     activeThemeColor,
     activePrimaryHex,
     setThemeColor,
+    updateQrMenuTheme,
+    setIsCustomerMenuPreviewOpen,
     theme,
     notify
   } = useApp();
+
+  const activeQrTheme = {
+    ...DEFAULT_QR_MENU_THEME,
+    ...(settings.qrMenuTheme || {}),
+  };
 
   const [selectedPreset, setSelectedPreset] = useState<ThemeColorPreset>(
     settings.themeColor || activeThemeColor || 'amber'
@@ -627,6 +640,190 @@ export const ThemeColorSelector: React.FC<ThemeColorSelectorProps> = ({
                 <span>دفع وطباعة الفاتورة (F10)</span>
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ==========================================
+          CUSTOMER QR MENU PAGE BRAND COLORS CUSTOMIZER (تخصيص الألوان الأساسية لصفحة منيو الزبون CustomerQrMenuPage)
+         ========================================== */}
+      <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div
+              style={{
+                backgroundColor: activeQrTheme.primaryColor,
+                color: activeQrTheme.buttonTextColor,
+              }}
+              className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-md shrink-0"
+            >
+              <QrCode className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                  تخصيص الألوان الأساسية لصفحة منيو الزبون (CustomerQrMenuPage)
+                </h4>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                  هوية المطعم والكافيه
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                خصص لون الأزرار التفاعلية، لون خلفية الصفحة، ولون الترويسة والبطاقات لصفحة طلبات الزبائن عبر الـ QR.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsCustomerMenuPreviewOpen(true)}
+            style={{
+              backgroundColor: activeQrTheme.primaryColor,
+              color: activeQrTheme.buttonTextColor,
+            }}
+            className="px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-md cursor-pointer shrink-0"
+          >
+            <Eye className="w-4 h-4" />
+            <span>معاينة صفحة الزبون الآن</span>
+          </button>
+        </div>
+
+        {/* Preset Restaurant Brand Themes */}
+        <div>
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+            قوالب ألوان جاهزة لهوية المطعم والكافيه:
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {QR_MENU_THEME_PRESETS.map(preset => {
+              const isSelected = activeQrTheme.presetId === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    updateQrMenuTheme(preset.theme);
+                    soundEffects.playSuccess();
+                    notify('تم تحديث ألوان منيو الزبون', `تم تفعيل ثيم: ${preset.nameAr}`, 'success');
+                  }}
+                  className={`p-3.5 rounded-2xl border text-start transition-all cursor-pointer ${
+                    isSelected
+                      ? 'border-amber-500 bg-amber-500/10 ring-2 ring-amber-500/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-amber-400 bg-slate-50/60 dark:bg-slate-800/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-black text-slate-900 dark:text-white">
+                      {preset.nameAr}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="w-4 h-4 rounded-full border border-slate-300"
+                        style={{ backgroundColor: preset.theme.primaryColor }}
+                        title="لون الأزرار"
+                      />
+                      <span
+                        className="w-4 h-4 rounded-full border border-slate-300"
+                        style={{ backgroundColor: preset.theme.backgroundColor }}
+                        title="لون الخلفية"
+                      />
+                      <span
+                        className="w-4 h-4 rounded-full border border-slate-300"
+                        style={{ backgroundColor: preset.theme.headerBackgroundColor }}
+                        title="لون الترويسة"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    {preset.descAr}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Custom Color Pickers for Buttons, Background, Header, and Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-black block text-slate-900 dark:text-white">
+                لون الأزرار الرئيسي
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {activeQrTheme.primaryColor}
+              </span>
+            </div>
+            <input
+              type="color"
+              value={activeQrTheme.primaryColor}
+              onChange={e =>
+                updateQrMenuTheme({ primaryColor: e.target.value, presetId: 'custom' })
+              }
+              className="w-10 h-10 rounded-xl cursor-pointer border-0 bg-transparent"
+            />
+          </div>
+
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-black block text-slate-900 dark:text-white">
+                لون خلفية الصفحة
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {activeQrTheme.backgroundColor}
+              </span>
+            </div>
+            <input
+              type="color"
+              value={activeQrTheme.backgroundColor}
+              onChange={e =>
+                updateQrMenuTheme({ backgroundColor: e.target.value, presetId: 'custom' })
+              }
+              className="w-10 h-10 rounded-xl cursor-pointer border-0 bg-transparent"
+            />
+          </div>
+
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-black block text-slate-900 dark:text-white">
+                لون ترويسة المطعم
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {activeQrTheme.headerBackgroundColor}
+              </span>
+            </div>
+            <input
+              type="color"
+              value={activeQrTheme.headerBackgroundColor}
+              onChange={e =>
+                updateQrMenuTheme({
+                  headerBackgroundColor: e.target.value,
+                  presetId: 'custom',
+                })
+              }
+              className="w-10 h-10 rounded-xl cursor-pointer border-0 bg-transparent"
+            />
+          </div>
+
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-black block text-slate-900 dark:text-white">
+                لون بطاقات المنتجات
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {activeQrTheme.cardBackgroundColor}
+              </span>
+            </div>
+            <input
+              type="color"
+              value={activeQrTheme.cardBackgroundColor}
+              onChange={e =>
+                updateQrMenuTheme({
+                  cardBackgroundColor: e.target.value,
+                  presetId: 'custom',
+                })
+              }
+              className="w-10 h-10 rounded-xl cursor-pointer border-0 bg-transparent"
+            />
           </div>
         </div>
       </div>

@@ -18,6 +18,8 @@ export const KitchenTicketModal: React.FC<KitchenTicketModalProps> = ({ isOpen, 
     guestCount,
     currentUser,
     settings,
+    devices,
+    addKitchenOrder,
     language,
     t,
     notify,
@@ -36,10 +38,38 @@ export const KitchenTicketModal: React.FC<KitchenTicketModalProps> = ({ isOpen, 
 
   if (!isOpen) return null;
 
+  const dispatchToTargetDevices = () => {
+    if (cart.length === 0) return;
+    addKitchenOrder({
+      orderNumber: `KOT-${Math.floor(100 + Math.random() * 899)}`,
+      sourceDevice: `كاشير (${currentUser?.name || 'رئيسي'})`,
+      diningType: restaurantDiningType,
+      tableName: selectedTable,
+      guestCount,
+      items: cart.map((item, idx) => ({
+        id: `kot-it-${Date.now()}-${idx}`,
+        productId: item.productId,
+        nameAr: item.product.nameAr,
+        nameEn: item.product.nameEn,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        image: item.product.image,
+        notes: item.kitchenNotes || item.notes || '',
+        status: 'pending' as const,
+        targetDeviceRole: item.product.targetDeviceRole || 'kitchen_display',
+        targetDeviceId: item.product.targetDeviceId || '',
+        targetDeviceName: item.product.targetStationName || 'شاشة المطبخ (KDS)',
+      })),
+      totalAmount: cart.reduce((s, i) => s + i.total, 0),
+      status: 'new',
+    });
+  };
+
   const handlePrint = () => {
     soundEffects.playBeep();
+    dispatchToTargetDevices();
     notify(
-      language === 'ar' ? 'تم إرسال بون المطبخ (KOT)' : 'Kitchen Ticket Sent',
+      language === 'ar' ? 'تم إرسال بون المطبخ وتوجيه الأصناف للأجهزة' : 'Kitchen Ticket Sent',
       language === 'ar' ? `طاولة: ${selectedTable} • عدد الأصناف: ${cart.length}` : `Table: ${selectedTable}`,
       'success'
     );

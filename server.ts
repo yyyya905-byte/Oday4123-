@@ -487,6 +487,21 @@ let liveKitchenOrders: any[] = [
 
 let syncEvents: any[] = [];
 
+// Live Customer QR Menu Catalog synced from Master POS
+let liveMenuCatalog: {
+  products: any[];
+  categories: any[];
+  settings: any;
+  updatedAt: string;
+} = {
+  products: [],
+  categories: [],
+  settings: null,
+  updatedAt: new Date().toISOString(),
+};
+
+let liveCustomerReviews: any[] = [];
+
 // SSE client connections for zero-latency device mesh
 let sseClients: { id: string; res: express.Response }[] = [];
 
@@ -515,11 +530,19 @@ app.post("/api/system/reset-zero", (req, res) => {
     pointsEarned: 0,
     updatedAt: new Date().toISOString(),
   };
+  liveMenuCatalog = {
+    products: [],
+    categories: [{ id: 'cat_all', nameAr: 'الكل', nameEn: 'All', icon: 'LayoutGrid', color: '#f59e0b', sortOrder: 0 }],
+    settings: liveMenuCatalog.settings,
+    updatedAt: new Date().toISOString(),
+  };
+  liveCustomerReviews = [];
   syncEvents = [];
 
   broadcastSseEvent("KITCHEN_ORDERS_UPDATE", []);
   broadcastSseEvent("CART_UPDATE", liveCartState);
   broadcastSseEvent("DEVICE_DISCONNECTED", { devices: [] });
+  broadcastSseEvent("MENU_CATALOG_UPDATED", liveMenuCatalog);
 
   res.json({ success: true, message: "تم تصفير كافة بيانات الخادم والأجهزة والطلبات بنجاح" });
 });
@@ -781,6 +804,195 @@ app.post("/api/sync/kitchen-order-item-status", (req, res) => {
   }
   broadcastSseEvent('KITCHEN_ORDERS_UPDATE', liveKitchenOrders);
   res.json({ success: true, orders: liveKitchenOrders });
+});
+
+// ==========================================
+// 5.4. Customer QR Menu & Per-Product Device Routing Engine
+// ==========================================
+
+// Get current restaurant/cafe menu catalog + connected devices + live orders + customer reviews
+app.get("/api/menu/catalog", (_req, res) => {
+  res.json({
+    success: true,
+    catalog: liveMenuCatalog,
+    devices: connectedDevices,
+    orders: liveKitchenOrders,
+    reviews: liveCustomerReviews,
+  });
+});
+
+// Sync full catalog from POS to server so any customer scanning QR gets latest products, photos, prices, and theme
+app.post("/api/menu/sync-catalog", (req, res) => {
+  const { products, categories, settings, reviews } = req.body;
+  if (Array.isArray(products)) liveMenuCatalog.products = products;
+  if (Array.isArray(categories)) liveMenuCatalog.categories = categories;
+  if (settings) liveMenuCatalog.settings = { ...liveMenuCatalog.settings, ...settings };
+  if (Array.isArray(reviews)) liveCustomerReviews = reviews;
+  liveMenuCatalog.updatedAt = new Date().toISOString();
+
+  broadcastSseEvent("MENU_CATALOG_UPDATED", liveMenuCatalog);
+  res.json({ success: true, updatedAt: liveMenuCatalog.updatedAt });
+});
+
+// Update QR Menu Brand Colors & Theme Identity
+app.post("/api/menu/update-theme", (req, res) => {
+  const { qrMenuTheme } = req.body;
+  if (!qrMenuTheme) {
+    return res.status(400).json({ success: false, error: "بيانات ألوان الهوية مطلوبة" });
+  }
+  liveMenuCatalog.settings = {
+    ...(liveMenuCatalog.settings || {}),
+    qrMenuTheme,
+  };
+  liveMenuCatalog.updatedAt = new Date().toISOString();
+
+  broadcastSseEvent("MENU_THEME_UPDATED", {
+    qrMenuTheme,
+    updatedAt: liveMenuCatalog.updatedAt,
+  });
+
+  res.json({ success: true, qrMenuTheme });
+});
+
+// Update a single product's photo, description, or target device routing from Customer Menu Page or POS
+app.post("/api/menu/update-product", (req, res) => {
+  const { productId, updates } = req.body;
+  if (!productId || !updates) {
+    return res.status(400).json({ success: false, error: "بيانات المنتج مطلوبة" });
+  }
+
+  liveMenuCatalog.products = (liveMenuCatalog.products || []).map(p =>
+    p.id === productId ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
+  );
+  liveMenuCatalog.updatedAt = new Date().toISOString();
+
+  broadcastSseEvent("MENU_PRODUCT_UPDATED", {
+    productId,
+    updates,
+    updatedAt: liveMenuCatalog.updatedAt,
+  });
+
+  res.json({ success: true, productId, updates });
+});
+
+// Submit a Customer QR Order & automatically route each product to its designated target device
+app.post("/api/menu/submit-order", (req, res) => {
+  const {
+    tableName,
+    diningType = "dine_in",
+    customerName,
+    customerPhone,
+    guestCount = 1,
+    notes,
+    items,
+    totalAmount,
+  } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, error: "السلة فارغة، يرجى اختيار صنف واحد على الأقل" });
+  }
+
+  const orderSeq = liveKitchenOrders.length + 201;
+  const orderNumber = `QR-${orderSeq}`;
+  const nowIso = new Date().toISOString();
+
+  const formattedItems = items.map((item: any, idx: number) => ({
+    id: item.id || `qri-${Date.now()}-${idx}`,
+    productId: item.productId,
+    nameAr: item.nameAr,
+    nameEn: item.nameEn || item.nameAr,
+    quantity: Number(item.quantity) || 1,
+    unitPrice: Number(item.unitPrice) || 0,
+    image: item.image,
+    notes: item.notes || "",
+    status: "pending" as const,
+    targetDeviceRole: item.targetDeviceRole || "kitchen_display",
+    targetDeviceId: item.targetDeviceId || "",
+    targetDeviceName: item.targetDeviceName || "شاشة المطبخ (KDS)",
+  }));
+
+  const newOrder = {
+    id: `qr-ord-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    orderNumber,
+    sourceDevice: `منيو QR الذكي (${tableName || (diningType === "takeaway" ? "سفري" : "توصيل")})`,
+    isCustomerQrOrder: true,
+    customerName: customerName || "",
+    customerPhone: customerPhone || "",
+    diningType,
+    tableName: tableName || (diningType === "takeaway" ? "طلب سفري" : "توصيل"),
+    guestCount: Number(guestCount) || 1,
+    items: formattedItems,
+    totalAmount: Number(totalAmount) || formattedItems.reduce((s: number, i: any) => s + i.unitPrice * i.quantity, 0),
+    status: "pending",
+    createdAt: nowIso,
+    estimatedMinutes: 12,
+    notes: notes || "",
+  };
+
+  liveKitchenOrders.unshift(newOrder);
+
+  // Broadcast to all connected terminals & KDS screens so each device displays its routed items immediately
+  broadcastSseEvent("KITCHEN_ORDERS_UPDATE", liveKitchenOrders);
+  broadcastSseEvent("CUSTOMER_QR_ORDER_RECEIVED", newOrder);
+  broadcastSseEvent("QR_CUSTOMER_ORDER_RECEIVED", { order: newOrder });
+
+  res.json({
+    success: true,
+    order: newOrder,
+    orders: liveKitchenOrders,
+    message: "تم إرسال طلبك بنجاح وتوجيه الأصناف للأقسام المختصة",
+  });
+});
+
+// Submit Customer Experience Review from QR Menu Page
+app.post("/api/menu/submit-review", (req, res) => {
+  const {
+    orderId,
+    orderNumber,
+    tableName,
+    diningType = "dine_in",
+    customerName,
+    customerPhone,
+    rating,
+    foodQualityRating,
+    serviceSpeedRating,
+    menuEaseRating,
+    tags,
+    comment,
+  } = req.body;
+
+  const numericRating = Math.min(5, Math.max(1, Number(rating) || 5));
+
+  const newReview = {
+    id: `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    orderId: orderId || "",
+    orderNumber: orderNumber || "",
+    tableName: tableName || "منيو QR",
+    diningType,
+    customerName: customerName || "عميل كريم",
+    customerPhone: customerPhone || "",
+    rating: numericRating,
+    foodQualityRating: Number(foodQualityRating) || numericRating,
+    serviceSpeedRating: Number(serviceSpeedRating) || numericRating,
+    menuEaseRating: Number(menuEaseRating) || numericRating,
+    tags: Array.isArray(tags) ? tags : [],
+    comment: comment || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  liveCustomerReviews.unshift(newReview);
+
+  broadcastSseEvent("QR_CUSTOMER_REVIEW_RECEIVED", {
+    review: newReview,
+    reviews: liveCustomerReviews,
+  });
+
+  res.json({
+    success: true,
+    review: newReview,
+    reviews: liveCustomerReviews,
+    message: "شكراً لتقييمك! نسعد دائماً بخدمتك",
+  });
 });
 
 // ==========================================

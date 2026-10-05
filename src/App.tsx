@@ -37,6 +37,8 @@ import { StorageCleanupReportModal } from './components/modals/StorageCleanupRep
 import { StorageProactiveAlertToast } from './components/common/StorageProactiveAlertToast';
 import { ShiftHandoverModal } from './components/modals/ShiftHandoverModal';
 import { PromotionsModal } from './components/modals/PromotionsModal';
+import { RestaurantQrMenuModal } from './components/modals/RestaurantQrMenuModal';
+import { CustomerQrMenuPage } from './components/menu/CustomerQrMenuPage';
 import { FloatingActionHub } from './components/common/FloatingActionHub';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LongPressProvider } from './components/common/LongPressTooltip';
@@ -69,6 +71,12 @@ const AppContent: React.FC = () => {
     setIsShiftModalOpen,
     isPromotionsModalOpen,
     setIsPromotionsModalOpen,
+    isRestaurantQrModalOpen,
+    setIsRestaurantQrModalOpen,
+    isCustomerMenuPreviewOpen,
+    setIsCustomerMenuPreviewOpen,
+    selectedTable,
+    restaurantDiningType,
     offlineQueueCount,
     isSyncingOffline,
     syncOfflineQueueNow,
@@ -77,6 +85,26 @@ const AppContent: React.FC = () => {
     isPowerSavingStandby,
     wakeFromStandby
   } = useApp();
+
+  // Check if accessed via Customer QR Code URL (?customerMenu=1 or ?qrMenu=1)
+  const [qrCustomerRoute] = useState<{
+    isCustomerPage: boolean;
+    table: string;
+    type: 'dine_in' | 'takeaway' | 'delivery';
+  }>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const isMenu =
+        params.get('customerMenu') === '1' ||
+        params.get('qrMenu') === '1' ||
+        params.get('menu') === '1';
+      const tbl = params.get('table') || 'الطاولة 1';
+      const tp = (params.get('type') as 'dine_in' | 'takeaway' | 'delivery') || 'dine_in';
+      return { isCustomerPage: isMenu, table: tbl, type: tp };
+    } catch {
+      return { isCustomerPage: false, table: 'الطاولة 1', type: 'dine_in' };
+    }
+  });
 
   // PWA Service Worker Registration & Background Sync Listener
   useEffect(() => {
@@ -112,6 +140,29 @@ const AppContent: React.FC = () => {
       };
     }
   }, [syncOfflineQueueNow]);
+
+  // If customer scanned the Restaurant/Cafe QR Menu Code, render the dedicated standalone Customer Page immediately
+  if (qrCustomerRoute.isCustomerPage) {
+    return (
+      <CustomerQrMenuPage
+        isStandalone={true}
+        initialTable={qrCustomerRoute.table}
+        initialDiningType={qrCustomerRoute.type}
+      />
+    );
+  }
+
+  // If manager opened the Customer Menu Preview from POS
+  if (isCustomerMenuPreviewOpen) {
+    return (
+      <CustomerQrMenuPage
+        isStandalone={false}
+        initialTable={selectedTable}
+        initialDiningType={restaurantDiningType}
+        onClosePreview={() => setIsCustomerMenuPreviewOpen(false)}
+      />
+    );
+  }
 
   // If this device was paired or selected as a dedicated terminal
   if (dedicatedDeviceRole === 'kitchen_display') {
@@ -245,6 +296,12 @@ const AppContent: React.FC = () => {
       <PromotionsModal
         isOpen={isPromotionsModalOpen}
         onClose={() => setIsPromotionsModalOpen(false)}
+      />
+
+      {/* Restaurant & Cafe Customer QR Menu & Product Device Routing Modal */}
+      <RestaurantQrMenuModal
+        isOpen={isRestaurantQrModalOpen}
+        onClose={() => setIsRestaurantQrModalOpen(false)}
       />
 
       {/* App Purchase Code Activation Modal */}

@@ -61,6 +61,13 @@ export interface Product {
   minStock: number;
   unit: string;
   image?: string;
+  descriptionAr?: string; // وصف المنتج ومكوناته لمنيو الزبون
+  preparationTimeMinutes?: number; // وقت التحضير بالدقائق
+  availableInQrMenu?: boolean; // هل يظهر في منيو QR للزبائن
+  targetDeviceRole?: DeviceRole | 'all'; // نوع الجهاز الموجه له طلب هذا المنتج
+  targetDeviceId?: string; // معرف الجهاز المحدد الموجه له هذا المنتج
+  targetDeviceName?: string; // اسم الجهاز أو القسم الموجه له (مثال: شاشة المطبخ، ركن الكافيه والباريستا، الكاشير الرئيسي)
+  targetStationName?: string; // اسم المحطة الموجه لها الطلب
   isFavorite: boolean;
   status: 'active' | 'inactive';
   taxRate?: number;
@@ -529,6 +536,8 @@ export interface StoreSettings {
   // Theme Color & Store Brand Identity
   themeColor?: ThemeColorPreset; // 'amber' (default), 'emerald', 'blue', 'indigo', etc.
   primaryColorHex?: string; // Custom HEX color e.g. '#f59e0b'
+  // Customer QR Menu Brand Colors & Theme Identity (تخصيص ألوان صفحة منيو الزبون QR)
+  qrMenuTheme?: QrMenuThemeConfig;
   // Theme & Night Mode (Cashier Eye Comfort & Dark Work Environment Contrast)
   themeMode?: ThemeMode;
   nightModeStartHour?: number; // e.g. 18 (6:00 PM)
@@ -702,8 +711,12 @@ export interface KitchenOrderItem {
   nameEn: string;
   quantity: number;
   unitPrice: number;
+  image?: string;
   notes?: string;
   status: 'pending' | 'cooking' | 'ready' | 'served';
+  targetDeviceRole?: DeviceRole | 'all';
+  targetDeviceId?: string;
+  targetDeviceName?: string;
 }
 
 export interface KitchenOrder {
@@ -711,14 +724,45 @@ export interface KitchenOrder {
   orderNumber: string;
   saleId?: string;
   sourceDevice: string;
+  isCustomerQrOrder?: boolean;
+  customerName?: string;
+  customerPhone?: string;
   diningType: DiningType;
   tableName?: string;
   guestCount?: number;
   items: KitchenOrderItem[];
-  status: 'pending' | 'in_progress' | 'ready' | 'completed' | 'cancelled';
+  totalAmount?: number;
+  status: 'new' | 'pending' | 'in_progress' | 'ready' | 'completed' | 'cancelled';
   createdAt: string;
   estimatedMinutes?: number;
   notes?: string;
+}
+
+export interface QrMenuThemeConfig {
+  primaryColor: string; // لون الأزرار والعناصر التفاعلية (مثال: '#f59e0b')
+  buttonTextColor: string; // لون نص الأزرار ('#0f172a' أو '#ffffff')
+  backgroundColor: string; // لون خلفية صفحة المنيو ('#f8fafc' أو '#0f172a')
+  headerBackgroundColor: string; // لون خلفية ترويسة المطعم ('#0f172a')
+  cardBackgroundColor: string; // لون بطاقات المنتجات ('#ffffff' أو '#1e293b')
+  isDarkBackground?: boolean;
+  presetId?: string;
+}
+
+export interface CustomerFeedbackReview {
+  id: string;
+  orderId?: string;
+  orderNumber?: string;
+  tableName?: string;
+  diningType?: DiningType;
+  customerName?: string;
+  customerPhone?: string;
+  rating: number; // 1 to 5 stars
+  foodQualityRating?: number; // 1 to 5
+  serviceSpeedRating?: number; // 1 to 5
+  menuEaseRating?: number; // 1 to 5
+  tags?: string[];
+  comment?: string;
+  createdAt: string;
 }
 
 export interface Supplier {

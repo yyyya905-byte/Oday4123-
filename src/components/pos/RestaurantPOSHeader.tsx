@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Users, MapPin, ChevronDown, Plus, Minus, X } from 'lucide-react';
+import { Users, MapPin, ChevronDown, Plus, Minus, X, QrCode, Eye, BellRing } from 'lucide-react';
 
 interface RestaurantPOSHeaderProps {
   onOpenKitchenTicket?: () => void;
@@ -17,15 +17,24 @@ export const RestaurantPOSHeader: React.FC<RestaurantPOSHeaderProps> = ({
     setSelectedTable,
     guestCount,
     setGuestCount,
+    kitchenOrders,
+    setIsRestaurantQrModalOpen,
+    setIsCustomerMenuPreviewOpen,
     language,
   } = useApp();
 
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
 
+  const pendingQrOrdersCount = useMemo(() => {
+    return (kitchenOrders || []).filter(
+      o => (o.isCustomerQrOrder || o.orderNumber?.startsWith('QR-')) && o.status !== 'completed'
+    ).length;
+  }, [kitchenOrders]);
+
   const restaurantZones = [
     {
       name: language === 'ar' ? 'الصالة الرئيسية' : 'Main Dining Area',
-      tables: ['طاولة 1', 'طاولة 2', 'طاولة 3', 'طاولة 4', 'طاولة 5', 'طاولة 6'],
+      tables: ['الطاولة 1', 'الطاولة 2', 'الطاولة 3', 'الطاولة 4', 'الطاولة 5', 'الطاولة 6'],
     },
     {
       name: language === 'ar' ? 'صالة كبار الزوار (VIP)' : 'VIP Lounge',
@@ -75,6 +84,34 @@ export const RestaurantPOSHeader: React.FC<RestaurantPOSHeaderProps> = ({
           }`}
         >
           <span>{language === 'ar' ? 'توصيل دليفري' : 'Delivery'}</span>
+        </button>
+      </div>
+
+      {/* Customer QR Menu & Print QR Code Actions */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setIsRestaurantQrModalOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black shadow-sm active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+          title="طباعة باركود QR لصفحة الزبائن وتحديد جهاز كل منتج وصورته"
+        >
+          <QrCode className="w-4 h-4" />
+          <span>طباعة QR لصفحة الزبائن وتوجيه المنتجات</span>
+          {pendingQrOrdersCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-950 text-amber-400 text-[10px] font-mono font-black animate-pulse">
+              {pendingQrOrdersCount} طلب
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsCustomerMenuPreviewOpen(true)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/60 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+          title="معاينة صفحة منيو الزبائن المخصصة"
+        >
+          <Eye className="w-3.5 h-3.5 text-amber-400" />
+          <span>صفحة الزبون</span>
         </button>
       </div>
 

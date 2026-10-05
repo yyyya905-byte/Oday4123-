@@ -36,7 +36,12 @@ import {
   Copy,
   Check,
   Flame,
-  ArrowUpDown
+  ArrowUpDown,
+  Star,
+  QrCode,
+  Palette,
+  MessageSquareQuote,
+  Trash2
 } from 'lucide-react';
 import {
   AreaChart,
@@ -75,8 +80,50 @@ export const DashboardView: React.FC = () => {
     setCurrentUser,
     users = [],
     setIsPinModalOpen,
+    customerReviews = [],
+    deleteCustomerReview,
+    setIsRestaurantQrModalOpen,
+    setIsCustomerMenuPreviewOpen,
     notify
   } = useApp();
+
+  // Customer QR Menu Ratings Summary Metrics
+  const qrReviewsStats = useMemo(() => {
+    const list = customerReviews || [];
+    const totalCount = list.length;
+    if (totalCount === 0) {
+      return {
+        totalCount: 0,
+        avgOverall: 0,
+        avgFood: 0,
+        avgSpeed: 0,
+        avgEase: 0,
+        satisfactionRate: 0,
+        starCounts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } as Record<number, number>,
+      };
+    }
+    const sumOverall = list.reduce((s, r) => s + (Number(r.rating) || 5), 0);
+    const sumFood = list.reduce((s, r) => s + (Number(r.foodQualityRating || r.rating) || 5), 0);
+    const sumSpeed = list.reduce((s, r) => s + (Number(r.serviceSpeedRating || r.rating) || 5), 0);
+    const sumEase = list.reduce((s, r) => s + (Number(r.menuEaseRating || r.rating) || 5), 0);
+    const positiveCount = list.filter(r => (Number(r.rating) || 5) >= 4).length;
+
+    const starCounts: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    list.forEach(r => {
+      const st = Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5)));
+      starCounts[st] = (starCounts[st] || 0) + 1;
+    });
+
+    return {
+      totalCount,
+      avgOverall: Number((sumOverall / totalCount).toFixed(1)),
+      avgFood: Number((sumFood / totalCount).toFixed(1)),
+      avgSpeed: Number((sumSpeed / totalCount).toFixed(1)),
+      avgEase: Number((sumEase / totalCount).toFixed(1)),
+      satisfactionRate: Math.round((positiveCount / totalCount) * 100),
+      starCounts,
+    };
+  }, [customerReviews]);
 
   const roleInfo = getRoleInfo(currentUser.role);
   const canViewNetProfit = hasActionPermission('view_net_profit', currentUser.role);
@@ -1702,6 +1749,225 @@ export const DashboardView: React.FC = () => {
           >
             فتح إدارة المخزون
           </button>
+        </div>
+      </div>
+
+      {/* ==========================================
+          CUSTOMER QR MENU EXPERIENCE RATINGS SUMMARY IN MANAGER DASHBOARD
+          (ملخص تقييمات تجربة العملاء عبر صفحة الـ QR Menu في لوحة تحكم المدير)
+         ========================================== */}
+      <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center justify-center shrink-0">
+              <Star className="w-6 h-6 fill-amber-500" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                  ملخص تقييمات تجربة العملاء عبر منيو QR (Customer Experience Feedback)
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                  تحديث مباشر من طاولات الزبائن
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                تحليل تقييمات الزبائن بعد إرسال طلباتهم عبر صفحة الـ QR Menu (جودة الأصناف، سرعة التحضير، وسهولة المنيو).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsCustomerMenuPreviewOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            >
+              <Eye className="w-4 h-4" />
+              <span>فتح صفحة منيو الزبون</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRestaurantQrModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all"
+            >
+              <QrCode className="w-4 h-4 text-amber-500" />
+              <span>إدارة باركود وألوان المنيو</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Summary KPI Cards + Star Distribution */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+          {/* Overall Score & Sub-metrics */}
+          <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+            <div className="col-span-2 p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/25 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block">
+                  متوسط التقييم العام للمطعم
+                </span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-3xl font-black font-mono text-slate-900 dark:text-white">
+                    {qrReviewsStats.avgOverall || '5.0'}
+                  </span>
+                  <span className="text-xs font-bold text-slate-400">/ 5.0</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1.5">
+                  {[1, 2, 3, 4, 5].map(s => (
+                    <Star
+                      key={s}
+                      className={`w-4 h-4 ${
+                        s <= Math.round(qrReviewsStats.avgOverall || 5)
+                          ? 'text-amber-400 fill-amber-400'
+                          : 'text-slate-300 dark:text-slate-700'
+                      }`}
+                    />
+                  ))}
+                  <span className="text-[11px] font-bold text-slate-500 ms-1">
+                    ({qrReviewsStats.totalCount} تقييم)
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-center px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-500/30 shadow-2xs">
+                <span className="text-[10px] font-bold text-slate-400 block">نسبة الرضا</span>
+                <span className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+                  {qrReviewsStats.satisfactionRate || 100}%
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+              <span className="text-[11px] font-bold text-slate-500 block">🍽️ جودة الأصناف والصور</span>
+              <span className="text-base font-black font-mono text-slate-900 dark:text-white mt-0.5 block">
+                {qrReviewsStats.avgFood || '5.0'} / 5
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+              <span className="text-[11px] font-bold text-slate-500 block">⚡ سرعة الخدمة والتحضير</span>
+              <span className="text-base font-black font-mono text-slate-900 dark:text-white mt-0.5 block">
+                {qrReviewsStats.avgSpeed || '4.8'} / 5
+              </span>
+            </div>
+
+            <div className="col-span-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                📱 سهولة الطلب وتصفح الصور عبر صفحة QR Menu
+              </span>
+              <span className="text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                {qrReviewsStats.avgEase || '5.0'} / 5
+              </span>
+            </div>
+          </div>
+
+          {/* 5-Star Distribution Bars */}
+          <div className="lg:col-span-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-center space-y-2.5">
+            <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 mb-1">
+              توزيع درجات التقييم
+            </h4>
+            {[5, 4, 3, 2, 1].map(star => {
+              const count = qrReviewsStats.starCounts[star] || 0;
+              const pct =
+                qrReviewsStats.totalCount > 0
+                  ? Math.round((count / qrReviewsStats.totalCount) * 100)
+                  : star === 5
+                  ? 100
+                  : 0;
+              return (
+                <div key={star} className="flex items-center gap-2 text-xs">
+                  <span className="w-12 font-bold font-mono flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                    <span>{star}</span>
+                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                  </span>
+                  <div className="flex-1 h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="w-9 text-end font-mono text-[11px] font-bold text-slate-500">
+                    {count}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Latest Customer Reviews List */}
+          <div className="lg:col-span-4 space-y-2.5 max-h-64 overflow-y-auto pe-1">
+            <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <MessageSquareQuote className="w-4 h-4 text-amber-500" />
+              <span>أحدث آراء وتقييمات الزبائن</span>
+            </h4>
+
+            {customerReviews.length === 0 ? (
+              <div className="p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400">
+                لا توجد تقييمات حالياً. ستظهر تقييمات الزبائن هنا فور إرسالها من صفحة QR.
+              </div>
+            ) : (
+              customerReviews.slice(0, 4).map(rev => (
+                <div
+                  key={rev.id}
+                  className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {rev.customerName || 'عميل كريم'}
+                      </span>
+                      {rev.tableName && (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black shrink-0">
+                          {rev.tableName}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <Star
+                            key={s}
+                            className={`w-3 h-3 ${
+                              s <= rev.rating
+                                ? 'text-amber-400 fill-amber-400'
+                                : 'text-slate-300 dark:text-slate-600'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteCustomerReview(rev.id)}
+                        className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
+                        title="حذف التقييم"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {rev.comment && (
+                    <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 leading-relaxed">
+                      &ldquo;{rev.comment}&rdquo;
+                    </p>
+                  )}
+
+                  {rev.tags && rev.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {rev.tags.slice(0, 3).map(tag => (
+                        <span
+                          key={tag}
+                          className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[9px] font-bold"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
