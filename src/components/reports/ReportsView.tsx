@@ -314,17 +314,7 @@ export const ReportsView: React.FC = () => {
       });
     });
 
-    // If user hasn't made sales yet in this filter, fallback to catalog top items so charts remain interactive
-    let list = Object.values(productSalesMap);
-    if (list.length === 0 && products.length > 0) {
-      list = products.slice(0, 6).map((p, i) => ({
-        id: p.id,
-        nameAr: p.nameAr,
-        qty: Math.max(2, 12 - i * 2),
-        total: p.price * Math.max(2, 12 - i * 2),
-        profit: Math.max(0, (p.price - p.costPrice) * Math.max(2, 12 - i * 2))
-      }));
-    }
+    const list = Object.values(productSalesMap);
 
     const sorted = [...list]
       .sort((a, b) => (productSortMetric === 'revenue' ? b.total - a.total : b.qty - a.qty))

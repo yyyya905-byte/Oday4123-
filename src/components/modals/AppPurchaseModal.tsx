@@ -426,8 +426,13 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </div>
                 </div>
 
+                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>✨ تصفير شامل تلقائي: فور تأكيد كود الشهر أو السنة، سيتم تصفير كافة البيانات التجريبية (الفواتير، الديون، الأقساط، المشتريات، المنتجات، المخزون، والمصروفات) إلى (0) للبدء بحسابات متجرك الحقيقية على نظافة.</span>
+                </div>
+
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
-                  🔒 سيتم حفظ هذه البيانات وتاريخ الانتهاء نهائياً في متصفحك (localStorage) واستهلاك الكود فور الضغط على تأكيد.
+                  🔒 سيتم حفظ هذه البيانات وتاريخ الانتهاء نهائياً في متصفحك (localStorage) وتصفير النظام فور الضغط على تأكيد.
                 </div>
               </div>
 

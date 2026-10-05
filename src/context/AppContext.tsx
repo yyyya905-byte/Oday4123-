@@ -562,6 +562,9 @@ const STORAGE_KEYS = {
   CASH_SHIFTS: 'kian_pos_cash_shifts',
   ACTIVE_SHIFT_ID: 'kian_pos_active_shift_id',
   PROMOTIONS: 'kian_pos_promotions',
+  ZEROED_OUT: 'kian_pos_zeroed_out',
+  INSTALLMENT_PLANS: 'kian_pos_installment_plans_v1',
+  DEBT_REMINDER_LOGS: 'kian_pos_debt_reminder_logs_v1',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -1350,18 +1353,113 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customerPhone: customerInfo?.phone || settings.phone
     };
 
-    updateSettings({ licenseInfo: updatedLicense });
+    // =========================================================================
+    // ZERO OUT ALL DATA UPON MONTHLY OR YEARLY CODE ACTIVATION
+    // =========================================================================
+    const zeroBaseCategories: Category[] = [
+      { id: 'cat_all', nameAr: 'الكل', nameEn: 'All', icon: 'LayoutGrid', color: '#f59e0b', sortOrder: 0 }
+    ];
+    const ownerBaseUser: User = {
+      ...(currentUser?.role === 'owner' ? currentUser : initialUsers[0]),
+      id: 'usr_1',
+      name: customerInfo?.name?.trim() || currentUser?.name || initialUsers[0].name,
+      role: 'owner',
+      active: true,
+    };
+    const zeroedUsers: User[] = [ownerBaseUser];
+
+    const updatedSettingsWithLicense: StoreSettings = {
+      ...settings,
+      storeNameAr: customerInfo?.name?.trim() || settings.storeNameAr,
+      phone: customerInfo?.phone?.trim() || settings.phone,
+      licenseInfo: updatedLicense,
+    };
+
+    // 1. Mark system as zeroed out and persist clean empty arrays in localStorage
+    localStorage.setItem(STORAGE_KEYS.ZEROED_OUT, 'true');
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(zeroBaseCategories));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.DEBT_TRANSACTIONS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.INSTALLMENT_PLANS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.DEBT_REMINDER_LOGS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.REFUNDS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.WHOLESALE_WAREHOUSES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.DELIVERY_VEHICLES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.VEHICLE_MANIFESTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify([]));
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SHIFT_ID);
+    localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(zeroedUsers));
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, ownerBaseUser.id);
+    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updatedSettingsWithLicense));
+
+    // 2. Update all React states to zero immediately
+    setProductsState([]);
+    setCategoriesState(zeroBaseCategories);
+    setCustomersState([]);
+    setSuppliersState([]);
+    setDebtTransactionsState([]);
+    setSalesState([]);
+    setRefundsState([]);
+    setInventoryLogsState([]);
+    setExpensesState([]);
+    setAuditLogsState([]);
+    setWholesaleWarehousesState([]);
+    setDeliveryVehiclesState([]);
+    setVehicleManifestsState([]);
+    setShiftsState([]);
+    setActiveShiftId(null);
+    setPromotionsState([]);
+    setUsersState(zeroedUsers);
+    setCurrentUserState(ownerBaseUser);
+    setNotifications([]);
+    setDevices([]);
+    setKitchenOrders([]);
+    setLiveRemoteCart(null);
+    setCart([]);
+    setSelectedCustomer(null);
+    setOrderDiscount({ value: 0, type: 'fixed' });
+    setPointsToRedeem(0);
+    setKitchenNote('');
+    setSelectedReturnInvoice(null);
+    setSettingsState(updatedSettingsWithLicense);
+
+    // 3. Clear IndexedDB cache & offline queue
+    indexedDbService.cacheAllData({
+      products: [],
+      categories: zeroBaseCategories,
+      customers: [],
+      sales: [],
+      settings: updatedSettingsWithLicense,
+    }).catch(() => {});
+    indexedDbService.purgeSyncedQueueItems().catch(() => {});
+    setOfflineQueueCount(0);
+
+    // 4. Clear server in-memory demo devices, kitchen orders, and cart
+    fetch('/api/system/reset-zero', { method: 'POST' }).catch(() => {});
+
+    // 5. Notify any mounted views (such as DebtView installmentPlans) to zero out local state
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kian-zero-out-all'));
+    }
+
     soundEffects.playSuccess();
     setIsPurchaseModalOpen(false);
 
     notify(
-      'تم تفعيل ترخيص التطبيق بنجاح! 👑',
-      `تم التفعيل بنجاح: ${matched.durationLabelAr}`,
+      'تم تفعيل الترخيص وتصفير النظام بالكامل! 👑',
+      `تم تفعيل (${matched.durationLabelAr}) وتصفير كافة المبيعات والديون والمنتجات والحسابات للبدء من الصفر`,
       'success'
     );
 
-    logAudit('تفعيل كود ترخيص التطبيق', `نوع الاشتراك: ${matched.durationLabelAr}`, 'high');
-    return { success: true, message: `تم تفعيل ${matched.durationLabelAr} بنجاح` };
+    return { success: true, message: `تم تفعيل ${matched.durationLabelAr} وتصفير كافة البيانات بنجاح` };
   };
 
   // =========================================================================
@@ -1982,9 +2080,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [debtTransactions, setDebtTransactionsState] = useState<DebtTransaction[]>(() => {
     try {
+      const isZeroed =
+        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
       const saved = localStorage.getItem(STORAGE_KEYS.DEBT_TRANSACTIONS);
-      if (saved) {
+      if (saved !== null) {
         const parsed: DebtTransaction[] = JSON.parse(saved);
+        if (isZeroed || parsed.length === 0) {
+          return parsed;
+        }
         const existingIds = new Set(parsed.map(t => t.id));
         const missingPurchaseInvoices = initialDebtTransactions.filter(
           t => t.partyType === 'supplier' && t.type === 'charge' && !existingIds.has(t.id)
@@ -1996,9 +2100,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return parsed;
       }
-      return initialDebtTransactions;
+      return isZeroed ? [] : initialDebtTransactions;
     } catch {
-      return initialDebtTransactions;
+      return [];
     }
   });
 
@@ -3940,48 +4044,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Multi-Device Terminals & Central Sync
-  const [devices, setDevices] = useState<LinkedDevice[]>([
-    {
-      id: "dev-master-1",
-      name: "جهاز الكاشير المركزي (Master POS)",
-      role: "master_pos",
-      deviceType: "desktop",
-      pairingCode: "MASTER",
-      pairedAt: new Date().toISOString(),
-      lastSeen: new Date().toISOString(),
-      isOnline: true,
-      batteryLevel: 100,
-      cashierName: "عدي الزعبي",
-      currentScreen: "pos",
-      branchName: "الفرع الرئيسي",
-    },
-    {
-      id: "dev-kitchen-1",
-      name: "شاشة المطبخ وإعداد الطلبات (KDS 1)",
-      role: "kitchen_display",
-      deviceType: "tablet",
-      pairingCode: "772109",
-      pairedAt: new Date(Date.now() - 3600000).toISOString(),
-      lastSeen: new Date().toISOString(),
-      isOnline: true,
-      batteryLevel: 94,
-      currentScreen: "kitchen",
-      branchName: "الفرع الرئيسي",
-    },
-    {
-      id: "dev-cfd-1",
-      name: "شاشة العميل التفاعلية (Customer Display)",
-      role: "customer_display",
-      deviceType: "tablet",
-      pairingCode: "610334",
-      pairedAt: new Date(Date.now() - 7200000).toISOString(),
-      lastSeen: new Date().toISOString(),
-      isOnline: true,
-      batteryLevel: 88,
-      currentScreen: "customer_facing",
-      branchName: "الفرع الرئيسي",
-    }
-  ]);
+  const [devices, setDevices] = useState<LinkedDevice[]>(() => {
+    try {
+      if (
+        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true'
+      ) {
+        return [];
+      }
+    } catch {}
+    return [
+      {
+        id: "dev-master-1",
+        name: "جهاز الكاشير المركزي (Master POS)",
+        role: "master_pos",
+        deviceType: "desktop",
+        pairingCode: "MASTER",
+        pairedAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        isOnline: true,
+        batteryLevel: 100,
+        cashierName: "عدي الزعبي",
+        currentScreen: "pos",
+        branchName: "الفرع الرئيسي",
+      },
+      {
+        id: "dev-kitchen-1",
+        name: "شاشة المطبخ وإعداد الطلبات (KDS 1)",
+        role: "kitchen_display",
+        deviceType: "tablet",
+        pairingCode: "772109",
+        pairedAt: new Date(Date.now() - 3600000).toISOString(),
+        lastSeen: new Date().toISOString(),
+        isOnline: true,
+        batteryLevel: 94,
+        currentScreen: "kitchen",
+        branchName: "الفرع الرئيسي",
+      },
+      {
+        id: "dev-cfd-1",
+        name: "شاشة العميل التفاعلية (Customer Display)",
+        role: "customer_display",
+        deviceType: "tablet",
+        pairingCode: "610334",
+        pairedAt: new Date(Date.now() - 7200000).toISOString(),
+        lastSeen: new Date().toISOString(),
+        isOnline: true,
+        batteryLevel: 88,
+        currentScreen: "customer_facing",
+        branchName: "الفرع الرئيسي",
+      }
+    ];
+  });
 
   const [masterPairingPin, setMasterPairingPin] = useState<string>("849210");
   const [isPairingModalOpen, setIsPairingModalOpen] = useState<boolean>(false);
@@ -4128,6 +4242,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
     try {
+      if (
+        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true'
+      ) {
+        return localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID) || null;
+      }
       const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID);
       if (saved) return saved;
       const openShift = initialShifts.find(s => s.status === 'open');
@@ -4497,39 +4617,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearTimeout(startupTimer);
   }, []);
 
-  const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>([
-    {
-      id: "k-ord-101",
-      orderNumber: "ORD-101",
-      sourceDevice: "جهاز الكاشير المركزي",
-      diningType: "dine_in",
-      tableName: "طاولة 4",
-      guestCount: 3,
-      status: "in_progress",
-      createdAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
-      estimatedMinutes: 12,
-      notes: "بدون ملح زائد، تجهيز سريع",
-      items: [
-        { id: "ki-1", productId: "p1", nameAr: "برغر لحم دبل كلاسيك", nameEn: "Double Beef Burger", quantity: 2, unitPrice: 28000, notes: "بدون مخلل", status: "cooking" },
-        { id: "ki-2", productId: "p4", nameAr: "بطاطا مقلية عائلية", nameEn: "Family Fries", quantity: 1, unitPrice: 12000, status: "ready" },
-        { id: "ki-3", productId: "p5", nameAr: "عصير برتقال طبيعي", nameEn: "Fresh Orange Juice", quantity: 2, unitPrice: 10000, status: "ready" }
-      ]
-    },
-    {
-      id: "k-ord-102",
-      orderNumber: "ORD-102",
-      sourceDevice: "هاتف النادل (سامسونج S23)",
-      diningType: "takeaway",
-      status: "pending",
-      createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-      estimatedMinutes: 8,
-      notes: "تغليف سفري محكم",
-      items: [
-        { id: "ki-4", productId: "p2", nameAr: "بيتزا بيبروني وسط", nameEn: "Pepperoni Pizza Medium", quantity: 1, unitPrice: 35000, status: "pending" },
-        { id: "ki-5", productId: "p6", nameAr: "مشروب غازي كولا", nameEn: "Cola Can", quantity: 2, unitPrice: 5000, status: "pending" }
-      ]
-    }
-  ]);
+  const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>(() => {
+    try {
+      if (
+        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true'
+      ) {
+        return [];
+      }
+    } catch {}
+    return [
+      {
+        id: "k-ord-101",
+        orderNumber: "ORD-101",
+        sourceDevice: "جهاز الكاشير المركزي",
+        diningType: "dine_in",
+        tableName: "طاولة 4",
+        guestCount: 3,
+        status: "in_progress",
+        createdAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
+        estimatedMinutes: 12,
+        notes: "بدون ملح زائد، تجهيز سريع",
+        items: [
+          { id: "ki-1", productId: "p1", nameAr: "برغر لحم دبل كلاسيك", nameEn: "Double Beef Burger", quantity: 2, unitPrice: 28000, notes: "بدون مخلل", status: "cooking" },
+          { id: "ki-2", productId: "p4", nameAr: "بطاطا مقلية عائلية", nameEn: "Family Fries", quantity: 1, unitPrice: 12000, status: "ready" },
+          { id: "ki-3", productId: "p5", nameAr: "عصير برتقال طبيعي", nameEn: "Fresh Orange Juice", quantity: 2, unitPrice: 10000, status: "ready" }
+        ]
+      },
+      {
+        id: "k-ord-102",
+        orderNumber: "ORD-102",
+        sourceDevice: "هاتف النادل (سامسونج S23)",
+        diningType: "takeaway",
+        status: "pending",
+        createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
+        estimatedMinutes: 8,
+        notes: "تغليف سفري محكم",
+        items: [
+          { id: "ki-4", productId: "p2", nameAr: "بيتزا بيبروني وسط", nameEn: "Pepperoni Pizza Medium", quantity: 1, unitPrice: 35000, status: "pending" },
+          { id: "ki-5", productId: "p6", nameAr: "مشروب غازي كولا", nameEn: "Cola Can", quantity: 2, unitPrice: 5000, status: "pending" }
+        ]
+      }
+    ];
+  });
 
   // Fetch devices from server
   const refreshDevices = async () => {
@@ -4866,6 +4996,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       eventSource.addEventListener('INIT', (e: any) => {
         try {
+          const isZeroed =
+            localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+            localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
+          if (isZeroed) {
+            fetch('/api/system/reset-zero', { method: 'POST' }).catch(() => {});
+            return;
+          }
           const data = JSON.parse(e.data);
           if (data.devices) setDevices(data.devices);
           if (data.masterPairingPin) setMasterPairingPin(data.masterPairingPin);
@@ -4969,7 +5106,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Initial load of devices & fetch interval
   useEffect(() => {
-    refreshDevices();
+    const isZeroed =
+      localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+      localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
+    if (isZeroed) {
+      fetch('/api/system/reset-zero', { method: 'POST' }).then(() => {
+        refreshDevices();
+      }).catch(() => {});
+    } else {
+      refreshDevices();
+    }
     const interval = setInterval(refreshDevices, 8000);
     return () => clearInterval(interval);
   }, []);

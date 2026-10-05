@@ -501,6 +501,29 @@ function broadcastSseEvent(eventType: string, data: any) {
   });
 }
 
+// Reset all in-memory server demo data (devices, kitchen orders, live cart) after license activation
+app.post("/api/system/reset-zero", (req, res) => {
+  connectedDevices = [];
+  liveKitchenOrders = [];
+  liveCartState = {
+    items: [],
+    subtotal: 0,
+    discount: 0,
+    tax: 0,
+    total: 0,
+    customerName: "عميل عام",
+    pointsEarned: 0,
+    updatedAt: new Date().toISOString(),
+  };
+  syncEvents = [];
+
+  broadcastSseEvent("KITCHEN_ORDERS_UPDATE", []);
+  broadcastSseEvent("CART_UPDATE", liveCartState);
+  broadcastSseEvent("DEVICE_DISCONNECTED", { devices: [] });
+
+  res.json({ success: true, message: "تم تصفير كافة بيانات الخادم والأجهزة والطلبات بنجاح" });
+});
+
 // Server-Sent Events (SSE) stream for instantaneous cross-device synchronization
 app.get("/api/sync/stream", (req, res) => {
   res.writeHead(200, {

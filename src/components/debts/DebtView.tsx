@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Customer,
@@ -99,18 +99,41 @@ export const DebtView: React.FC = () => {
   // Installment Plans State & Modals
   const [installmentPlans, setInstallmentPlans] = useState<InvoiceInstallmentPlan[]>(() => {
     try {
+      const isZeroed =
+        localStorage.getItem('kian_pos_zeroed_out') === 'true' ||
+        localStorage.getItem('kian_app_purchased') === 'true';
       const saved = localStorage.getItem(INSTALLMENT_STORAGE_KEY);
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          if (isZeroed || parsed.length > 0 || saved.trim() === '[]') {
+            return parsed;
+          }
+        }
+      }
+      if (isZeroed) {
+        localStorage.setItem(INSTALLMENT_STORAGE_KEY, JSON.stringify([]));
+        return [];
       }
       const seeded = getInitialInstallmentPlans();
       localStorage.setItem(INSTALLMENT_STORAGE_KEY, JSON.stringify(seeded));
       return seeded;
     } catch {
-      return getInitialInstallmentPlans();
+      return [];
     }
   });
+
+  // Listen for global zero-out event when monthly/yearly activation code is entered
+  useEffect(() => {
+    const handleZeroOut = () => {
+      setInstallmentPlans([]);
+      localStorage.setItem(INSTALLMENT_STORAGE_KEY, JSON.stringify([]));
+      setSelectedPurchaseInvoiceForView(null);
+      setIsInstallmentSplitterOpen(false);
+    };
+    window.addEventListener('kian-zero-out-all', handleZeroOut);
+    return () => window.removeEventListener('kian-zero-out-all', handleZeroOut);
+  }, []);
   const [isInstallmentSplitterOpen, setIsInstallmentSplitterOpen] = useState<boolean>(false);
   const [installmentInitialConfig, setInstallmentInitialConfig] = useState<{
     partyType?: DebtPartyType;

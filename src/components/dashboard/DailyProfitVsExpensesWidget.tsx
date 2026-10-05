@@ -36,6 +36,7 @@ export const DailyProfitVsExpensesWidget: React.FC = () => {
     sales = [],
     products = [],
     expenses = [],
+    isAppPurchased,
     addExpense,
     formatCurrency,
     language,
@@ -72,9 +73,12 @@ export const DailyProfitVsExpensesWidget: React.FC = () => {
     }[] = [];
 
     const now = new Date();
+    const isZeroedOut =
+      isAppPurchased ||
+      (safeSales.length === 0 && safeExpenses.length === 0) ||
+      (typeof window !== 'undefined' && localStorage.getItem('kian_pos_zeroed_out') === 'true');
 
-    // Realistic baseline curve for past days that have no localStorage entries yet,
-    // ensuring the chart always renders a meaningful multi-day comparison out of the box
+    // Realistic baseline curve ONLY for guest demo mode when demo sales/expenses are present
     const baselinePattern = [
       { gross: 185000, exp: 45000, rev: 490000, inv: 6 },
       { gross: 210000, exp: 60000, rev: 540000, inv: 8 },
@@ -138,12 +142,10 @@ export const DailyProfitVsExpensesWidget: React.FC = () => {
       });
       let dayExpensesTotal = dayExpensesList.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-      // If it's a historical day (i > 0) with zero recorded sales & zero expenses in seed storage,
-      // blend in the realistic store baseline so the daily comparison chart is rich and informative
       let invoicesCount = daySales.length;
       let expensesCount = dayExpensesList.length;
 
-      if (i > 0 && revenue === 0 && dayExpensesTotal === 0) {
+      if (!isZeroedOut && i > 0 && revenue === 0 && dayExpensesTotal === 0) {
         const pat = baselinePattern[i % baselinePattern.length];
         revenue = pat.rev;
         grossProfit = pat.gross;
@@ -151,8 +153,7 @@ export const DailyProfitVsExpensesWidget: React.FC = () => {
         dayExpensesTotal = pat.exp;
         invoicesCount = pat.inv;
         expensesCount = 1;
-      } else if (i > 0 && revenue === 0 && dayExpensesTotal > 0) {
-        // Day has seeded expense (e.g., 2 days ago) but no seeded sale
+      } else if (!isZeroedOut && i > 0 && revenue === 0 && dayExpensesTotal > 0) {
         const pat = baselinePattern[i % baselinePattern.length];
         revenue = pat.rev;
         grossProfit = pat.gross;
@@ -179,7 +180,7 @@ export const DailyProfitVsExpensesWidget: React.FC = () => {
     }
 
     return result;
-  }, [safeSales, safeProducts, safeExpenses, daysRange, language]);
+  }, [safeSales, safeProducts, safeExpenses, isAppPurchased, daysRange, language]);
 
   // Aggregate summary metrics for selected period
   const summary = useMemo(() => {

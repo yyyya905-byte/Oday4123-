@@ -103,12 +103,16 @@ export const CustomersView: React.FC = () => {
 
   // Set default selected customer if none
   useEffect(() => {
-    if (!selectedCustomer && customers.length > 0) {
+    if (customers.length === 0) {
+      setSelectedCustomer(null);
+    } else if (!selectedCustomer && customers.length > 0) {
       setSelectedCustomer(customers[0]);
     } else if (selectedCustomer) {
       const refreshed = customers.find(c => c.id === selectedCustomer.id);
       if (refreshed) {
         setSelectedCustomer(refreshed);
+      } else {
+        setSelectedCustomer(customers[0] || null);
       }
     }
   }, [customers]);
