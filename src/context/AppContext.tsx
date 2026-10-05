@@ -1983,7 +1983,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [debtTransactions, setDebtTransactionsState] = useState<DebtTransaction[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.DEBT_TRANSACTIONS);
-      return saved ? JSON.parse(saved) : initialDebtTransactions;
+      if (saved) {
+        const parsed: DebtTransaction[] = JSON.parse(saved);
+        const existingIds = new Set(parsed.map(t => t.id));
+        const missingPurchaseInvoices = initialDebtTransactions.filter(
+          t => t.partyType === 'supplier' && t.type === 'charge' && !existingIds.has(t.id)
+        );
+        if (missingPurchaseInvoices.length > 0) {
+          const merged = [...parsed, ...missingPurchaseInvoices];
+          localStorage.setItem(STORAGE_KEYS.DEBT_TRANSACTIONS, JSON.stringify(merged));
+          return merged;
+        }
+        return parsed;
+      }
+      return initialDebtTransactions;
     } catch {
       return initialDebtTransactions;
     }
@@ -3208,6 +3221,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       partyName: updatedSupplierObj.name,
       type: 'charge',
       amount: totalAmount,
+      paidAmount: paid,
+      remainingDebt,
+      paymentStatus: payload.paymentType,
+      purchaseItems: validItems.map(it => ({
+        productId: it.productId,
+        productName: it.productName.trim(),
+        barcode: it.barcode,
+        unit: it.unit || 'قطعة',
+        quantity: Number(it.quantity) || 1,
+        costPrice: Number(it.costPrice) || 0,
+        wholesalePrice: Number(it.wholesalePrice) || 0,
+        retailPrice: Number(it.retailPrice) || 0,
+        totalCost: (Number(it.quantity) || 1) * (Number(it.costPrice) || 0),
+      })),
       previousBalance,
       newBalance: previousBalance + totalAmount,
       paymentMethod: payload.paymentMethod || 'cash',

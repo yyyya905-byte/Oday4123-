@@ -104,6 +104,8 @@ export interface Customer {
   paymentTerms?: string;
   creditLimit?: number; // Maximum debt limit
   currentDebt?: number; // Current unpaid balance
+  debtDueDate?: string; // Scheduled payment due date (ISO YYYY-MM-DD)
+  lastDebtChargeDate?: string; // Date of last credit charge
   lastPurchaseDate?: string;
   createdAt: string;
   qrData: string;
@@ -742,6 +744,18 @@ export interface Supplier {
 export type DebtPartyType = 'customer' | 'supplier';
 export type DebtTransactionType = 'payment' | 'charge' | 'adjustment' | 'discount';
 
+export interface PurchaseInvoiceItem {
+  productId?: string;
+  productName: string;
+  barcode?: string;
+  unit?: string;
+  quantity: number;
+  costPrice: number;
+  wholesalePrice?: number;
+  retailPrice?: number;
+  totalCost: number;
+}
+
 export interface DebtTransaction {
   id: string;
   voucherNumber: string; // e.g. VCH-REC-1001 or VCH-PAY-2001
@@ -750,6 +764,11 @@ export interface DebtTransaction {
   partyName: string;
   type: DebtTransactionType; // 'payment' (سداد/قبض), 'charge' (إضافة دين/فاتورة), 'adjustment' (تسوية), 'discount' (خصم)
   amount: number;
+  paidAmount?: number;
+  remainingDebt?: number;
+  paymentStatus?: 'credit' | 'cash' | 'partial';
+  purchaseItems?: PurchaseInvoiceItem[];
+  installmentPlanId?: string;
   discountAmount?: number;
   previousBalance: number;
   newBalance: number;
@@ -758,6 +777,40 @@ export interface DebtTransaction {
   notes?: string;
   recordedBy: string;
   createdAt: string;
+}
+
+export interface InstallmentScheduleItem {
+  id: string;
+  installmentNumber: number;
+  amount: number;
+  paidAmount: number;
+  dueDate: string; // YYYY-MM-DD
+  status: 'pending' | 'partial' | 'paid' | 'overdue';
+  paidAt?: string;
+  voucherNumber?: string;
+  paymentMethod?: 'cash' | 'card' | 'transfer' | 'check';
+  notes?: string;
+}
+
+export interface InvoiceInstallmentPlan {
+  id: string;
+  partyType: DebtPartyType;
+  partyId: string;
+  partyName: string;
+  partyPhone?: string;
+  invoiceId?: string;
+  invoiceNumber: string;
+  totalInvoiceAmount: number;
+  downPaymentAmount: number;
+  financedAmount: number;
+  remainingAmount: number;
+  installmentsCount: number;
+  frequency: 'weekly' | 'biweekly' | 'monthly' | 'custom';
+  installments: InstallmentScheduleItem[];
+  status: 'active' | 'completed' | 'overdue';
+  notes?: string;
+  createdAt: string;
+  createdBy: string;
 }
 
 export type ActiveTab = 
