@@ -1,5 +1,5 @@
 // Debt Collection & WhatsApp Business Automation Service
-import { Sale, Customer, StoreSettings, ExchangeRateBulletin, DebtTransaction } from '../types';
+import { Sale, Customer, StoreSettings, ExchangeRateBulletin, DebtTransaction, InvoiceInstallmentPlan } from '../types';
 
 export interface DebtReminderLog {
   id: string;
@@ -8,7 +8,7 @@ export interface DebtReminderLog {
   customerPhone: string;
   saleId?: string;
   invoiceNumber?: string;
-  type: 'invoice_created' | 'scheduled_reminder' | 'manual_reminder' | 'payment_receipt' | 'overdue_notice';
+  type: 'invoice_created' | 'post_sale' | 'scheduled_reminder' | 'manual_reminder' | 'payment_receipt' | 'overdue_notice' | 'installment_plan';
   amountDue: number;
   totalDebt: number;
   currencySymbol: string;
@@ -290,12 +290,197 @@ export function buildDebtPaymentReceiptMessage(params: {
   return rawTemplate
     .replace(/{customer_name}/g, customer.name)
     .replace(/{store_name}/g, storeName)
-    .replace(/{voucher_number}/g, voucher.id ? voucher.id.slice(-6).toUpperCase() : 'REC-001')
+    .replace(/{voucher_number}/g, voucher.voucherNumber || (voucher.id ? voucher.id.slice(-6).toUpperCase() : 'REC-001'))
     .replace(/{payment_amount}/g, `${paymentAmount.toLocaleString()} ${currencySymbol}`)
     .replace(/{invoice_date}/g, dateFormatted)
     .replace(/{total_customer_debt}/g, `${Math.max(0, newBalance).toLocaleString()} ${currencySymbol}`)
     .replace(/{store_phone}/g, storeSettings.phone || storeSettings.mobile || storeSettings.managerWhatsappPhone || '')
     .trim();
+}
+
+/**
+ * Build comprehensive WhatsApp message for an Official Receipt / Payment / Charge Voucher (سند قبض / سند صرف / إشعار قيد)
+ */
+export function buildVoucherReceiptWhatsAppMessage(params: {
+  storeSettings: StoreSettings;
+  transaction?: DebtTransaction;
+  voucher?: DebtTransaction;
+  partyPhone?: string;
+  bulletin?: ExchangeRateBulletin;
+}): string {
+  const { storeSettings, bulletin } = params;
+  const transaction = (params.transaction || params.voucher)!;
+  if (!transaction) return '';
+  const storeName = storeSettings.storeNameAr || 'متجرنا';
+  const currencySymbol = storeSettings.currency.symbolNative || storeSettings.currency.symbol || 'ل.س';
+  const isPayment = transaction.type === 'payment';
+  const isCustomer = transaction.partyType === 'customer';
+
+  const voucherTitle = isPayment
+    ? isCustomer
+      ? '🧾 *سند قبض رسمي (تسديد دفعة دين)*'
+      : '🧾 *سند صرف مالي (سداد دفعة لمورد)*'
+    : isCustomer
+    ? '📋 *إشعار قيد ذمة / فاتورة مبيعات آجلة*'
+    : '📦 *فاتورة مشتريات وتوريد بضاعة*';
+
+  const dateFormatted = new Date(transaction.createdAt || new Date()).toLocaleString('ar-SY', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+
+  const paymentMethodLabel =
+    transaction.paymentMethod === 'cash'
+      ? 'نقداً (كاش)'
+      : transaction.paymentMethod === 'card'
+      ? 'بطاقة بنكية'
+      : transaction.paymentMethod === 'transfer'
+      ? 'حوالة مالية / إلكترونية'
+      : transaction.paymentMethod === 'check'
+      ? 'شيك مصرفي'
+      : 'نقداً';
+
+  const discount = transaction.discountAmount || 0;
+  const totalDeducted = transaction.amount + discount;
+
+  let itemsSection = '';
+  if (transaction.purchaseItems && transaction.purchaseItems.length > 0) {
+    const lines = transaction.purchaseItems.map(
+      (item, idx) =>
+        `${idx + 1}. *${item.productName}* — الكمية: ${item.quantity} ${item.unit || 'قطعة'} × ${item.costPrice.toLocaleString()} = *${item.totalCost.toLocaleString()} ${currencySymbol}*`
+    );
+    itemsSection = `\n📦 *الأصناف الموردة في الفاتورة:*\n${lines.join('\n')}\n`;
+  }
+
+  let exchangeNote = '';
+  const isLbp = storeSettings.currency.code === 'LBP' || currencySymbol.includes('ل.ل');
+  const isSyp = storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س');
+  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (isSyp || isLbp) && bulletin.usdSellRate > 0) {
+    const usdPaid = (transaction.amount / bulletin.usdSellRate).toFixed(2);
+    const usdRem = (Math.max(0, transaction.newBalance) / bulletin.usdSellRate).toFixed(2);
+    const rateLabel = isLbp ? 'ل.ل/$' : 'ل.س/$';
+    exchangeNote = `\n💱 *المعادل بالدولار (${bulletin.usdSellRate.toLocaleString()} ${rateLabel}):*\n• قيمة السند: *$${usdPaid}* | الرصيد المتبقي: *$${usdRem}*\n`;
+  }
+
+  const greetingName = isCustomer ? `الأستاذ *${transaction.partyName}* المحترم` : `السادة *${transaction.partyName}* المحترمين`;
+  const storePhone = storeSettings.phone || storeSettings.mobile || storeSettings.managerWhatsappPhone || '';
+
+  return [
+    voucherTitle,
+    `من: *${storeName}*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `👤 إلى: ${greetingName}`,
+    `🔖 *رقم السند:* ${transaction.voucherNumber}`,
+    transaction.referenceInvoice ? `📄 *الفاتورة المرجعية:* ${transaction.referenceInvoice}` : '',
+    `📅 *التاريخ والوقت:* ${dateFormatted}`,
+    `💳 *طريقة الدفع:* ${paymentMethodLabel}`,
+    itemsSection,
+    `💰 *التفاصيل المالية للسند:*`,
+    `• الرصيد السابق قبل العملية: ${transaction.previousBalance.toLocaleString()} ${currencySymbol}`,
+    isPayment
+      ? `• ✅ *المبلغ المقبوض / المسدد:* *${transaction.amount.toLocaleString()} ${currencySymbol}*`
+      : `• ➕ *قيمة القيد / الفاتورة:* *${transaction.amount.toLocaleString()} ${currencySymbol}*`,
+    discount > 0 ? `• 🎁 خصم التسوية الممنوح: ${discount.toLocaleString()} ${currencySymbol}` : '',
+    discount > 0 ? `• إجمالي المخصوم من الرصيد: ${totalDeducted.toLocaleString()} ${currencySymbol}` : '',
+    transaction.paidAmount !== undefined && !isPayment
+      ? `• المسدد نقداً عند الفاتورة: ${transaction.paidAmount.toLocaleString()} ${currencySymbol}`
+      : '',
+    `• 📌 *الرصيد المتبقي الحالي:* *${Math.max(0, transaction.newBalance).toLocaleString()} ${currencySymbol}*`,
+    exchangeNote,
+    transaction.notes ? `📝 *البيان / ملاحظات:* ${transaction.notes}` : '',
+    `👨‍💼 *الموظف المسؤول:* ${transaction.recordedBy}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    isPayment
+      ? '✨ نشكر لكم التزامكم وحسن تعاملكم معنا. هذا السند بمثابة إشعار استلام رسمي.'
+      : '✨ نشكر ثقتكم بنا ونتمنى لكم دوام التوفيق.',
+    storePhone ? `📞 للاستفسار: ${storePhone}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Build comprehensive WhatsApp message for an Installment Plan Invoice & Schedule (فاتورة وجدول الأقساط)
+ */
+export function buildInstallmentPlanWhatsAppMessage(params: {
+  storeSettings: StoreSettings;
+  plan: InvoiceInstallmentPlan;
+  bulletin?: ExchangeRateBulletin;
+}): string {
+  const { storeSettings, plan, bulletin } = params;
+  const storeName = storeSettings.storeNameAr || 'متجرنا';
+  const currencySymbol = storeSettings.currency.symbolNative || storeSettings.currency.symbol || 'ل.س';
+  const isCustomer = plan.partyType === 'customer';
+
+  const totalPaidInstallments = plan.installments
+    .filter(i => i.status === 'paid')
+    .reduce((sum, i) => sum + (i.paidAmount || i.amount), 0);
+  const totalRemaining =
+    plan.remainingAmount !== undefined
+      ? plan.remainingAmount
+      : Math.max(0, plan.financedAmount - totalPaidInstallments);
+  const paidCount = plan.installments.filter(i => i.status === 'paid').length;
+  const downPaymentVal = plan.downPaymentAmount || 0;
+
+  const frequencyLabel =
+    plan.frequency === 'weekly'
+      ? 'أسبوعي'
+      : plan.frequency === 'biweekly'
+      ? 'نصف شهري (كل 15 يوم)'
+      : plan.frequency === 'monthly'
+      ? 'شهري'
+      : 'تواريخ مخصصة';
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const scheduleLines = plan.installments.map(inst => {
+    const isPaid = inst.status === 'paid';
+    const isOverdue = !isPaid && inst.dueDate < todayStr;
+    const statusBadge = isPaid
+      ? `✅ مدفوع (${inst.voucherNumber || 'سند قبض'})`
+      : isOverdue
+      ? '⚠️ متأخر عن الاستحقاق'
+      : '⏳ بانتظار السداد';
+
+    return `  *${inst.installmentNumber}.* استحقاق *${inst.dueDate}* ⬅️ *${inst.amount.toLocaleString()} ${currencySymbol}* [${statusBadge}]`;
+  });
+
+  let exchangeNote = '';
+  const isLbp = storeSettings.currency.code === 'LBP' || currencySymbol.includes('ل.ل');
+  const isSyp = storeSettings.currency.code === 'SYP' || currencySymbol.includes('ل.س');
+  if (storeSettings.includeExchangeRateInDebtMessage !== false && bulletin && (isSyp || isLbp) && bulletin.usdSellRate > 0) {
+    const usdFinanced = (plan.financedAmount / bulletin.usdSellRate).toFixed(2);
+    const usdRemaining = (totalRemaining / bulletin.usdSellRate).toFixed(2);
+    const rateLabel = isLbp ? 'ل.ل/$' : 'ل.س/$';
+    exchangeNote = `\n💱 *المعادل بالدولار (${bulletin.usdSellRate.toLocaleString()} ${rateLabel}):*\n• إجمالي التقسيط: *$${usdFinanced}* | المتبقي حالياً: *$${usdRemaining}*\n`;
+  }
+
+  const storePhone = storeSettings.phone || storeSettings.mobile || storeSettings.managerWhatsappPhone || '';
+
+  return [
+    `📑 *فاتورة وعقد جدولة أقساط رسمي*`,
+    `من: *${storeName}*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `👤 ${isCustomer ? 'العميل' : 'المورد'}: *${plan.partyName}*`,
+    `🧾 *رقم الفاتورة المقسطة:* ${plan.invoiceNumber}`,
+    `📅 *تاريخ الاتفاق:* ${new Date(plan.createdAt).toLocaleDateString('ar-SY')} | *نظام الدفعات:* ${frequencyLabel}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `💰 *الملخص المالي للفاتورة المقسطة:*`,
+    `• إجمالي قيمة الفاتورة: *${plan.totalInvoiceAmount.toLocaleString()} ${currencySymbol}*`,
+    `• الدفعة الأولى (المقدم): ${downPaymentVal.toLocaleString()} ${currencySymbol}`,
+    `• صافي المبلغ المقسط: *${plan.financedAmount.toLocaleString()} ${currencySymbol}*`,
+    `• المسدد من الأقساط (${paidCount}/${plan.installmentsCount}): ${totalPaidInstallments.toLocaleString()} ${currencySymbol}`,
+    `• 🔴 *الرصيد المتبقي للسداد:* *${totalRemaining.toLocaleString()} ${currencySymbol}*`,
+    exchangeNote,
+    `📅 *جدول الدفعات وتواريخ الاستحقاق (${plan.installmentsCount} دفعات):*`,
+    ...scheduleLines,
+    plan.notes ? `\n📝 *ملاحظات وشروط إضافية:* ${plan.notes}` : '',
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `✨ نرجو الالتزام بمواعيد الاستحقاق المحددة أعلاه. شاكرين لكم ثقتكم وحسن تعاملكم معنا.`,
+    storePhone ? `📞 للاستفسار والتسديد: ${storePhone}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -320,13 +505,36 @@ export function formatPhoneForWhatsApp(phone: string): string {
 export function getWhatsAppClickToChatUrl(phone: string, message: string): string {
   const cleanPhone = formatPhoneForWhatsApp(phone);
   const encodedText = encodeURIComponent(message);
-  return `https://wa.me/${cleanPhone}?text=${encodedText}`;
+  return cleanPhone
+    ? `https://wa.me/${cleanPhone}?text=${encodedText}`
+    : `https://wa.me/?text=${encodedText}`;
+}
+
+/**
+ * Safely open WhatsApp deep link in a new tab using DOM anchor click (works inside sandboxed iframes)
+ */
+export function openWhatsAppDeepLink(phone: string, message: string): string {
+  const waUrl = getWhatsAppClickToChatUrl(phone, message);
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    try {
+      const link = document.createElement('a');
+      link.href = waUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.warn('WhatsApp anchor open fallback error:', e);
+    }
+  }
+  return waUrl;
 }
 
 /**
  * Automatically send WhatsApp Message:
  * 1. Attempts direct background WhatsApp Business API via Backend endpoint (if configured)
- * 2. Falls back to opening official WhatsApp / Web in popup or iframe safe tab
+ * 2. Falls back to opening official WhatsApp / Web in new tab
  */
 export async function sendWhatsAppDebtMessage(params: {
   phone: string;
@@ -338,9 +546,9 @@ export async function sendWhatsAppDebtMessage(params: {
   amountDue: number;
   totalDebt: number;
   currencySymbol: string;
-  type: 'invoice_created' | 'scheduled_reminder' | 'manual_reminder' | 'payment_receipt' | 'overdue_notice';
+  type: DebtReminderLog['type'];
   storeSettings: StoreSettings;
-}): Promise<{ success: boolean; method: 'direct_api' | 'whatsapp_link'; logId: string }> {
+}): Promise<{ success: boolean; method: 'direct_api' | 'whatsapp_link'; logId: string; waUrl: string }> {
   const {
     phone,
     message,
@@ -356,14 +564,15 @@ export async function sendWhatsAppDebtMessage(params: {
   } = params;
 
   const cleanPhone = formatPhoneForWhatsApp(phone);
+  const waUrl = getWhatsAppClickToChatUrl(cleanPhone, message);
   let method: 'direct_api' | 'whatsapp_link' = 'whatsapp_link';
   let isApiSuccess = false;
 
   const apiKey = storeSettings.whatsappApiKey;
   const phoneNumberId = storeSettings.whatsappPhoneId || storeSettings.whatsappPhoneNumberId;
 
-  // 1. Try Backend WhatsApp Business Dispatcher
-  if (apiKey && phoneNumberId) {
+  // 1. Try Backend WhatsApp Business Dispatcher if configured, otherwise open WhatsApp immediately
+  if (apiKey && phoneNumberId && cleanPhone) {
     try {
       const res = await fetch('/api/whatsapp/send-debt-message', {
         method: 'POST',
@@ -384,7 +593,7 @@ export async function sendWhatsAppDebtMessage(params: {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
+        if (data.success && data.mode === 'whatsapp_cloud_api') {
           isApiSuccess = true;
           method = 'direct_api';
         }
@@ -394,25 +603,9 @@ export async function sendWhatsAppDebtMessage(params: {
     }
   }
 
-  // 2. If API not configured or failed, trigger standard web WhatsApp URL if direct user context
+  // 2. If API not configured or in simulated mode, open WhatsApp directly for the user
   if (!isApiSuccess) {
-    const waUrl = getWhatsAppClickToChatUrl(cleanPhone, message);
-    if (typeof window !== 'undefined') {
-      try {
-        const opened = window.open(waUrl, '_blank', 'noopener,noreferrer');
-        if (!opened) {
-          const link = document.createElement('a');
-          link.href = waUrl;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        }
-      } catch (e) {
-        console.warn('Window open error:', e);
-      }
-    }
+    openWhatsAppDeepLink(cleanPhone, message);
   }
 
   // 3. Save Log in LocalStorage for tracking
@@ -450,7 +643,8 @@ export async function sendWhatsAppDebtMessage(params: {
   return {
     success: true,
     method,
-    logId
+    logId,
+    waUrl
   };
 }
 
@@ -554,7 +748,9 @@ export async function testWhatsAppCloudApiConnection(params: {
       body: JSON.stringify({
         apiKey: params.apiKey,
         phoneNumberId: params.phoneNumberId,
+        phone: formattedPhone,
         to: formattedPhone,
+        customerName: 'اختبار اتصال واتساب',
         message: '🧪 رسالة تجريبية من نظام كاشير كيان: تم التحقق من ربط WhatsApp Cloud API بنجاح!'
       })
     });

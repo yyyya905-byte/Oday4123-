@@ -75,7 +75,7 @@ ${systemPrompt || ""}`;
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
       contents,
       config: {
         systemInstruction: baseSystemPrompt,
@@ -123,7 +123,7 @@ app.post("/api/ai/analyze-sales", async (req, res) => {
 قدم الرد بتنسيق Markdown احترافي، مدعماً بالعناوين والنقاط والأرقام الواضحة باللغة العربية.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         temperature: 0.4,
@@ -163,7 +163,7 @@ app.post("/api/ai/smart-inventory", async (req, res) => {
 قم بالرد بصيغة Markdown منظمة وبجداول واضحة وملاحظات باللغة العربية.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         temperature: 0.3,
@@ -226,7 +226,7 @@ app.post("/api/ai/generate-product", async (req, res) => {
     parts.push({ text: textPrompt });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
       contents: { parts },
       config: {
         temperature: 0.3,
@@ -275,7 +275,7 @@ app.post("/api/ai/marketing-campaign", async (req, res) => {
 اجعل الرد منظم في أقسام Markdown منسقة باللغة العربية.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         temperature: 0.7,
@@ -326,7 +326,7 @@ app.post("/api/ai/ocr-receipt", async (req, res) => {
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
       contents: {
         parts: [
           {
@@ -1151,7 +1151,8 @@ app.get("/api/devices/partner/status/:channelId", (req, res) => {
 // ==========================================
 app.post("/api/whatsapp/send-debt-message", async (req, res) => {
   try {
-    const { phone, message, customerName, apiKey, phoneNumberId, amountDue, invoiceNumber } = req.body;
+    const { phone: rawPhone, to, message, customerName, apiKey, phoneNumberId, amountDue, invoiceNumber } = req.body;
+    const phone = rawPhone || to;
 
     if (!phone || !message) {
       return res.status(400).json({ success: false, error: "رقم الهاتف والرسالة مطلوبان" });
@@ -1181,6 +1182,7 @@ app.post("/api/whatsapp/send-debt-message", async (req, res) => {
           const metaData = await metaRes.json();
           return res.json({
             success: true,
+            mode: 'whatsapp_cloud_api',
             provider: 'meta_cloud_api',
             messageId: metaData.messages?.[0]?.id,
             timestamp: new Date().toISOString(),

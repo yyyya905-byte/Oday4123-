@@ -3382,11 +3382,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     category: 'improvement' | 'feature' | 'system_update' | 'alert' = 'alert',
     badge?: string
   ) => {
+    let resolvedTitle = title;
+    let resolvedType = type;
+    if (title === 'success' || title === 'info' || title === 'warning' || title === 'error') {
+      resolvedType = title;
+      resolvedTitle =
+        title === 'success'
+          ? 'تم بنجاح'
+          : title === 'warning'
+          ? 'تنبيه'
+          : title === 'error'
+          ? 'خطأ'
+          : 'إشعار';
+    }
     const newNotif: AppNotification = {
       id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      title,
+      title: resolvedTitle,
       message,
-      type,
+      type: resolvedType,
       category,
       badge,
       timestamp: new Date().toISOString(),

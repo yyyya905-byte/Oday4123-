@@ -35,7 +35,8 @@ import {
   testWhatsAppCloudApiConnection,
   checkAndSendPeriodicDebtReminders,
   formatPhoneForWhatsApp,
-  getWhatsAppClickToChatUrl
+  getWhatsAppClickToChatUrl,
+  openWhatsAppDeepLink
 } from '../../services/debtCollectionService';
 
 interface WhatsAppDebtAutomationDashboardProps {
@@ -876,10 +877,11 @@ export const WhatsAppDebtAutomationDashboard: React.FC<WhatsAppDebtAutomationDas
                 className="text-xs font-bold px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700"
               >
                 <option value="all">كل الأنواع</option>
+                <option value="installment_plan">فاتورة أقساط</option>
+                <option value="payment_receipt">سند قبض / صرف</option>
                 <option value="scheduled_reminder">تذكير دوري</option>
                 <option value="invoice_created">فاتورة آجل</option>
                 <option value="manual_reminder">تذكير يدوي</option>
-                <option value="payment_receipt">سند قبض</option>
               </select>
             </div>
           </div>
@@ -920,14 +922,17 @@ export const WhatsAppDebtAutomationDashboard: React.FC<WhatsAppDebtAutomationDas
                         <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
                           log.type === 'scheduled_reminder'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                            : log.type === 'invoice_created'
+                            : log.type === 'installment_plan'
+                            ? 'bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300'
+                            : log.type === 'invoice_created' || log.type === 'post_sale'
                             ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
                             : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                         }`}>
                           {log.type === 'scheduled_reminder' && 'تذكير دوري'}
-                          {log.type === 'invoice_created' && 'فاتورة آجل'}
+                          {(log.type === 'invoice_created' || log.type === 'post_sale') && 'فاتورة آجل'}
+                          {log.type === 'installment_plan' && 'فاتورة أقساط'}
                           {log.type === 'manual_reminder' && 'تذكير يدوي'}
-                          {log.type === 'payment_receipt' && 'سند قبض'}
+                          {log.type === 'payment_receipt' && 'سند قبض / صرف'}
                           {log.type === 'overdue_notice' && 'تنبيه استحقاق'}
                         </span>
                       </td>
@@ -949,8 +954,7 @@ export const WhatsAppDebtAutomationDashboard: React.FC<WhatsAppDebtAutomationDas
                         <button
                           type="button"
                           onClick={() => {
-                            const url = getWhatsAppClickToChatUrl(log.customerPhone, log.messageText);
-                            window.open(url, '_blank');
+                            openWhatsAppDeepLink(log.customerPhone, log.messageText);
                           }}
                           className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
                         >

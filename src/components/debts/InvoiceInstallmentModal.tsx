@@ -164,7 +164,12 @@ export const getInitialInstallmentPlans = (): InvoiceInstallmentPlan[] => {
 interface InvoiceInstallmentSplitterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSavePlan: (plan: InvoiceInstallmentPlan, recordNewChargeIfNeeded: boolean, recordDownPaymentNow: boolean) => void;
+  onSavePlan: (
+    plan: InvoiceInstallmentPlan,
+    recordNewChargeIfNeeded: boolean,
+    recordDownPaymentNow: boolean,
+    sendWhatsAppImmediately?: boolean
+  ) => void;
   initialPartyType?: DebtPartyType;
   initialCustomer?: Customer | null;
   initialSupplier?: Supplier | null;
@@ -211,10 +216,23 @@ export const InvoiceInstallmentSplitterModal: React.FC<InvoiceInstallmentSplitte
     return new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
   });
   const [planNotes, setPlanNotes] = useState<string>('');
+  const [sendToWhatsAppOnSave, setSendToWhatsAppOnSave] = useState<boolean>(true);
+  const [whatsappPhoneInput, setWhatsappPhoneInput] = useState<string>('');
 
   const [draftInstallments, setDraftInstallments] = useState<
     { id: string; installmentNumber: number; amount: number; dueDate: string; notes: string }[]
   >([]);
+
+  // Sync WhatsApp phone input whenever selected party changes
+  useEffect(() => {
+    if (partyType === 'customer') {
+      const cust = customers.find(c => c.id === selectedPartyId);
+      setWhatsappPhoneInput(cust?.phone || '');
+    } else {
+      const sup = suppliers.find(s => s.id === selectedPartyId);
+      setWhatsappPhoneInput(sup?.phone || '');
+    }
+  }, [partyType, selectedPartyId, customers, suppliers]);
 
   // Initialize modal fields when opened
   useEffect(() => {
@@ -502,9 +520,7 @@ export const InvoiceInstallmentSplitterModal: React.FC<InvoiceInstallmentSplitte
     generateScheduleRows(financedAmount, draftInstallments.length, frequency, firstDueDate);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const executeSavePlan = (forceWhatsApp?: boolean) => {
     if (!selectedPartyId) {
       notify('تنبيه', 'يرجى اختيار العميل أو المورد أولاً', 'warning');
       return;
@@ -552,7 +568,7 @@ export const InvoiceInstallmentSplitterModal: React.FC<InvoiceInstallmentSplitte
       partyType,
       partyId: partyObj.id,
       partyName: partyObj.name,
-      partyPhone: partyObj.phone,
+      partyPhone: whatsappPhoneInput.trim() || partyObj.phone,
       invoiceNumber: resolvedInvoiceNumber,
       totalInvoiceAmount: Number(totalInvoiceAmount) || financedAmount,
       downPaymentAmount: Number(downPaymentAmount) || 0,
@@ -567,8 +583,14 @@ export const InvoiceInstallmentSplitterModal: React.FC<InvoiceInstallmentSplitte
       createdBy: currentUser.name
     };
 
-    onSavePlan(newPlan, recordNewCharge, recordDownPaymentNow);
+    const shouldSendWhatsApp = forceWhatsApp !== undefined ? forceWhatsApp : sendToWhatsAppOnSave;
+    onSavePlan(newPlan, recordNewCharge, recordDownPaymentNow, shouldSendWhatsApp);
     onClose();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSavePlan();
   };
 
   if (!isOpen) return null;
@@ -1010,23 +1032,49 @@ export const InvoiceInstallmentSplitterModal: React.FC<InvoiceInstallmentSplitte
               </div>
             </div>
 
-            {/* General Notes */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                ملاحظات وشروط اتفاقية التقسيط (اختياري):
-              </label>
-              <input
-                type="text"
-                value={planNotes}
-                onChange={e => setPlanNotes(e.target.value)}
-                placeholder="مثال: يتم سداد كل دفعة في موعدها المحدد مع إشعار واتساب قبل الاستحقاق..."
-                className="w-full text-xs py-2 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-              />
+            {/* General Notes & WhatsApp Auto-Send Option */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  ملاحظات وشروط اتفاقية التقسيط (اختياري):
+                </label>
+                <input
+                  type="text"
+                  value={planNotes}
+                  onChange={e => setPlanNotes(e.target.value)}
+                  placeholder="مثال: يتم سداد كل دفعة في موعدها المحدد مع إشعار واتساب قبل الاستحقاق..."
+                  className="w-full text-xs py-2 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-emerald-800 dark:text-emerald-300">
+                  <input
+                    type="checkbox"
+                    checked={sendToWhatsAppOnSave}
+                    onChange={e => setSendToWhatsAppOnSave(e.target.checked)}
+                    className="rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <MessageSquareShare className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>إرسال فاتورة وجدول الأقساط مباشرة عبر واتساب فور الحفظ</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">رقم واتساب:</span>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={whatsappPhoneInput}
+                    onChange={e => setWhatsappPhoneInput(e.target.value)}
+                    placeholder="+963 9XX XXX XXX"
+                    className="flex-1 text-xs font-mono py-1 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-slate-900 dark:text-white focus:outline-none"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Footer Submit */}
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
@@ -1034,12 +1082,23 @@ export const InvoiceInstallmentSplitterModal: React.FC<InvoiceInstallmentSplitte
             >
               إلغاء
             </button>
+
             <button
-              type="submit"
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+              type="button"
+              onClick={() => executeSavePlan(false)}
+              className="px-4 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>اعتماد وحفظ جدول الأقساط ({draftInstallments.length} دفعات)</span>
+              <span>حفظ جدول الأقساط فقط</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => executeSavePlan(true)}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/25 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+            >
+              <MessageSquareShare className="w-4 h-4" />
+              <span>حفظ وإرسال فاتورة الأقساط عبر واتساب ({draftInstallments.length} دفعات)</span>
             </button>
           </div>
         </form>

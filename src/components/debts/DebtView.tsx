@@ -64,7 +64,10 @@ import {
 } from './InvoiceInstallmentModal';
 import {
   buildDebtPeriodicReminderMessage,
+  buildInstallmentPlanWhatsAppMessage,
+  buildVoucherReceiptWhatsAppMessage,
   sendWhatsAppDebtMessage,
+  openWhatsAppDeepLink,
   DEBT_COLLECTION_STORAGE_KEY,
   DebtReminderLog
 } from '../../services/debtCollectionService';
@@ -193,12 +196,23 @@ export const DebtView: React.FC = () => {
 
   const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<DebtTransaction | null>(null);
 
-  // WhatsApp Debt Reminder Preview Modal
+  // WhatsApp Debt Reminder & Universal Document Dispatch Modal
   const [isWhatsAppReminderModalOpen, setIsWhatsAppReminderModalOpen] = useState(false);
   const [isWhatsAppAutomationModalOpen, setIsWhatsAppAutomationModalOpen] = useState(false);
   const [targetCustomerForReminder, setTargetCustomerForReminder] = useState<Customer | null>(null);
+  const [whatsappDispatchMeta, setWhatsappDispatchMeta] = useState<{
+    title: string;
+    partyName: string;
+    partyId: string;
+    phone: string;
+    amountDue: number;
+    totalDebt: number;
+    type: DebtReminderLog['type'];
+  } | null>(null);
   const [reminderMessageDraft, setReminderMessageDraft] = useState<string>('');
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
+  const [sendReceiptToWhatsAppOnPay, setSendReceiptToWhatsAppOnPay] = useState<boolean>(true);
+  const [payWhatsAppPhoneInput, setPayWhatsAppPhoneInput] = useState<string>('');
   const [reminderLogs, setReminderLogs] = useState<DebtReminderLog[]>(() => {
     try {
       return JSON.parse(localStorage.getItem(DEBT_COLLECTION_STORAGE_KEY) || '[]');
@@ -550,10 +564,12 @@ export const DebtView: React.FC = () => {
     setCustomerPayDiscount('');
     setCustomerPayMethod('cash');
     setCustomerPayNotes('');
+    setPayWhatsAppPhoneInput(cust.phone || '');
+    setSendReceiptToWhatsAppOnPay(true);
     setIsCustomerPayModalOpen(true);
   };
 
-  const handleExecuteCustomerPay = (e: React.FormEvent) => {
+  const handleExecuteCustomerPay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerForPay) return;
     const amount = Number(customerPayAmount) || 0;
@@ -575,14 +591,44 @@ export const DebtView: React.FC = () => {
     if (tx) {
       setIsCustomerPayModalOpen(false);
       setSelectedVoucherForPrint(tx);
+
+      if (sendReceiptToWhatsAppOnPay) {
+        const targetPhone = payWhatsAppPhoneInput.trim() || selectedCustomerForPay.phone || '';
+        if (targetPhone) {
+          const msg = buildVoucherReceiptWhatsAppMessage({
+            storeSettings: settings,
+            voucher: tx,
+            partyPhone: targetPhone,
+            bulletin: settings.exchangeBulletin
+          });
+          try {
+            await sendWhatsAppDebtMessage({
+              phone: targetPhone,
+              message: msg,
+              customerName: selectedCustomerForPay.name,
+              customerId: selectedCustomerForPay.id,
+              amountDue: tx.amount,
+              totalDebt: tx.newBalance,
+              currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
+              type: 'payment_receipt',
+              storeSettings: settings
+            });
+            try {
+              const updatedLogs = JSON.parse(localStorage.getItem(DEBT_COLLECTION_STORAGE_KEY) || '[]');
+              setReminderLogs(updatedLogs);
+            } catch {}
+            notify(
+              'تم إرسال سند القبض عبر واتساب',
+              `تم إرسال إيصال القبض رقم ${tx.voucherNumber} مباشرة إلى واتساب ${selectedCustomerForPay.name}`,
+              'success'
+            );
+          } catch {}
+        }
+      }
     }
   };
 
   const handleOpenWhatsAppReminder = (cust: Customer) => {
-    if (!cust.phone) {
-      notify('تنبيه', 'لا يوجد رقم هاتف مسجل لهذا العميل لإرسال تذكير بالواتساب', 'warning');
-      return;
-    }
     setTargetCustomerForReminder(cust);
     const alertProfile = customerAlertMap[cust.id];
     let draft = buildDebtPeriodicReminderMessage({
@@ -608,24 +654,254 @@ export const DebtView: React.FC = () => {
       draft = `${draft}\n${extraAlertNote}`;
     }
 
+    setWhatsappDispatchMeta({
+      title: 'إرسال تذكير تسديد الدين عبر واتساب',
+      partyName: cust.name,
+      partyId: cust.id,
+      phone: cust.phone || '',
+      amountDue: cust.currentDebt || 0,
+      totalDebt: cust.currentDebt || 0,
+      type: 'manual_reminder'
+    });
     setReminderMessageDraft(draft);
     setIsWhatsAppReminderModalOpen(true);
   };
 
+  const handleSendInstallmentPlanWhatsApp = async (plan: InvoiceInstallmentPlan, directNow: boolean = false) => {
+    const foundPartyPhone =
+      plan.partyType === 'customer'
+        ? customers.find(c => c.id === plan.partyId || c.name === plan.partyName)?.phone || ''
+        : suppliers.find(s => s.id === plan.partyId || s.name === plan.partyName)?.phone || '';
+
+    const message = buildInstallmentPlanWhatsAppMessage({
+      storeSettings: settings,
+      plan,
+      bulletin: settings.exchangeBulletin
+    });
+
+    if (directNow && foundPartyPhone.trim()) {
+      setIsSendingWhatsApp(true);
+      try {
+        await sendWhatsAppDebtMessage({
+          phone: foundPartyPhone.trim(),
+          message,
+          customerName: plan.partyName,
+          customerId: plan.partyId,
+          amountDue: plan.remainingAmount,
+          totalDebt: plan.remainingAmount,
+          currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
+          type: 'installment_plan',
+          storeSettings: settings
+        });
+        try {
+          const updatedLogs = JSON.parse(localStorage.getItem(DEBT_COLLECTION_STORAGE_KEY) || '[]');
+          setReminderLogs(updatedLogs);
+        } catch {}
+        notify(
+          'تم إرسال فاتورة الأقساط عبر واتساب',
+          `تم إرسال جدول تقسيط الفاتورة (${plan.invoiceNumber}) إلى واتساب ${plan.partyName} بنجاح`,
+          'success'
+        );
+      } catch (err: any) {
+        notify('تعذر الإرسال', err?.message || 'حدث خطأ أثناء إرسال فاتورة الأقساط', 'error');
+      } finally {
+        setIsSendingWhatsApp(false);
+      }
+      return;
+    }
+
+    setTargetCustomerForReminder(null);
+    setWhatsappDispatchMeta({
+      title: `إرسال فاتورة الأقساط (${plan.invoiceNumber}) عبر واتساب`,
+      partyName: plan.partyName,
+      partyId: plan.partyId,
+      phone: foundPartyPhone,
+      amountDue: plan.remainingAmount,
+      totalDebt: plan.totalInvoiceAmount,
+      type: 'installment_plan'
+    });
+    setReminderMessageDraft(message);
+    setIsWhatsAppReminderModalOpen(true);
+  };
+
+  const handleSendVoucherWhatsApp = async (tx: DebtTransaction, directNow: boolean = false) => {
+    const foundPartyPhone =
+      tx.partyType === 'customer'
+        ? customers.find(c => c.id === tx.partyId || c.name === tx.partyName)?.phone || ''
+        : suppliers.find(s => s.id === tx.partyId || s.name === tx.partyName)?.phone || '';
+
+    const message = buildVoucherReceiptWhatsAppMessage({
+      storeSettings: settings,
+      voucher: tx,
+      partyPhone: foundPartyPhone,
+      bulletin: settings.exchangeBulletin
+    });
+
+    const docLabel =
+      tx.type === 'payment'
+        ? tx.partyType === 'customer'
+          ? 'سند القبض'
+          : 'سند الصرف'
+        : tx.partyType === 'customer'
+        ? 'إشعار قيد الدين'
+        : 'فاتورة المشتريات';
+
+    if (directNow && foundPartyPhone.trim()) {
+      setIsSendingWhatsApp(true);
+      try {
+        await sendWhatsAppDebtMessage({
+          phone: foundPartyPhone.trim(),
+          message,
+          customerName: tx.partyName,
+          customerId: tx.partyId,
+          amountDue: tx.amount,
+          totalDebt: tx.newBalance,
+          currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
+          type: tx.type === 'payment' ? 'payment_receipt' : 'post_sale',
+          storeSettings: settings
+        });
+        try {
+          const updatedLogs = JSON.parse(localStorage.getItem(DEBT_COLLECTION_STORAGE_KEY) || '[]');
+          setReminderLogs(updatedLogs);
+        } catch {}
+        notify(
+          `تم إرسال ${docLabel} عبر واتساب`,
+          `تم إرسال ${docLabel} رقم (${tx.voucherNumber}) مباشرة إلى واتساب ${tx.partyName}`,
+          'success'
+        );
+      } catch (err: any) {
+        notify('تعذر الإرسال', err?.message || 'حدث خطأ أثناء الإرسال عبر واتساب', 'error');
+      } finally {
+        setIsSendingWhatsApp(false);
+      }
+      return;
+    }
+
+    setTargetCustomerForReminder(null);
+    setWhatsappDispatchMeta({
+      title: `إرسال ${docLabel} (${tx.voucherNumber}) عبر واتساب`,
+      partyName: tx.partyName,
+      partyId: tx.partyId,
+      phone: foundPartyPhone,
+      amountDue: tx.amount,
+      totalDebt: tx.newBalance,
+      type: tx.type === 'payment' ? 'payment_receipt' : 'post_sale'
+    });
+    setReminderMessageDraft(message);
+    setIsWhatsAppReminderModalOpen(true);
+  };
+
+  const handleSendSingleInstallmentWhatsApp = (
+    plan: InvoiceInstallmentPlan,
+    inst: InstallmentScheduleItem,
+    directNow: boolean = false
+  ) => {
+    const isPaid = inst.status === 'paid';
+    if (isPaid) {
+      // Find matching voucher in debtTransactions if exists, or synthesize one
+      const matchedTx =
+        (inst.voucherNumber && debtTransactions.find(t => t.voucherNumber === inst.voucherNumber)) || {
+          id: inst.id,
+          voucherNumber: inst.voucherNumber || `RV-INST-${inst.installmentNumber}`,
+          partyType: plan.partyType,
+          partyId: plan.partyId,
+          partyName: plan.partyName,
+          type: 'payment' as const,
+          amount: inst.paidAmount || inst.amount,
+          previousBalance: plan.remainingAmount + (inst.paidAmount || inst.amount),
+          newBalance: plan.remainingAmount,
+          paymentMethod: inst.paymentMethod || 'cash',
+          referenceInvoice: plan.invoiceNumber,
+          notes: `دفعة القسط رقم #${inst.installmentNumber} من فاتورة ${plan.invoiceNumber} (استحقاق ${inst.dueDate})`,
+          createdAt: inst.paidAt || new Date().toISOString(),
+          recordedBy: 'الإدارة المالية'
+        };
+      handleSendVoucherWhatsApp(matchedTx, directNow);
+      return;
+    }
+
+    const foundPartyPhone =
+      plan.partyType === 'customer'
+        ? customers.find(c => c.id === plan.partyId || c.name === plan.partyName)?.phone || ''
+        : suppliers.find(s => s.id === plan.partyId || s.name === plan.partyName)?.phone || '';
+
+    const storeName = settings.storeNameAr || settings.storeNameEn || 'متجرنا';
+    const message = [
+      `📅 *إشعار استحقاق قسط — ${storeName}*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `👤 *السيد/ة:* ${plan.partyName}`,
+      `🧾 *رقم الفاتورة:* ${plan.invoiceNumber}`,
+      `🔢 *رقم الدفعة / القسط:* القسط رقم #${inst.installmentNumber} من أصل ${plan.installmentsCount}`,
+      `💰 *قيمة القسط المستحق:* *${formatCurrency(inst.amount)}*`,
+      `📆 *تاريخ الاستحقاق:* *${inst.dueDate}*`,
+      `📉 *إجمالي المتبقي من الفاتورة:* ${formatCurrency(plan.remainingAmount)}`,
+      inst.notes ? `📝 *ملاحظات:* ${inst.notes}` : '',
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `نرجو التكرم بسداد الدفعة في موعدها المحدد، شاكرين حسن تعاملكم معنا. 🙏`
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    if (directNow && foundPartyPhone.trim()) {
+      sendWhatsAppDebtMessage({
+        phone: foundPartyPhone.trim(),
+        message,
+        customerName: plan.partyName,
+        customerId: plan.partyId,
+        amountDue: inst.amount,
+        totalDebt: plan.remainingAmount,
+        currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
+        type: 'installment_plan',
+        storeSettings: settings
+      }).then(() => {
+        notify(
+          'تم إرسال إشعار القسط عبر واتساب',
+          `تم إرسال تذكير القسط رقم #${inst.installmentNumber} إلى واتساب ${plan.partyName}`,
+          'success'
+        );
+      });
+      return;
+    }
+
+    setTargetCustomerForReminder(null);
+    setWhatsappDispatchMeta({
+      title: `إرسال إشعار القسط #${inst.installmentNumber} (${plan.invoiceNumber}) عبر واتساب`,
+      partyName: plan.partyName,
+      partyId: plan.partyId,
+      phone: foundPartyPhone,
+      amountDue: inst.amount,
+      totalDebt: plan.remainingAmount,
+      type: 'installment_plan'
+    });
+    setReminderMessageDraft(message);
+    setIsWhatsAppReminderModalOpen(true);
+  };
+
   const handleSendWhatsAppReminderDirectly = async () => {
-    if (!targetCustomerForReminder || !reminderMessageDraft) return;
+    const activePhone = whatsappDispatchMeta?.phone || targetCustomerForReminder?.phone || '';
+    const activeName = whatsappDispatchMeta?.partyName || targetCustomerForReminder?.name || 'العميل';
+    const activeId = whatsappDispatchMeta?.partyId || targetCustomerForReminder?.id || 'PARTY';
+    const activeAmount = whatsappDispatchMeta?.amountDue ?? targetCustomerForReminder?.currentDebt ?? 0;
+    const activeTotal = whatsappDispatchMeta?.totalDebt ?? targetCustomerForReminder?.currentDebt ?? 0;
+    const activeType = whatsappDispatchMeta?.type || 'manual_reminder';
+
+    if (!reminderMessageDraft.trim()) return;
+    if (!activePhone.trim()) {
+      notify('تنبيه', 'يرجى إدخال رقم هاتف واتساب المستلم أولاً', 'warning');
+      return;
+    }
 
     setIsSendingWhatsApp(true);
     try {
       await sendWhatsAppDebtMessage({
-        phone: targetCustomerForReminder.phone,
+        phone: activePhone.trim(),
         message: reminderMessageDraft,
-        customerName: targetCustomerForReminder.name,
-        customerId: targetCustomerForReminder.id,
-        amountDue: targetCustomerForReminder.currentDebt,
-        totalDebt: targetCustomerForReminder.currentDebt,
+        customerName: activeName,
+        customerId: activeId,
+        amountDue: activeAmount,
+        totalDebt: activeTotal,
         currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
-        type: 'manual_reminder',
+        type: activeType,
         storeSettings: settings
       });
 
@@ -636,8 +912,8 @@ export const DebtView: React.FC = () => {
       } catch {}
 
       notify(
-        'تم إرسال التذكير بنجاح',
-        `تم إرسال تذكير تسديد الدين إلى واتساب ${targetCustomerForReminder.name}`,
+        'تم الإرسال عبر واتساب بنجاح',
+        `تم إرسال الرسالة المالية إلى واتساب ${activeName}`,
         'success'
       );
       setIsWhatsAppReminderModalOpen(false);
@@ -734,10 +1010,12 @@ export const DebtView: React.FC = () => {
     setIsInstallmentSplitterOpen(true);
   };
 
-  const handleSaveInstallmentPlan = (
+  const handleSaveInstallmentPlan = async (
     newPlan: InvoiceInstallmentPlan,
     recordNewCharge: boolean,
-    recordDownPaymentNow: boolean
+    recordDownPaymentNow: boolean,
+    sendWhatsAppImmediately?: boolean,
+    customWhatsAppPhone?: string
   ) => {
     if (recordNewCharge) {
       if (newPlan.partyType === 'customer') {
@@ -795,6 +1073,47 @@ export const DebtView: React.FC = () => {
       `تم تقسيم الفاتورة ${newPlan.invoiceNumber} (${newPlan.partyName}) إلى ${newPlan.installmentsCount} دفعات مجدولة بنجاح`,
       'success'
     );
+
+    if (sendWhatsAppImmediately) {
+      const resolvedPhone =
+        (customWhatsAppPhone && customWhatsAppPhone.trim()) ||
+        (newPlan.partyType === 'customer'
+          ? customers.find(c => c.id === newPlan.partyId || c.name === newPlan.partyName)?.phone || ''
+          : suppliers.find(s => s.id === newPlan.partyId || s.name === newPlan.partyName)?.phone || '');
+
+      const planMsg = buildInstallmentPlanWhatsAppMessage({
+        storeSettings: settings,
+        plan: newPlan,
+        bulletin: settings.exchangeBulletin
+      });
+
+      if (resolvedPhone.trim()) {
+        try {
+          await sendWhatsAppDebtMessage({
+            phone: resolvedPhone.trim(),
+            message: planMsg,
+            customerName: newPlan.partyName,
+            customerId: newPlan.partyId,
+            amountDue: newPlan.remainingAmount,
+            totalDebt: newPlan.totalInvoiceAmount,
+            currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
+            type: 'installment_plan',
+            storeSettings: settings
+          });
+          try {
+            const updatedLogs = JSON.parse(localStorage.getItem(DEBT_COLLECTION_STORAGE_KEY) || '[]');
+            setReminderLogs(updatedLogs);
+          } catch {}
+          notify(
+            'تم إرسال فاتورة الأقساط على واتساب',
+            `تم إرسال جدول الأقساط للفاتورة ${newPlan.invoiceNumber} إلى واتساب ${newPlan.partyName}`,
+            'success'
+          );
+        } catch {}
+      } else {
+        openWhatsAppDeepLink('', planMsg);
+      }
+    }
   };
 
   const handlePaySingleInstallment = (plan: InvoiceInstallmentPlan, inst: InstallmentScheduleItem) => {
@@ -974,10 +1293,12 @@ export const DebtView: React.FC = () => {
     setSupplierPayDiscount('');
     setSupplierPayMethod('cash');
     setSupplierPayNotes('');
+    setPayWhatsAppPhoneInput(sup.phone || '');
+    setSendReceiptToWhatsAppOnPay(true);
     setIsSupplierPayModalOpen(true);
   };
 
-  const handleExecuteSupplierPay = (e: React.FormEvent) => {
+  const handleExecuteSupplierPay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSupplierForPay) return;
     const amount = Number(supplierPayAmount) || 0;
@@ -999,6 +1320,108 @@ export const DebtView: React.FC = () => {
     if (tx) {
       setIsSupplierPayModalOpen(false);
       setSelectedVoucherForPrint(tx);
+
+      if (sendReceiptToWhatsAppOnPay) {
+        const targetPhone = payWhatsAppPhoneInput.trim() || selectedSupplierForPay.phone || '';
+        if (targetPhone) {
+          const msg = buildVoucherReceiptWhatsAppMessage({
+            storeSettings: settings,
+            voucher: tx,
+            partyPhone: targetPhone,
+            bulletin: settings.exchangeBulletin
+          });
+          try {
+            await sendWhatsAppDebtMessage({
+              phone: targetPhone,
+              message: msg,
+              customerName: selectedSupplierForPay.name,
+              customerId: selectedSupplierForPay.id,
+              amountDue: tx.amount,
+              totalDebt: tx.newBalance,
+              currencySymbol: settings.currency.symbolNative || settings.currency.symbol,
+              type: 'payment_receipt',
+              storeSettings: settings
+            });
+            try {
+              const updatedLogs = JSON.parse(localStorage.getItem(DEBT_COLLECTION_STORAGE_KEY) || '[]');
+              setReminderLogs(updatedLogs);
+            } catch {}
+            notify(
+              'تم إرسال سند الصرف عبر واتساب',
+              `تم إرسال سند الصرف رقم ${tx.voucherNumber} مباشرة إلى واتساب المورد ${selectedSupplierForPay.name}`,
+              'success'
+            );
+          } catch {}
+        }
+      }
+    }
+  };
+
+  const handlePrintDebtsSummaryReport = () => {
+    const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>ملخص الديون والذمم - ${settings.storeNameAr || settings.storeNameEn}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+    body { font-family: 'Cairo', sans-serif; padding: 24px; color: #0f172a; }
+    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; background: #f8fafc; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: right; }
+    th { background: #0f172a; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h2 style="margin:0">${settings.storeNameAr || settings.storeNameEn}</h2>
+      <p style="margin:4px 0 0;font-size:12px;color:#475569">تقرير ملخص الديون والذمم والأقساط المجدولة</p>
+    </div>
+    <div style="text-align:left;font-size:12px">
+      <div>تاريخ الطباعة: ${new Date().toLocaleString('ar-SY')}</div>
+    </div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div>ديون الزبائن</div><strong style="font-size:16px">${formatCurrency(totalCustomerDebt)}</strong></div>
+    <div class="kpi"><div>مستحقات الموردين</div><strong style="font-size:16px">${formatCurrency(totalSupplierDebt)}</strong></div>
+    <div class="kpi"><div>إجمالي فواتير المشتريات</div><strong style="font-size:16px">${formatCurrency(purchaseInvoicesKPIs.totalAmount)}</strong></div>
+    <div class="kpi"><div>الأقساط المتبقية</div><strong style="font-size:16px">${formatCurrency(installmentsKPIs.totalRemaining)}</strong></div>
+  </div>
+  <h3>قائمة الزبائن المدينين</h3>
+  <table>
+    <thead><tr><th>العميل</th><th>الهاتف</th><th>تاريخ الاستحقاق</th><th>الرصيد المستحق</th></tr></thead>
+    <tbody>
+      ${customers.filter(c => (c.currentDebt || 0) > 0).map(c => `<tr><td>${c.name}</td><td>${c.phone || '—'}</td><td>${c.debtDueDate || '—'}</td><td>${formatCurrency(c.currentDebt || 0)}</td></tr>`).join('')}
+    </tbody>
+  </table>
+  <h3>قائمة الموردين الدائنين</h3>
+  <table>
+    <thead><tr><th>المورد / الشركة</th><th>الهاتف</th><th>إجمالي المشتريات</th><th>الرصيد المستحق</th></tr></thead>
+    <tbody>
+      ${suppliers.filter(s => (s.currentDebt || 0) > 0).map(s => `<tr><td>${s.name}</td><td>${s.phone || '—'}</td><td>${formatCurrency(s.totalPurchases || 0)}</td><td>${formatCurrency(s.currentDebt || 0)}</td></tr>`).join('')}
+    </tbody>
+  </table>
+</body>
+</html>`;
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => document.body.removeChild(iframe), 2000);
+      }, 300);
     }
   };
 
@@ -1151,7 +1574,7 @@ export const DebtView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handlePrintDebtsSummaryReport}
               className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
@@ -2241,6 +2664,15 @@ export const DebtView: React.FC = () => {
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={() => handleSendVoucherWhatsApp(inv, true)}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                                    title="إرسال الفاتورة مباشرة عبر واتساب"
+                                  >
+                                    <Send className="w-3 h-3" />
+                                    <span>واتساب</span>
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => setSelectedVoucherForPrint(inv)}
                                     className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 text-slate-600 dark:text-slate-300 cursor-pointer"
                                     title="طباعة السند"
@@ -2745,7 +3177,24 @@ export const DebtView: React.FC = () => {
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleSendInstallmentPlanWhatsApp(plan, true)}
+                              className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer"
+                              title="إرسال فاتورة الأقساط وجدول الدفعات مباشرة عبر واتساب"
+                            >
+                              <Send className="w-3 h-3" />
+                              <span>إرسال فاتورة الأقساط واتساب</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSendInstallmentPlanWhatsApp(plan, false)}
+                              className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                              title="معاينة وتعديل رسالة فاتورة الأقساط قبل الإرسال"
+                            >
+                              <MessageSquareShare className="w-3.5 h-3.5" />
+                            </button>
                             <span
                               className={`px-2.5 py-1 rounded-full text-[10px] font-black whitespace-nowrap ${
                                 isCompleted
@@ -2899,16 +3348,66 @@ export const DebtView: React.FC = () => {
                                       />
                                     </div>
 
-                                    {!isPaid && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handlePaySingleInstallment(plan, inst)}
-                                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
-                                        title="تسجيل سداد هذه الدفعة وإصدار سند رسمي"
-                                      >
-                                        <Coins className="w-3 h-3" />
-                                        <span>{plan.partyType === 'customer' ? 'تحصيل القسط' : 'سداد القسط'}</span>
-                                      </button>
+                                    {isPaid ? (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSendSingleInstallmentWhatsApp(plan, inst, true)}
+                                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 shadow-2xs cursor-pointer"
+                                          title="إرسال سند قبض هذه الدفعة مباشرة على واتساب"
+                                        >
+                                          <Send className="w-3 h-3" />
+                                          <span>سند القبض واتساب</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const matchedTx =
+                                              (inst.voucherNumber &&
+                                                debtTransactions.find(t => t.voucherNumber === inst.voucherNumber)) || {
+                                                id: inst.id,
+                                                voucherNumber: inst.voucherNumber || `RV-INST-${inst.installmentNumber}`,
+                                                partyType: plan.partyType,
+                                                partyId: plan.partyId,
+                                                partyName: plan.partyName,
+                                                type: 'payment' as const,
+                                                amount: inst.paidAmount || inst.amount,
+                                                previousBalance: plan.remainingAmount + (inst.paidAmount || inst.amount),
+                                                newBalance: plan.remainingAmount,
+                                                paymentMethod: inst.paymentMethod || 'cash',
+                                                referenceInvoice: plan.invoiceNumber,
+                                                notes: `دفعة القسط رقم #${inst.installmentNumber} من فاتورة ${plan.invoiceNumber} (استحقاق ${inst.dueDate})`,
+                                                createdAt: inst.paidAt || new Date().toISOString(),
+                                                recordedBy: 'الإدارة المالية'
+                                              };
+                                            setSelectedVoucherForPrint(matchedTx);
+                                          }}
+                                          className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 text-slate-700 dark:text-slate-300 cursor-pointer"
+                                          title="معاينة وطباعة سند القبض"
+                                        >
+                                          <Printer className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSendSingleInstallmentWhatsApp(plan, inst, false)}
+                                          className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                                          title="إرسال إشعار استحقاق هذا القسط عبر واتساب"
+                                        >
+                                          <MessageSquareShare className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handlePaySingleInstallment(plan, inst)}
+                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
+                                          title="تسجيل سداد هذه الدفعة وإصدار سند رسمي"
+                                        >
+                                          <Coins className="w-3 h-3" />
+                                          <span>{plan.partyType === 'customer' ? 'تحصيل القسط' : 'سداد القسط'}</span>
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -3031,6 +3530,15 @@ export const DebtView: React.FC = () => {
                               >
                                 <FileSpreadsheet className="w-3 h-3" />
                                 <span>كشف الحساب</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSendVoucherWhatsApp(tx, true)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg transition-colors inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                title="إرسال السند مباشرة عبر واتساب"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>إرسال واتساب</span>
                               </button>
                               <button
                                 type="button"
@@ -3188,21 +3696,52 @@ export const DebtView: React.FC = () => {
                 </span>
               </div>
 
+              {/* Direct WhatsApp Receipt Dispatch Option */}
+              <div className="p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs font-black text-emerald-900 dark:text-emerald-200">
+                    <MessageSquareShare className="w-4 h-4 text-emerald-600" />
+                    <span>إرسال سند القبض مباشرة عبر واتساب فور التأكيد</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={sendReceiptToWhatsAppOnPay}
+                    onChange={e => setSendReceiptToWhatsAppOnPay(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                  />
+                </label>
+                {sendReceiptToWhatsAppOnPay && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 shrink-0">
+                      رقم واتساب العميل:
+                    </span>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={payWhatsAppPhoneInput}
+                      onChange={e => setPayWhatsAppPhoneInput(e.target.value)}
+                      placeholder="9639..."
+                      className="flex-1 text-xs font-mono py-1.5 px-2.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-xl text-slate-900 dark:text-white"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Submit Buttons */}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsCustomerPayModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>تأكيد وقبض السند</span>
+                  <span>{sendReceiptToWhatsAppOnPay ? 'تأكيد القبض وإرسال السند واتساب' : 'تأكيد وقبض السند'}</span>
                 </button>
               </div>
             </form>
@@ -3429,20 +3968,51 @@ export const DebtView: React.FC = () => {
                 />
               </div>
 
+              {/* Direct WhatsApp Voucher Dispatch Option */}
+              <div className="p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs font-black text-emerald-900 dark:text-emerald-200">
+                    <MessageSquareShare className="w-4 h-4 text-emerald-600" />
+                    <span>إرسال سند الصرف مباشرة عبر واتساب للمورد فور التأكيد</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={sendReceiptToWhatsAppOnPay}
+                    onChange={e => setSendReceiptToWhatsAppOnPay(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                  />
+                </label>
+                {sendReceiptToWhatsAppOnPay && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 shrink-0">
+                      رقم واتساب المورد:
+                    </span>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={payWhatsAppPhoneInput}
+                      onChange={e => setPayWhatsAppPhoneInput(e.target.value)}
+                      placeholder="9639..."
+                      className="flex-1 text-xs font-mono py-1.5 px-2.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-xl text-slate-900 dark:text-white"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsSupplierPayModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>تأكيد وصرف السند</span>
+                  <span>{sendReceiptToWhatsAppOnPay ? 'تأكيد الصرف وإرسال السند واتساب' : 'تأكيد وصرف السند'}</span>
                 </button>
               </div>
             </form>
@@ -3718,8 +4288,8 @@ export const DebtView: React.FC = () => {
         }}
       />
 
-      {/* MODAL 8: WhatsApp Debt Reminder Message Preview & Dispatch */}
-      {isWhatsAppReminderModalOpen && targetCustomerForReminder && (
+      {/* MODAL 8: WhatsApp Universal Document & Reminder Preview & Dispatch */}
+      {isWhatsAppReminderModalOpen && (whatsappDispatchMeta || targetCustomerForReminder) && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div className="px-6 py-4 bg-emerald-600 text-white flex items-center justify-between">
@@ -3728,9 +4298,11 @@ export const DebtView: React.FC = () => {
                   <MessageSquareShare className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm">إرسال تذكير تسديد الدين عبر واتساب</h3>
+                  <h3 className="font-black text-sm">
+                    {whatsappDispatchMeta?.title || 'إرسال تذكير تسديد الدين عبر واتساب'}
+                  </h3>
                   <p className="text-[11px] text-emerald-100 font-mono">
-                    {targetCustomerForReminder.name} ({targetCustomerForReminder.phone})
+                    {whatsappDispatchMeta?.partyName || targetCustomerForReminder?.name}
                   </p>
                 </div>
               </div>
@@ -3747,9 +4319,9 @@ export const DebtView: React.FC = () => {
               {/* Summary pill */}
               <div className="flex items-center justify-between p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl">
                 <div>
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">إجمالي الذمة المستحقة:</span>
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">المبلغ / الرصيد المستحق:</span>
                   <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
-                    {formatCurrency(targetCustomerForReminder.currentDebt || 0)}
+                    {formatCurrency(whatsappDispatchMeta?.amountDue ?? targetCustomerForReminder?.currentDebt ?? 0)}
                   </span>
                 </div>
                 <div className="text-left">
@@ -3760,10 +4332,40 @@ export const DebtView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Recipient Phone Number Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  رقم هاتف واتساب المستلم:
+                </label>
+                <input
+                  type="tel"
+                  dir="ltr"
+                  value={whatsappDispatchMeta?.phone ?? targetCustomerForReminder?.phone ?? ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (whatsappDispatchMeta) {
+                      setWhatsappDispatchMeta({ ...whatsappDispatchMeta, phone: val });
+                    } else if (targetCustomerForReminder) {
+                      setWhatsappDispatchMeta({
+                        title: 'إرسال تذكير تسديد الدين عبر واتساب',
+                        partyName: targetCustomerForReminder.name,
+                        partyId: targetCustomerForReminder.id,
+                        phone: val,
+                        amountDue: targetCustomerForReminder.currentDebt || 0,
+                        totalDebt: targetCustomerForReminder.currentDebt || 0,
+                        type: 'manual_reminder'
+                      });
+                    }
+                  }}
+                  placeholder="9639..."
+                  className="w-full text-xs font-mono py-2 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
               {/* Message Editable Box */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                  <span>نص الرسالة المرسلة للعميل:</span>
+                  <span>نص الرسالة المرسلة عبر واتساب:</span>
                   <span className="text-[10px] text-slate-400">يمكنك تعديل نص الرسالة قبل الإرسال</span>
                 </label>
                 <textarea
@@ -3771,7 +4373,7 @@ export const DebtView: React.FC = () => {
                   value={reminderMessageDraft}
                   onChange={e => setReminderMessageDraft(e.target.value)}
                   className="w-full text-xs font-sans p-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white leading-relaxed focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  placeholder="اكتب رسالة التذكير..."
+                  placeholder="اكتب الرسالة..."
                 />
               </div>
 
@@ -3779,7 +4381,7 @@ export const DebtView: React.FC = () => {
               <div className="flex items-start gap-2 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/60 p-3 rounded-xl">
                 <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <span>
-                  إذا كان مفتاح WhatsApp Business Cloud API معرفاً في الإعدادات، سيتم الإرسال سحابياً بدون فتح المتصفح. وإلا فسيتم توجيهك إلى واتساب ويب مع تجهيز الرسالة فوراً.
+                  إذا كان مفتاح WhatsApp Business Cloud API معرفاً في الإعدادات، سيتم الإرسال سحابياً بدون فتح المتصفح. وإلا فسيتم توجيهك إلى واتساب مباشرة مع تجهيز الرسالة فوراً.
                 </span>
               </div>
 
@@ -3806,7 +4408,7 @@ export const DebtView: React.FC = () => {
                   ) : (
                     <>
                       <Send className="w-3.5 h-3.5" />
-                      <span>إرسال عبر الواتساب</span>
+                      <span>إرسال مباشر عبر واتساب</span>
                     </>
                   )}
                 </button>
@@ -4073,13 +4675,25 @@ export const DebtView: React.FC = () => {
               })()}
 
               {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setSelectedPurchaseInvoiceForView(null)}
                   className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
                 >
                   إغلاق
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const inv = selectedPurchaseInvoiceForView;
+                    setSelectedPurchaseInvoiceForView(null);
+                    handleSendVoucherWhatsApp(inv, true);
+                  }}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>إرسال الفاتورة عبر واتساب</span>
                 </button>
                 <button
                   type="button"

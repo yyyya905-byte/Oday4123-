@@ -147,7 +147,7 @@ export const DashboardView: React.FC = () => {
       try {
         localStorage.setItem('kian_daily_sales_target', val.toString());
       } catch {}
-      if (notify) notify('success', 'تم تحديث هدف المبيعات اليومي بنجاح');
+      if (notify) notify('تم تحديث الهدف', 'تم تحديث هدف المبيعات اليومي بنجاح', 'success');
     }
     setIsEditingGoal(false);
   };
@@ -480,7 +480,7 @@ export const DashboardView: React.FC = () => {
 
     navigator.clipboard.writeText(text).then(() => {
       setCopiedReport(true);
-      if (notify) notify('success', 'تم نسخ ملخص اتجاهات المبيعات إلى الحافظة');
+      if (notify) notify('تم النسخ بنجاح', 'تم نسخ ملخص اتجاهات المبيعات إلى الحافظة', 'success');
       setTimeout(() => setCopiedReport(false), 2500);
     });
   };
