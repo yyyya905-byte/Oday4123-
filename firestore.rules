@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidLicenseActivation(data) {
+      return data.keys().hasAll(['code', 'isUsed', 'deviceId', 'deviceFingerprint', 'deviceName', 'usedAt']) &&
+        data.keys().hasOnly([
+          'code',
+          'isUsed',
+          'deviceId',
+          'deviceFingerprint',
+          'deviceName',
+          'storeName',
+          'durationLabelAr',
+          'usedAt',
+          'firstActivatedAt',
+          'expiresAt',
+          'transferCount',
+          'revokedDeviceIds',
+          'lastRevokedDeviceId',
+          'lastRevokedAt'
+        ]) &&
+        data.code is string && data.code.size() >= 2 && data.code.size() <= 64 &&
+        data.isUsed is bool &&
+        data.deviceId is string && data.deviceId.size() >= 4 && data.deviceId.size() <= 128 &&
+        data.deviceFingerprint is string && data.deviceFingerprint.size() >= 4 && data.deviceFingerprint.size() <= 128 &&
+        data.deviceName is string && data.deviceName.size() <= 200 &&
+        data.usedAt is string && data.usedAt.size() <= 64 &&
+        (!('storeName' in data) || (data.storeName is string && data.storeName.size() <= 200)) &&
+        (!('durationLabelAr' in data) || (data.durationLabelAr is string && data.durationLabelAr.size() <= 120)) &&
+        (!('firstActivatedAt' in data) || (data.firstActivatedAt is string && data.firstActivatedAt.size() <= 64)) &&
+        (!('expiresAt' in data) || (data.expiresAt is string && data.expiresAt.size() <= 64)) &&
+        (!('transferCount' in data) || (data.transferCount is number && data.transferCount >= 0 && data.transferCount <= 1000)) &&
+        (!('revokedDeviceIds' in data) || (data.revokedDeviceIds is list && data.revokedDeviceIds.size() <= 50 && (data.revokedDeviceIds.size() == 0 || data.revokedDeviceIds[0] is string))) &&
+        (!('lastRevokedDeviceId' in data) || (data.lastRevokedDeviceId is string && data.lastRevokedDeviceId.size() <= 128)) &&
+        (!('lastRevokedAt' in data) || (data.lastRevokedAt is string && data.lastRevokedAt.size() <= 64));
+    }
+
+    // Connection health check path
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+    }
+
+    // Subscription License Device-Fingerprinting Registry
+    // Note: Devices verify and bind subscription codes during initial setup before or during login,
+    // so single-document get/create/update by exact codeId is validated strictly via schema & ID rules.
+    match /licenseActivations/{codeId} {
+      allow get: if isValidId(codeId);
+      allow list: if resource.data.isUsed == true;
+      allow create: if isValidId(codeId) && isValidLicenseActivation(incoming());
+      allow update: if isValidId(codeId) &&
+        isValidLicenseActivation(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'isUsed',
+          'deviceId',
+          'deviceFingerprint',
+          'deviceName',
+          'storeName',
+          'durationLabelAr',
+          'usedAt',
+          'firstActivatedAt',
+          'expiresAt',
+          'transferCount',
+          'revokedDeviceIds',
+          'lastRevokedDeviceId',
+          'lastRevokedAt'
+        ]);
+    }
+  }
+}

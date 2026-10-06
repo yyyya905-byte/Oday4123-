@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "LicenseActivation": {
+      "title": "LicenseActivation",
+      "description": "Stores subscription activation code bindings, device fingerprint, usage timestamps, transfer history, and revoked devices in Firebase Firestore.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "The normalized subscription license code.",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "isUsed": {
+          "type": "boolean",
+          "description": "Whether the subscription code is currently active and bound to a device."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "Unique hardware device ID currently authorized for this subscription code.",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "deviceFingerprint": {
+          "type": "string",
+          "description": "Multi-factor hardware and browser device fingerprint hash.",
+          "minLength": 4,
+          "maxLength": 128
+        },
+        "deviceName": {
+          "type": "string",
+          "description": "Human-readable name of the currently bound device.",
+          "maxLength": 200
+        },
+        "storeName": {
+          "type": "string",
+          "description": "Store name associated with the subscription.",
+          "maxLength": 200
+        },
+        "durationLabelAr": {
+          "type": "string",
+          "description": "Arabic label describing the subscription duration.",
+          "maxLength": 120
+        },
+        "usedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of when the code was used or transferred to the current device."
+        },
+        "firstActivatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of when the code was first activated."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of when the subscription expires."
+        },
+        "transferCount": {
+          "type": "number",
+          "description": "Total number of times activation was transferred between devices."
+        },
+        "revokedDeviceIds": {
+          "type": "array",
+          "description": "Bounded list of device IDs whose subscriptions were revoked/cancelled."
+        },
+        "lastRevokedDeviceId": {
+          "type": "string",
+          "description": "Device ID of the most recently revoked device.",
+          "maxLength": 128
+        },
+        "lastRevokedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of when the previous or unauthorized device subscription was cancelled."
+        }
+      },
+      "required": [
+        "code",
+        "isUsed",
+        "deviceId",
+        "deviceFingerprint",
+        "deviceName",
+        "usedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/licenseActivations/{codeId}": {
+      "schema": {
+        "$ref": "#/entities/LicenseActivation"
+      },
+      "description": "Global registry of subscription codes bound to device fingerprints in Firestore."
+    }
+  }
+}

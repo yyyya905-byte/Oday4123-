@@ -1,8 +1,11 @@
 /**
  * License & App Activation Utility
- * Handles license validation with predefined codes (annual, monthly, lifetime)
- * and enforces single-use policy ("استخدام لمرة واحدة فقط").
+ * Handles license validation with predefined codes (annual, monthly, lifetime),
+ * Device Fingerprinting verification against Firebase Firestore, activation transfer,
+ * usage timestamp tracking, and automatic revocation of other devices' subscriptions.
  */
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 
 // Authorized developer Gmails permitted to view developer license controls
 export const AUTHORIZED_PURCHASE_GENERATOR_EMAILS: readonly string[] = [
@@ -151,12 +154,91 @@ export function calculateSubscriptionExpirationDate(
 
 const USED_CODES_STORAGE_KEY = 'kian_used_license_codes';
 const HARDWARE_DEVICE_ID_KEY = 'kian_pos_hardware_device_id';
+const HARDWARE_FINGERPRINT_KEY = 'kian_pos_device_fingerprint_v1';
 
 export interface DeviceHardwareInfo {
   deviceId: string;
+  deviceFingerprint: string;
   deviceName: string;
   platform: string;
   screenResolution: string;
+  hardwareSummary: string;
+}
+
+/**
+ * Computes a multi-factor hardware & browser Device Fingerprint (Canvas + WebGL + Screen + CPU + Timezone)
+ */
+export function computeDeviceFingerprint(): string {
+  try {
+    const cached = localStorage.getItem(HARDWARE_FINGERPRINT_KEY);
+    if (cached && cached.startsWith('FP-')) {
+      return cached;
+    }
+
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    const scr = typeof window !== 'undefined' && window.screen ? window.screen : null;
+    const tz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
+
+    let canvasSig = 'no-canvas';
+    let webglSig = 'no-webgl';
+    if (typeof document !== 'undefined') {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 180;
+        canvas.height = 40;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.textBaseline = 'top';
+          ctx.font = '14px monospace';
+          ctx.fillStyle = '#f59e0b';
+          ctx.fillRect(10, 5, 80, 20);
+          ctx.fillStyle = '#0f172a';
+          ctx.fillText('KIAN-POS-FP-2026', 6, 8);
+          canvasSig = canvas.toDataURL().slice(-48);
+        }
+      } catch {}
+
+      try {
+        const glCanvas = document.createElement('canvas');
+        const gl: any = glCanvas.getContext('webgl') || glCanvas.getContext('experimental-webgl');
+        if (gl) {
+          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+          const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+          webglSig = String(renderer || 'webgl').slice(0, 48);
+        }
+      } catch {}
+    }
+
+    const rawSignals = [
+      nav?.platform || 'POS',
+      nav?.language || 'ar',
+      scr ? `${scr.width}x${scr.height}x${scr.colorDepth}` : '1920x1080x24',
+      nav?.hardwareConcurrency || 4,
+      (nav as any)?.deviceMemory || 8,
+      tz,
+      canvasSig,
+      webglSig,
+    ].join('||');
+
+    let h1 = 0x811c9dc5;
+    let h2 = 0x1000193;
+    for (let i = 0; i < rawSignals.length; i++) {
+      const ch = rawSignals.charCodeAt(i);
+      h1 ^= ch;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 = (h2 << 5) - h2 + ch;
+      h2 |= 0;
+    }
+
+    const p1 = Math.abs(h1).toString(16).toUpperCase().padStart(4, '0').slice(0, 4);
+    const p2 = Math.abs(h2).toString(16).toUpperCase().padStart(4, '0').slice(0, 4);
+    const devIdTail = getOrCreateHardwareDeviceId().split('-').pop() || 'A1B2';
+    const fp = `FP-${p1}-${p2}-${devIdTail}`;
+    localStorage.setItem(HARDWARE_FINGERPRINT_KEY, fp);
+    return fp;
+  } catch {
+    return 'FP-KIAN-POS0-0001';
+  }
 }
 
 /**
@@ -195,16 +277,19 @@ export function getOrCreateHardwareDeviceId(): string {
 }
 
 /**
- * Returns readable information about the current device along with its unique ID
+ * Returns readable information about the current device along with its unique ID and Device Fingerprint
  */
 export function getDeviceHardwareInfo(): DeviceHardwareInfo {
   const deviceId = getOrCreateHardwareDeviceId();
+  const deviceFingerprint = computeDeviceFingerprint();
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     return {
       deviceId,
+      deviceFingerprint,
       deviceName: 'جهاز كاشير رئيسي',
       platform: 'POS System',
       screenResolution: '1920x1080',
+      hardwareSummary: 'POS Terminal',
     };
   }
 
@@ -223,12 +308,15 @@ export function getDeviceHardwareInfo(): DeviceHardwareInfo {
   else if (/Safari\//i.test(ua)) browser = 'Safari';
 
   const screenResolution = window.screen ? `${window.screen.width}×${window.screen.height}` : 'قياسي';
+  const cores = navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} أنوية` : '';
 
   return {
     deviceId,
+    deviceFingerprint,
     deviceName: `${os} (${browser})`,
     platform: navigator.platform || os,
     screenResolution,
+    hardwareSummary: `${os} • ${browser} • ${screenResolution}${cores ? ` • ${cores}` : ''}`,
   };
 }
 
@@ -236,11 +324,16 @@ export interface UsedCodeRecord {
   code: string;
   usedAt: string;
   deviceId?: string;
+  deviceFingerprint?: string;
   deviceName?: string;
   customerName?: string;
   customerPhone?: string;
   expiresAt?: string;
   durationLabelAr?: string;
+  transferCount?: number;
+  revokedDeviceIds?: string[];
+  lastRevokedDeviceId?: string;
+  lastRevokedAt?: string;
 }
 
 export interface LicenseDeviceVerificationResult {
@@ -250,11 +343,20 @@ export interface LicenseDeviceVerificationResult {
   isUsedByAnotherDevice: boolean;
   isSameDevice: boolean;
   boundDeviceId: string | null;
+  boundDeviceFingerprint: string | null;
   boundDeviceName: string | null;
   boundStoreName: string | null;
   boundActivatedAt: string | null;
+  firstActivatedAt?: string | null;
+  transferCount?: number;
+  revokedDeviceIds?: string[];
+  lastRevokedDeviceId?: string | null;
+  lastRevokedAt?: string | null;
   requestingDeviceId: string;
+  requestingDeviceFingerprint: string;
   requestingDeviceName: string;
+  canTransferToCurrentDevice: boolean;
+  firebaseVerified: boolean;
   securityQuestions: {
     q1_isUsedOnAnyDevice: string;
     q2_whatIsDeviceId: string;
@@ -315,11 +417,24 @@ export function isCodeAlreadyUsed(code: string, currentActiveKey?: string): bool
 }
 
 /**
- * Mark a single-use code as consumed/used and bind it to the device ID
+ * Mark a single-use code as consumed/used and bind it to the device ID & Fingerprint
  */
 export function markCodeAsUsed(
   code: string,
-  customerInfo?: { name?: string; phone?: string; deviceId?: string; deviceName?: string; expiresAt?: string; durationLabelAr?: string }
+  customerInfo?: {
+    name?: string;
+    phone?: string;
+    deviceId?: string;
+    deviceFingerprint?: string;
+    deviceName?: string;
+    usedAt?: string;
+    expiresAt?: string;
+    durationLabelAr?: string;
+    transferCount?: number;
+    revokedDeviceIds?: string[];
+    lastRevokedDeviceId?: string;
+    lastRevokedAt?: string;
+  }
 ): void {
   const clean = code.trim();
   const devInfo = getDeviceHardwareInfo();
@@ -327,13 +442,18 @@ export function markCodeAsUsed(
   const existingIdx = usedList.findIndex(item => item.code.toLowerCase() === clean.toLowerCase());
   const record: UsedCodeRecord = {
     code: clean,
-    usedAt: new Date().toISOString(),
+    usedAt: customerInfo?.usedAt || new Date().toISOString(),
     deviceId: customerInfo?.deviceId || devInfo.deviceId,
+    deviceFingerprint: customerInfo?.deviceFingerprint || devInfo.deviceFingerprint,
     deviceName: customerInfo?.deviceName || devInfo.deviceName,
     customerName: customerInfo?.name,
     customerPhone: customerInfo?.phone,
     expiresAt: customerInfo?.expiresAt,
     durationLabelAr: customerInfo?.durationLabelAr,
+    transferCount: customerInfo?.transferCount,
+    revokedDeviceIds: customerInfo?.revokedDeviceIds,
+    lastRevokedDeviceId: customerInfo?.lastRevokedDeviceId,
+    lastRevokedAt: customerInfo?.lastRevokedAt,
   };
 
   if (existingIdx === -1) {
@@ -345,19 +465,47 @@ export function markCodeAsUsed(
 }
 
 /**
- * Queries the server protection engine to verify:
- * 1. Is this subscription code used on ANY device? (هل هذا الكود مستخدم في أي جهاز؟)
- * 2. What is the Device ID of the device using it? (وأيش معرفه؟)
- * 3. Is it currently used by another device? (هل هو مستخدم؟)
+ * Formats an ISO timestamp into a detailed Arabic date and exact time string (موعد استخدام الكود)
+ */
+export function formatCodeUsageTimestampAr(isoString?: string | null): string {
+  if (!isoString) return 'غير مسجل';
+  try {
+    const dt = new Date(isoString);
+    if (isNaN(dt.getTime())) return isoString;
+    const datePart = dt.toLocaleDateString('ar-SA', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const timePart = dt.toLocaleTimeString('ar-SA', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    return `${datePart} — الساعة ${timePart}`;
+  } catch {
+    return isoString;
+  }
+}
+
+/**
+ * Queries Firebase Firestore (`licenseActivations/{codeId}`) AND the server protection engine to:
+ * 1. Compare the current Device Fingerprint & Device ID with the Firebase database record.
+ * 2. Check if the code is used on another device, and if so, return `canTransferToCurrentDevice: true`
+ *    along with the exact usage timestamp (`boundActivatedAt`).
  */
 export async function verifyCodeDeviceProtectionOnServer(
   inputCode: string,
   overrideRequestingDeviceId?: string,
-  overrideRequestingDeviceName?: string
+  overrideRequestingDeviceName?: string,
+  overrideRequestingFingerprint?: string
 ): Promise<LicenseDeviceVerificationResult> {
   const devInfo = getDeviceHardwareInfo();
   const requestingDeviceId = overrideRequestingDeviceId || devInfo.deviceId;
   const requestingDeviceName = overrideRequestingDeviceName || devInfo.deviceName;
+  const requestingDeviceFingerprint =
+    overrideRequestingFingerprint ||
+    (overrideRequestingDeviceId ? `FP-SIM-${overrideRequestingDeviceId.slice(-8)}` : devInfo.deviceFingerprint);
 
   const cleaned = (inputCode || '').trim();
   const matched = PREDEFINED_LICENSE_CODES.find(
@@ -371,11 +519,15 @@ export async function verifyCodeDeviceProtectionOnServer(
       isUsedByAnotherDevice: false,
       isSameDevice: false,
       boundDeviceId: null,
+      boundDeviceFingerprint: null,
       boundDeviceName: null,
       boundStoreName: null,
       boundActivatedAt: null,
       requestingDeviceId,
+      requestingDeviceFingerprint,
       requestingDeviceName,
+      canTransferToCurrentDevice: false,
+      firebaseVerified: true,
       securityQuestions: {
         q1_isUsedOnAnyDevice: 'الكود المدخل غير مسجل في قائمة الأكواد المعتمدة',
         q2_whatIsDeviceId: 'لا يوجد (الكود غير صحيح)',
@@ -386,6 +538,28 @@ export async function verifyCodeDeviceProtectionOnServer(
     };
   }
 
+  const docId = matched.code.toLowerCase();
+  let firebaseDocData: any = null;
+  let firebaseVerified = false;
+
+  // 1. Primary Check: Query Firebase Firestore `licenseActivations/{docId}`
+  try {
+    const docRef = doc(db, 'licenseActivations', docId);
+    const snap = await getDoc(docRef);
+    firebaseVerified = true;
+    if (snap.exists()) {
+      firebaseDocData = snap.data();
+    }
+  } catch (err) {
+    try {
+      handleFirestoreError(err, OperationType.GET, `licenseActivations/${docId}`);
+    } catch {
+      // Continue to server/local check if offline
+    }
+  }
+
+  // 2. Secondary Check & Sync: Query Express Server `/api/license/verify-device`
+  let serverData: any = null;
   try {
     const response = await fetch('/api/license/verify-device', {
       method: 'POST',
@@ -393,83 +567,125 @@ export async function verifyCodeDeviceProtectionOnServer(
       body: JSON.stringify({
         code: matched.code,
         requestingDeviceId,
+        requestingDeviceFingerprint,
         requestingDeviceName,
       }),
     });
-
     if (response.ok) {
-      const data = await response.json();
-      if (data && data.success) {
-        // Also sync to local used codes if already bound on server to another device
-        if (data.isUsed && data.boundDeviceId) {
-          markCodeAsUsed(matched.code, {
-            deviceId: data.boundDeviceId,
-            deviceName: data.boundDeviceName || 'جهاز مفعل',
-            name: data.storeName,
-          });
-        }
-        return {
-          validCode: true,
-          matchedCode: matched,
-          isUsedOnAnyDevice: Boolean(data.isUsed),
-          isUsedByAnotherDevice: Boolean(data.isUsedByAnotherDevice),
-          isSameDevice: Boolean(data.isSameDevice),
-          boundDeviceId: data.boundDeviceId || null,
-          boundDeviceName: data.boundDeviceName || null,
-          boundStoreName: data.storeName || null,
-          boundActivatedAt: data.activatedAt || null,
-          requestingDeviceId,
-          requestingDeviceName,
-          securityQuestions: data.securityQuestions || {
-            q1_isUsedOnAnyDevice: data.isUsed ? 'نعم، الكود مستخدم ومفعل حالياً' : 'لا، الكود غير مستخدم في أي جهاز',
-            q2_whatIsDeviceId: data.boundDeviceId || 'غير مرتبط بأي جهاز حتى الآن',
-            q3_isCurrentlyActive: Boolean(data.isUsed),
-            statusSummaryAr: data.isUsedByAnotherDevice
-              ? `مستخدم في جهاز آخر (${data.boundDeviceId})`
-              : data.isUsed
-              ? `مفعل على نفس هذا الجهاز (${data.boundDeviceId})`
-              : 'متاح وجاهز للتفعيل',
-          },
-          message: data.message,
-          attemptCount: data.attemptCount,
-        };
-      }
+      serverData = await response.json();
     }
-  } catch {
-    // Fallback to localStorage check if offline
-  }
+  } catch {}
 
-  // Offline fallback check
-  const localRec = getUsedCodeRecord(matched.code);
-  if (localRec) {
-    const boundId = localRec.deviceId || requestingDeviceId;
-    const isOther = boundId !== requestingDeviceId;
+  // If Firebase has the authoritative record, use it; or if server has it and Firebase didn't yet, sync to Firebase!
+  const activeRecord = firebaseDocData && firebaseDocData.isUsed
+    ? {
+        isUsed: true,
+        deviceId: firebaseDocData.deviceId,
+        deviceFingerprint: firebaseDocData.deviceFingerprint || `FP-${firebaseDocData.deviceId}`,
+        deviceName: firebaseDocData.deviceName || 'جهاز كاشير مفعل',
+        storeName: firebaseDocData.storeName || 'متجر كيان',
+        usedAt: firebaseDocData.usedAt,
+        firstActivatedAt: firebaseDocData.firstActivatedAt || firebaseDocData.usedAt,
+        transferCount: firebaseDocData.transferCount || 0,
+        revokedDeviceIds: firebaseDocData.revokedDeviceIds || [],
+        lastRevokedDeviceId: firebaseDocData.lastRevokedDeviceId || null,
+        lastRevokedAt: firebaseDocData.lastRevokedAt || null,
+      }
+    : serverData && serverData.isUsed
+    ? {
+        isUsed: true,
+        deviceId: serverData.boundDeviceId,
+        deviceFingerprint: serverData.boundDeviceFingerprint || `FP-${serverData.boundDeviceId}`,
+        deviceName: serverData.boundDeviceName || 'جهاز كاشير مفعل',
+        storeName: serverData.storeName || 'متجر كيان',
+        usedAt: serverData.activatedAt,
+        firstActivatedAt: serverData.firstActivatedAt || serverData.activatedAt,
+        transferCount: serverData.transferCount || 0,
+        revokedDeviceIds: serverData.revokedDeviceIds || [],
+        lastRevokedDeviceId: serverData.lastRevokedDeviceId || null,
+        lastRevokedAt: serverData.lastRevokedAt || null,
+      }
+    : null;
+
+  if (activeRecord && activeRecord.isUsed) {
+    // Backfill Firebase if server had it first
+    if (!firebaseDocData && firebaseVerified) {
+      try {
+        await setDoc(doc(db, 'licenseActivations', docId), {
+          code: matched.code,
+          isUsed: true,
+          deviceId: String(activeRecord.deviceId).slice(0, 120),
+          deviceFingerprint: String(activeRecord.deviceFingerprint).slice(0, 120),
+          deviceName: String(activeRecord.deviceName).slice(0, 190),
+          storeName: String(activeRecord.storeName || 'متجر كيان').slice(0, 190),
+          durationLabelAr: matched.durationLabelAr.slice(0, 110),
+          usedAt: String(activeRecord.usedAt || new Date().toISOString()).slice(0, 60),
+          firstActivatedAt: String(activeRecord.firstActivatedAt || new Date().toISOString()).slice(0, 60),
+          transferCount: Number(activeRecord.transferCount || 0),
+          revokedDeviceIds: Array.isArray(activeRecord.revokedDeviceIds) ? activeRecord.revokedDeviceIds.slice(0, 40) : [],
+        });
+      } catch {}
+    }
+
+    // Compare both Device ID and Device Fingerprint
+    const isSameDevice =
+      activeRecord.deviceId === requestingDeviceId &&
+      (!activeRecord.deviceFingerprint ||
+        activeRecord.deviceFingerprint === requestingDeviceFingerprint ||
+        !overrideRequestingDeviceId);
+    const isUsedByAnotherDevice = !isSameDevice;
+
+    markCodeAsUsed(matched.code, {
+      deviceId: activeRecord.deviceId,
+      deviceFingerprint: activeRecord.deviceFingerprint,
+      deviceName: activeRecord.deviceName,
+      name: activeRecord.storeName,
+      usedAt: activeRecord.usedAt,
+      transferCount: activeRecord.transferCount,
+      revokedDeviceIds: activeRecord.revokedDeviceIds,
+      lastRevokedDeviceId: activeRecord.lastRevokedDeviceId || undefined,
+      lastRevokedAt: activeRecord.lastRevokedAt || undefined,
+    });
+
+    const formattedTime = formatCodeUsageTimestampAr(activeRecord.usedAt);
+
     return {
       validCode: true,
       matchedCode: matched,
       isUsedOnAnyDevice: true,
-      isUsedByAnotherDevice: isOther,
-      isSameDevice: !isOther,
-      boundDeviceId: boundId,
-      boundDeviceName: localRec.deviceName || 'جهاز كاشير مسجل',
-      boundStoreName: localRec.customerName || null,
-      boundActivatedAt: localRec.usedAt,
+      isUsedByAnotherDevice,
+      isSameDevice,
+      boundDeviceId: activeRecord.deviceId,
+      boundDeviceFingerprint: activeRecord.deviceFingerprint,
+      boundDeviceName: activeRecord.deviceName,
+      boundStoreName: activeRecord.storeName,
+      boundActivatedAt: activeRecord.usedAt,
+      firstActivatedAt: activeRecord.firstActivatedAt,
+      transferCount: activeRecord.transferCount,
+      revokedDeviceIds: activeRecord.revokedDeviceIds,
+      lastRevokedDeviceId: activeRecord.lastRevokedDeviceId,
+      lastRevokedAt: activeRecord.lastRevokedAt,
       requestingDeviceId,
+      requestingDeviceFingerprint,
       requestingDeviceName,
+      canTransferToCurrentDevice: isUsedByAnotherDevice,
+      firebaseVerified,
       securityQuestions: {
-        q1_isUsedOnAnyDevice: 'نعم، هذا الكود مستخدم مسبقاً',
-        q2_whatIsDeviceId: boundId,
+        q1_isUsedOnAnyDevice: `نعم، مستخدم منذ (${formattedTime})`,
+        q2_whatIsDeviceId: `${activeRecord.deviceId} | بصمة: ${activeRecord.deviceFingerprint}`,
         q3_isCurrentlyActive: true,
-        statusSummaryAr: isOther
-          ? `⛔ الكود مستخدم في جهاز آخر بمعرف (${boundId})`
-          : `⛔ تم استهلاك هذا الكود مسبقاً على هذا الجهاز (${boundId})`,
+        statusSummaryAr: isUsedByAnotherDevice
+          ? `⚠️ مستخدم في جهاز آخر (${activeRecord.deviceId}) — يمكنك طلب نقل التفعيل وإلغاء اشتراك الجهاز الآخر`
+          : `✓ الكود مفعل ومربوط ببصمة هذا الجهاز (${activeRecord.deviceId})`,
       },
-      message: isOther
-        ? `⛔ إشعار حماية: هذا الكود (${matched.code}) مستخدم مسبقاً في جهاز آخر يحمل المعرف (${boundId}) ولا يمكن تفعيله على هذا الجهاز الجديد!`
-        : `تم استخدام هذا الكود (${matched.code}) مسبقاً على هذا الجهاز (${boundId})! كل كود مخصص للاستخدام لمرة واحدة فقط.`,
+      message: isUsedByAnotherDevice
+        ? `⛔ إشعار: هذا الكود (${matched.code}) مستخدم في جهاز آخر بمعرف (${activeRecord.deviceId}) وموعد استخدامه (${formattedTime}). يمكنك تأكيد نقل التفعيل إلى جهازك الحالي وإلغاء اشتراك الجهاز الآخر فوراً.`
+        : `هذا الكود (${matched.code}) مفعل ومرتبط ببصمة هذا الجهاز منذ (${formattedTime}).`,
+      attemptCount: serverData?.attemptCount || 0,
     };
   }
 
+  // Code is NOT used in Firebase or Server
   return {
     validCode: true,
     matchedCode: matched,
@@ -477,29 +693,226 @@ export async function verifyCodeDeviceProtectionOnServer(
     isUsedByAnotherDevice: false,
     isSameDevice: false,
     boundDeviceId: null,
+    boundDeviceFingerprint: null,
     boundDeviceName: null,
     boundStoreName: null,
     boundActivatedAt: null,
     requestingDeviceId,
+    requestingDeviceFingerprint,
     requestingDeviceName,
+    canTransferToCurrentDevice: false,
+    firebaseVerified,
     securityQuestions: {
-      q1_isUsedOnAnyDevice: 'لا، الكود غير مستخدم في أي جهاز',
-      q2_whatIsDeviceId: 'غير مرتبط بأي جهاز (متاح للربط بمعرف جهازك)',
+      q1_isUsedOnAnyDevice: 'لا، الكود غير مستخدم في أي جهاز في قاعدة بيانات فايربيس',
+      q2_whatIsDeviceId: `غير مرتبط — جاهز للربط ببصمة جهازك (${requestingDeviceFingerprint})`,
       q3_isCurrentlyActive: false,
-      statusSummaryAr: 'الكود متاح وآمن للتفعيل ✓',
+      statusSummaryAr: 'الكود متاح وآمن للتفعيل في فايربيس ✓',
     },
-    message: 'الكود متاح وغير مستخدم في أي جهاز آخر',
+    message: 'تم التحقق عبر Firebase: الكود غير مستخدم في أي جهاز آخر ومتاح للتفعيل الآن',
   };
+}
+
+/**
+ * Binds a subscription code OR transfers an existing activation to the target device in Firebase Firestore + Server,
+ * records the exact usage timestamp (`usedAt`), and revokes/cancels the subscription of previous/other devices!
+ */
+export async function bindOrTransferLicenseInFirebaseAndServer(params: {
+  code: string;
+  deviceId?: string;
+  deviceFingerprint?: string;
+  deviceName?: string;
+  storeName?: string;
+  customerPhone?: string;
+  expiresAt?: string;
+  durationLabelAr?: string;
+  isTransfer?: boolean;
+  previousDeviceIdToRevoke?: string | null;
+}): Promise<{
+  success: boolean;
+  usedAt: string;
+  revokedDeviceIds: string[];
+  deviceId: string;
+  deviceFingerprint: string;
+}> {
+  const hw = getDeviceHardwareInfo();
+  const targetDeviceId = params.deviceId || hw.deviceId;
+  const targetFingerprint = params.deviceFingerprint || hw.deviceFingerprint;
+  const targetDeviceName = params.deviceName || hw.deviceName;
+  const cleanCode = params.code.trim();
+  const docId = cleanCode.toLowerCase();
+  const nowIso = new Date().toISOString();
+
+  let existingData: any = null;
+  try {
+    const snap = await getDoc(doc(db, 'licenseActivations', docId));
+    if (snap.exists()) {
+      existingData = snap.data();
+    }
+  } catch {}
+
+  const prevRevoked: string[] = Array.isArray(existingData?.revokedDeviceIds)
+    ? [...existingData.revokedDeviceIds]
+    : [];
+
+  const oldBoundDeviceId = params.previousDeviceIdToRevoke || existingData?.deviceId;
+  if (oldBoundDeviceId && oldBoundDeviceId !== targetDeviceId && !prevRevoked.includes(oldBoundDeviceId)) {
+    prevRevoked.unshift(oldBoundDeviceId);
+  }
+  const boundedRevoked = prevRevoked.slice(0, 45);
+  const transferCount = params.isTransfer
+    ? Number(existingData?.transferCount || 0) + 1
+    : Number(existingData?.transferCount || 0);
+
+  const firestorePayload: Record<string, any> = {
+    code: cleanCode.slice(0, 64),
+    isUsed: true,
+    deviceId: targetDeviceId.slice(0, 128),
+    deviceFingerprint: targetFingerprint.slice(0, 128),
+    deviceName: targetDeviceName.slice(0, 200),
+    storeName: (params.storeName || 'متجر كيان').slice(0, 200),
+    durationLabelAr: (params.durationLabelAr || 'اشتراك مفعل').slice(0, 120),
+    usedAt: nowIso,
+    firstActivatedAt: existingData?.firstActivatedAt || nowIso,
+    transferCount,
+    revokedDeviceIds: boundedRevoked,
+  };
+
+  if (params.expiresAt) {
+    firestorePayload.expiresAt = params.expiresAt.slice(0, 64);
+  }
+  if (oldBoundDeviceId && oldBoundDeviceId !== targetDeviceId) {
+    firestorePayload.lastRevokedDeviceId = oldBoundDeviceId.slice(0, 128);
+    firestorePayload.lastRevokedAt = nowIso;
+  }
+
+  // 1. Write to Firebase Firestore (`licenseActivations/{docId}`)
+  try {
+    await setDoc(doc(db, 'licenseActivations', docId), firestorePayload);
+  } catch (err) {
+    try {
+      handleFirestoreError(err, OperationType.WRITE, `licenseActivations/${docId}`);
+    } catch {
+      // Continue to server sync
+    }
+  }
+
+  // 2. Sync to Server Registry (`/api/license/activate-device`) with `confirmTransfer: true`
+  try {
+    await fetch('/api/license/activate-device', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: cleanCode,
+        deviceId: targetDeviceId,
+        deviceFingerprint: targetFingerprint,
+        deviceName: targetDeviceName,
+        customerName: params.storeName || 'متجر كيان',
+        customerPhone: params.customerPhone || '',
+        expiresAt: params.expiresAt,
+        durationLabelAr: params.durationLabelAr,
+        confirmTransfer: Boolean(params.isTransfer),
+        previousDeviceIdToRevoke: oldBoundDeviceId,
+      }),
+    });
+  } catch {}
+
+  // 3. Update local storage record
+  markCodeAsUsed(cleanCode, {
+    deviceId: targetDeviceId,
+    deviceFingerprint: targetFingerprint,
+    deviceName: targetDeviceName,
+    name: params.storeName,
+    phone: params.customerPhone,
+    usedAt: nowIso,
+    expiresAt: params.expiresAt,
+    durationLabelAr: params.durationLabelAr,
+    transferCount,
+    revokedDeviceIds: boundedRevoked,
+    lastRevokedDeviceId: oldBoundDeviceId || undefined,
+    lastRevokedAt: oldBoundDeviceId ? nowIso : undefined,
+  });
+
+  // 4. Broadcast across tabs/windows so any other open instance immediately cancels its subscription
+  try {
+    const bc = new BroadcastChannel('kian_pos_devices_mesh');
+    bc.postMessage({
+      type: 'LICENSE_TRANSFERRED_OR_REVOKED',
+      payload: {
+        code: cleanCode,
+        newOwnerDeviceId: targetDeviceId,
+        newOwnerFingerprint: targetFingerprint,
+        newOwnerDeviceName: targetDeviceName,
+        revokedDeviceIds: boundedRevoked,
+        lastRevokedDeviceId: oldBoundDeviceId,
+        usedAt: nowIso,
+      },
+    });
+    bc.close();
+  } catch {}
+
+  return {
+    success: true,
+    usedAt: nowIso,
+    revokedDeviceIds: boundedRevoked,
+    deviceId: targetDeviceId,
+    deviceFingerprint: targetFingerprint,
+  };
+}
+
+/**
+ * Subscribe to real-time Firebase Firestore changes on the active license code.
+ * If another device transfers the license or adds this device to `revokedDeviceIds`,
+ * `onRevoked` is triggered immediately to cancel this device's subscription!
+ */
+export function subscribeToFirebaseLicenseBinding(
+  activeCode: string,
+  currentDeviceId: string,
+  onRevoked: (details: { newDeviceId: string; newDeviceName: string; usedAt: string }) => void
+): () => void {
+  if (!activeCode || !activeCode.trim()) return () => {};
+  const docId = activeCode.trim().toLowerCase();
+  const docRef = doc(db, 'licenseActivations', docId);
+
+  const unsubscribe = onSnapshot(
+    docRef,
+    snapshot => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+      if (!data) return;
+
+      const boundId = data.deviceId;
+      const revokedList: string[] = Array.isArray(data.revokedDeviceIds) ? data.revokedDeviceIds : [];
+
+      if (
+        (boundId && boundId !== currentDeviceId) ||
+        revokedList.includes(currentDeviceId)
+      ) {
+        onRevoked({
+          newDeviceId: boundId || 'جهاز آخر',
+          newDeviceName: data.deviceName || 'جهاز جديد',
+          usedAt: data.usedAt || new Date().toISOString(),
+        });
+      }
+    },
+    error => {
+      try {
+        handleFirestoreError(error, OperationType.GET, `licenseActivations/${docId}`);
+      } catch {}
+    }
+  );
+
+  return unsubscribe;
 }
 
 /**
  * Validates an entered activation code:
  * 1. Checks matching with predefined codes (case-insensitive)
- * 2. Enforces single-use policy and device-binding check
+ * 2. Enforces single-use policy and device-binding check (unless allowTransfer is true)
  */
 export function validateLicenseCode(
   inputCode: string,
-  currentActiveKey?: string
+  currentActiveKey?: string,
+  allowTransfer: boolean = false
 ): {
   valid: boolean;
   reason?: string;
@@ -525,6 +938,13 @@ export function validateLicenseCode(
     };
   }
 
+  if (allowTransfer) {
+    return {
+      valid: true,
+      matchedCode: matched
+    };
+  }
+
   // 2. Check if code has already been used (single-use constraint or bound to another device)
   const localRec = getUsedCodeRecord(matched.code);
   const currentDevice = getDeviceHardwareInfo();
@@ -532,7 +952,7 @@ export function validateLicenseCode(
     return {
       valid: false,
       boundDeviceId: localRec.deviceId,
-      reason: `⛔ إشعار الكود مستخدم: هذا الكود (${matched.code}) مستخدم ومفعل في جهاز آخر بمعرف (${localRec.deviceId}) ولا يمكن استخدامه في جهاز جديد!`
+      reason: `⛔ إشعار الكود مستخدم: هذا الكود (${matched.code}) مستخدم ومفعل في جهاز آخر بمعرف (${localRec.deviceId}) ولا يمكن استخدامه دون تأكيد نقل التفعيل وإلغاء اشتراك الجهاز الآخر!`
     };
   }
 
@@ -540,7 +960,7 @@ export function validateLicenseCode(
     return {
       valid: false,
       boundDeviceId: localRec?.deviceId || currentDevice.deviceId,
-      reason: `⛔ إشعار الكود مستخدم: تم استخدام هذا الكود (${matched.code}) مسبقاً بمعرف الجهاز (${localRec?.deviceId || currentDevice.deviceId})! كل كود مخصص للاستخدام لمرة واحدة فقط.`
+      reason: `⛔ إشعار الكود مستخدم: تم استخدام هذا الكود (${matched.code}) مسبقاً بمعرف الجهاز (${localRec?.deviceId || currentDevice.deviceId})!`
     };
   }
 

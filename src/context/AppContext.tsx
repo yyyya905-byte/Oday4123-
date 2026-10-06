@@ -62,6 +62,9 @@ import {
   isCodeAlreadyUsed,
   getDeviceHardwareInfo,
   getUsedLicenseCodes,
+  bindOrTransferLicenseInFirebaseAndServer,
+  subscribeToFirebaseLicenseBinding,
+  formatCodeUsageTimestampAr,
   PREDEFINED_LICENSE_CODES,
   MASTER_ACTIVATION_CODES
 } from '../utils/licenseUtils';
@@ -266,7 +269,20 @@ interface AppContextType {
   isTrialExpired: boolean;
   isPurchaseModalOpen: boolean;
   setIsPurchaseModalOpen: (open: boolean) => void;
-  activatePurchaseCode: (code: string, customerInfo?: { name?: string; phone?: string; customExpiresAtIso?: string }) => { success: boolean; message: string; newExpiresAt?: string };
+  activatePurchaseCode: (
+    code: string,
+    customerInfo?: {
+      name?: string;
+      phone?: string;
+      customExpiresAtIso?: string;
+      allowTransfer?: boolean;
+      previousDeviceIdToRevoke?: string | null;
+      targetDeviceId?: string;
+      targetDeviceFingerprint?: string;
+      targetDeviceName?: string;
+    }
+  ) => { success: boolean; message: string; newExpiresAt?: string; usedAt?: string };
+  revokeCurrentDeviceSubscription: (reasonAr?: string) => void;
 
   // Authentication & Staff
   currentUser: User;
@@ -1295,11 +1311,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const revokeCurrentDeviceSubscription = useCallback((reasonAr?: string) => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'false');
+      localStorage.removeItem(STORAGE_KEYS.LICENSE_KEY);
+      localStorage.removeItem(STORAGE_KEYS.LICENSE_EXPIRES_AT);
+      localStorage.removeItem(STORAGE_KEYS.LICENSE_TYPE);
+      localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'true');
+    } catch {}
+
+    setIsAppPurchased(false);
+    setLicenseKey('');
+    setLicenseExpiresAt(null);
+    setIsLicenseExpired(true);
+    setIsTrialExpiredState(true);
+
+    setSettingsState(prev => {
+      const updated: StoreSettings = {
+        ...prev,
+        licenseInfo: {
+          isPurchased: false,
+          licenseKey: '',
+          licenseStatus: 'expired',
+        },
+      };
+      try {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    soundEffects.playWarning();
+    setIsPurchaseModalOpen(true);
+    notify(
+      '⛔ تم إلغاء اشتراك هذا الجهاز تلقائياً!',
+      reasonAr || 'تم إلغاء تفعيل الاشتراك على هذا الجهاز بسبب نقل التفعيل أو استخدام الكود في جهاز آخر.',
+      'error'
+    );
+  }, []);
+
+  // Real-time Firebase Firestore listener: if this device's active license is transferred to another device or revoked, cancel subscription immediately!
+  useEffect(() => {
+    if (!isAppPurchased || !licenseKey) return;
+    const hw = getDeviceHardwareInfo();
+    const unsub = subscribeToFirebaseLicenseBinding(licenseKey, hw.deviceId, details => {
+      const timeAr = formatCodeUsageTimestampAr(details.usedAt);
+      revokeCurrentDeviceSubscription(
+        `تم نقل تفعيل الكود (${licenseKey}) إلى جهاز آخر (${details.newDeviceId} — ${details.newDeviceName}) في موعد (${timeAr})، وتم إلغاء اشتراك هذا الجهاز فوراً.`
+      );
+    });
+    return () => unsub();
+  }, [isAppPurchased, licenseKey, revokeCurrentDeviceSubscription]);
+
   const activatePurchaseCode = (
     code: string,
-    customerInfo?: { name?: string; phone?: string; customExpiresAtIso?: string }
-  ): { success: boolean; message: string; newExpiresAt?: string } => {
-    const res = validateLicenseCode(code, licenseKey);
+    customerInfo?: {
+      name?: string;
+      phone?: string;
+      customExpiresAtIso?: string;
+      allowTransfer?: boolean;
+      previousDeviceIdToRevoke?: string | null;
+      targetDeviceId?: string;
+      targetDeviceFingerprint?: string;
+      targetDeviceName?: string;
+    }
+  ): { success: boolean; message: string; newExpiresAt?: string; usedAt?: string } => {
+    const isTransfer = Boolean(customerInfo?.allowTransfer);
+    const res = validateLicenseCode(code, licenseKey, isTransfer);
     if (!res.valid || !res.matchedCode) {
       soundEffects.playWarning();
       return { success: false, message: res.reason || 'كود التفعيل غير صالح' };
@@ -1308,6 +1386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const matched = res.matchedCode;
     const cleanCode = matched.code;
     const now = new Date();
+    const nowIso = now.toISOString();
 
     // Calculate or use provided subscription expiration date
     let expiresAtIso: string | undefined = customerInfo?.customExpiresAtIso;
@@ -1334,48 +1413,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Enforce single-use & device binding: mark code as used in localStorage + server registry
+    // Enforce single-use & device fingerprint binding in Firebase Firestore + Server + localStorage
     const hwDevice = getDeviceHardwareInfo();
+    const effectiveDeviceId = customerInfo?.targetDeviceId || hwDevice.deviceId;
+    const effectiveFingerprint = customerInfo?.targetDeviceFingerprint || hwDevice.deviceFingerprint;
+    const effectiveDeviceName = customerInfo?.targetDeviceName || hwDevice.deviceName;
+
     if (matched.singleUse) {
       markCodeAsUsed(matched.code, {
         ...customerInfo,
-        deviceId: hwDevice.deviceId,
-        deviceName: hwDevice.deviceName,
+        usedAt: nowIso,
+        deviceId: effectiveDeviceId,
+        deviceFingerprint: effectiveFingerprint,
+        deviceName: effectiveDeviceName,
         expiresAt: expiresAtIso,
         durationLabelAr: matched.durationLabelAr,
       });
     }
 
-    // Bind code to this device ID on the server and broadcast across tabs/devices
-    fetch('/api/license/activate-device', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: cleanCode,
-        deviceId: hwDevice.deviceId,
-        deviceName: hwDevice.deviceName,
-        customerName: customerInfo?.name || settings.storeNameAr,
-        customerPhone: customerInfo?.phone || settings.phone,
-        expiresAt: expiresAtIso,
-        durationLabelAr: matched.durationLabelAr,
-      }),
+    // Bind or transfer code in Firebase Firestore (`licenseActivations/{codeId}`) + Express server and revoke other devices
+    bindOrTransferLicenseInFirebaseAndServer({
+      code: cleanCode,
+      deviceId: effectiveDeviceId,
+      deviceFingerprint: effectiveFingerprint,
+      deviceName: effectiveDeviceName,
+      storeName: customerInfo?.name || settings.storeNameAr,
+      customerPhone: customerInfo?.phone || settings.phone,
+      expiresAt: expiresAtIso,
+      durationLabelAr: matched.durationLabelAr,
+      isTransfer,
+      previousDeviceIdToRevoke: customerInfo?.previousDeviceIdToRevoke,
     }).catch(() => {});
-
-    try {
-      const bc = new BroadcastChannel('kian_pos_devices_mesh');
-      bc.postMessage({
-        type: 'LICENSE_ACTIVATED_ON_DEVICE',
-        payload: {
-          code: cleanCode,
-          deviceId: hwDevice.deviceId,
-          deviceName: hwDevice.deviceName,
-          customerName: customerInfo?.name || settings.storeNameAr,
-          expiresAt: expiresAtIso,
-          durationLabelAr: matched.durationLabelAr,
-        },
-      });
-      bc.close();
-    } catch {}
 
     // Store in localStorage
     localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'true');
@@ -1514,7 +1582,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'success'
     );
 
-    return { success: true, message: `تم تفعيل ${matched.durationLabelAr} وتصفير كافة البيانات بنجاح` };
+    return {
+      success: true,
+      message: isTransfer
+        ? `تم نقل تفعيل (${matched.durationLabelAr}) إلى هذا الجهاز وإلغاء اشتراك الجهاز السابق بنجاح`
+        : `تم تفعيل ${matched.durationLabelAr} وتصفير كافة البيانات بنجاح`,
+      newExpiresAt: expiresAtIso,
+      usedAt: nowIso,
+    };
   };
 
   // =========================================================================
@@ -5213,6 +5288,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify({
           code: licenseKey || undefined,
           deviceId: hwDevice.deviceId,
+          deviceFingerprint: hwDevice.deviceFingerprint,
           deviceName: hwDevice.deviceName,
           customerName: settings.storeNameAr,
           customerPhone: settings.phone,
@@ -5223,15 +5299,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
         .then(r => r.json())
         .then(data => {
+          if (data?.revokedCurrentDevice) {
+            revokeCurrentDeviceSubscription(
+              `تم إلغاء اشتراك هذا الجهاز لأن الكود (${licenseKey}) تم نقله وتفعيله على جهاز آخر بمعرف (${data.boundToDeviceId || 'جهاز جديد'}).`
+            );
+            return;
+          }
           if (data?.records && Array.isArray(data.records)) {
             data.records.forEach((rec: any) => {
               if (rec?.code && rec?.deviceId) {
                 markCodeAsUsed(rec.code, {
                   deviceId: rec.deviceId,
+                  deviceFingerprint: rec.deviceFingerprint,
                   deviceName: rec.deviceName,
                   name: rec.customerName,
+                  usedAt: rec.activatedAt,
                   expiresAt: rec.expiresAt,
                   durationLabelAr: rec.durationLabelAr,
+                  transferCount: rec.transferCount,
+                  revokedDeviceIds: rec.revokedDeviceIds,
                 });
               }
             });
@@ -5306,11 +5392,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (payload?.code && payload?.deviceId) {
               markCodeAsUsed(payload.code, {
                 deviceId: payload.deviceId,
+                deviceFingerprint: payload.deviceFingerprint,
                 deviceName: payload.deviceName,
                 name: payload.customerName,
+                usedAt: payload.usedAt,
                 expiresAt: payload.expiresAt,
                 durationLabelAr: payload.durationLabelAr,
               });
+            }
+          } else if (type === 'LICENSE_TRANSFERRED_OR_REVOKED') {
+            const myDevice = getDeviceHardwareInfo();
+            if (payload?.code && payload?.newOwnerDeviceId) {
+              markCodeAsUsed(payload.code, {
+                deviceId: payload.newOwnerDeviceId,
+                deviceFingerprint: payload.newOwnerFingerprint,
+                deviceName: payload.newOwnerDeviceName,
+                usedAt: payload.usedAt,
+                revokedDeviceIds: payload.revokedDeviceIds,
+              });
+            }
+            if (
+              licenseKey &&
+              payload?.code &&
+              licenseKey.trim().toLowerCase() === payload.code.trim().toLowerCase() &&
+              payload.newOwnerDeviceId &&
+              payload.newOwnerDeviceId !== myDevice.deviceId
+            ) {
+              const timeAr = formatCodeUsageTimestampAr(payload.usedAt);
+              revokeCurrentDeviceSubscription(
+                `تم نقل تفعيل الكود (${payload.code}) إلى جهاز جديد بمعرف (${payload.newOwnerDeviceId}) في موعد (${timeAr})، وتم إلغاء اشتراك هذا الجهاز فوراً.`
+              );
             }
           } else if (type === 'LICENSE_DUPLICATE_ATTEMPT') {
             const myDevice = getDeviceHardwareInfo();
@@ -5490,8 +5601,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (data?.code && data?.deviceId) {
             markCodeAsUsed(data.code, {
               deviceId: data.deviceId,
+              deviceFingerprint: data.deviceFingerprint,
               deviceName: data.deviceName,
+              usedAt: data.activatedAt,
             });
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('LICENSE_TRANSFERRED_OR_REVOKED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          const myDevice = getDeviceHardwareInfo();
+          if (data?.code && data?.newOwnerDeviceId) {
+            markCodeAsUsed(data.code, {
+              deviceId: data.newOwnerDeviceId,
+              deviceFingerprint: data.newOwnerFingerprint,
+              deviceName: data.newOwnerDeviceName,
+              usedAt: data.activatedAt,
+              revokedDeviceIds: data.revokedDeviceIds,
+            });
+          }
+          if (
+            licenseKey &&
+            data?.code &&
+            licenseKey.trim().toLowerCase() === data.code.trim().toLowerCase() &&
+            data.newOwnerDeviceId &&
+            data.newOwnerDeviceId !== myDevice.deviceId
+          ) {
+            const timeAr = formatCodeUsageTimestampAr(data.activatedAt);
+            revokeCurrentDeviceSubscription(
+              `تم نقل تفعيل الكود (${data.code}) إلى جهاز آخر بمعرف (${data.newOwnerDeviceId}) في موعد (${timeAr})، وتم إلغاء اشتراك هذا الجهاز فوراً.`
+            );
           }
         } catch {}
       });
@@ -5677,6 +5818,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isPurchaseModalOpen,
         setIsPurchaseModalOpen,
         activatePurchaseCode,
+        revokeCurrentDeviceSubscription,
         currentUser,
         setCurrentUser,
         users,

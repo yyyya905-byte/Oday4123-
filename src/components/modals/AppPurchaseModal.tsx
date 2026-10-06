@@ -22,14 +22,19 @@ import {
   Search,
   Copy,
   RefreshCw,
-  Ban
+  Ban,
+  Fingerprint,
+  Database,
+  ArrowLeftRight
 } from 'lucide-react';
 import {
   validateLicenseCode,
   PredefinedLicenseCode,
   getDeviceHardwareInfo,
   verifyCodeDeviceProtectionOnServer,
-  LicenseDeviceVerificationResult
+  LicenseDeviceVerificationResult,
+  formatCodeUsageTimestampAr,
+  getUsedCodeRecord
 } from '../../utils/licenseUtils';
 import { soundEffects } from '../../services/audio';
 
@@ -53,6 +58,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     trialHoursRemaining,
     isTrialExpired,
     activatePurchaseCode,
+    revokeCurrentDeviceSubscription,
     settings,
     notify
   } = useApp();
@@ -63,7 +69,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
   const [error, setError] = useState('');
   const [copiedDeviceId, setCopiedDeviceId] = useState(false);
 
-  // Device Protection & Anti-Sharing Verification State
+  // Device Fingerprinting & Firebase Protection State
   const currentDevice = getDeviceHardwareInfo();
   const [isVerifyingDevice, setIsVerifyingDevice] = useState(false);
   const [verificationResult, setVerificationResult] = useState<LicenseDeviceVerificationResult | null>(null);
@@ -72,8 +78,12 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     const rand = Math.floor(1000 + Math.random() * 9000);
     return `KIAN-DEV-NEW-${rand}-EXT`;
   });
+  const [simulatedNewFingerprint] = useState(() => {
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return `FP-NEW-${rand}-EXT9`;
+  });
 
-  // Confirmation Dialog State before saving to localStorage
+  // Confirmation Dialog State (supports both fresh activation AND transfer from another device)
   interface PendingActivationDetails {
     code: string;
     matchedCode: PredefinedLicenseCode;
@@ -84,9 +94,18 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     isExtension: boolean;
     currentExpiresFormattedAr?: string;
     boundToDeviceId: string;
+    boundToFingerprint: string;
+    boundToDeviceName: string;
+    isTransferFromAnotherDevice?: boolean;
+    previousDeviceIdToRevoke?: string | null;
+    previousDeviceFingerprint?: string | null;
+    previousDeviceName?: string | null;
+    previousCodeUsedAtFormatted?: string;
   }
   const [pendingActivation, setPendingActivation] = useState<PendingActivationDetails | null>(null);
   const [isConfirming, setIsConfirming] = useState<boolean>(false);
+
+  const activeLocalRecord = licenseKey ? getUsedCodeRecord(licenseKey) : undefined;
 
   useEffect(() => {
     if (!isOpen) {
@@ -98,19 +117,20 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const handleCopyDeviceId = () => {
-    navigator.clipboard?.writeText(currentDevice.deviceId).catch(() => {});
+    const textToCopy = `${currentDevice.deviceId} | ${currentDevice.deviceFingerprint}`;
+    navigator.clipboard?.writeText(textToCopy).catch(() => {});
     setCopiedDeviceId(true);
     soundEffects.playClick();
     setTimeout(() => setCopiedDeviceId(false), 2000);
   };
 
   /**
-   * Runs the Security Protection Check ("هل هذا الكود مستخدم في أي جهاز؟ وأيش معرفه؟ هل هو مستخدم؟")
+   * Runs the Firebase Firestore & Device Fingerprinting Protection Check
    */
   const handleRunProtectionCheck = async (asSimulatedNewDevice: boolean = simulateNewDeviceMode): Promise<LicenseDeviceVerificationResult | null> => {
     const trimmed = inputCode.trim();
     if (!trimmed) {
-      setError('يرجى إدخال كود الاشتراك أولاً لفحص حالته عبر أداة الحماية');
+      setError('يرجى إدخال كود التفعيل أولاً للتحقق من بصمة الجهاز في قاعدة بيانات فايربيس');
       return null;
     }
 
@@ -118,9 +138,10 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     setError('');
 
     const reqId = asSimulatedNewDevice ? simulatedNewDeviceId : currentDevice.deviceId;
-    const reqName = asSimulatedNewDevice ? 'جهاز جديد يحاول التفعيل (اختبار الحماية)' : currentDevice.deviceName;
+    const reqName = asSimulatedNewDevice ? 'جهاز جديد (اختبار نقل/حماية الكود)' : currentDevice.deviceName;
+    const reqFp = asSimulatedNewDevice ? simulatedNewFingerprint : currentDevice.deviceFingerprint;
 
-    const result = await verifyCodeDeviceProtectionOnServer(trimmed, reqId, reqName);
+    const result = await verifyCodeDeviceProtectionOnServer(trimmed, reqId, reqName, reqFp);
     setIsVerifyingDevice(false);
     setVerificationResult(result);
 
@@ -130,16 +151,20 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       return result;
     }
 
-    // If the code is already used on another device (or already consumed), show immediate notification to the new device!
     if (result.isUsedOnAnyDevice) {
       soundEffects.playWarning();
-      const alertTitle = '⛔ إشعار حماية الاشتراك: الكود مستخدم!';
-      const alertBody = result.isUsedByAnotherDevice
-        ? `هذا الكود (${trimmed}) مستخدم مسبقاً في جهاز آخر بمعرف (${result.boundDeviceId}). تم رفض استخدامه في الجهاز الجديد (${reqId})!`
-        : `هذا الكود (${trimmed}) مستخدم ومفعل مسبقاً بمعرف الجهاز (${result.boundDeviceId}) ولا يمكن إعادة استخدامه!`;
-
-      setError(alertBody);
-      notify(alertTitle, alertBody, 'error');
+      const usedTimeAr = formatCodeUsageTimestampAr(result.boundActivatedAt);
+      if (result.isUsedByAnotherDevice) {
+        const alertTitle = '⚠️ الكود مستخدم في جهاز آخر في قاعدة بيانات Firebase!';
+        const alertBody = `الكود (${trimmed}) مربوط بالجهاز (${result.boundDeviceId}) منذ (${usedTimeAr}). يرجى تأكيد رغبتك في نقل التفعيل إلى الجهاز الحالي وإلغاء اشتراك الجهاز الآخر.`;
+        setError(alertBody);
+        notify(alertTitle, alertBody, 'warning');
+      } else {
+        const alertTitle = 'ℹ️ الكود مفعل مسبقاً على نفس بصمة جهازك';
+        const alertBody = `هذا الكود (${trimmed}) مربوط ومفعل بالفعل على بصمة هذا الجهاز (${result.boundDeviceFingerprint}) منذ (${usedTimeAr}).`;
+        setError(alertBody);
+        notify(alertTitle, alertBody, 'info');
+      }
       return result;
     }
 
@@ -147,36 +172,15 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     return result;
   };
 
-  const handleProceedToConfirmation = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!inputCode.trim()) {
-      setError('يرجى كتابة أو لصق كود التفعيل أولاً');
-      return;
-    }
-
-    // Step 1: Always run the Server & Cross-Device Protection Verification first!
-    const securityCheck = await handleRunProtectionCheck(simulateNewDeviceMode);
-    if (!securityCheck || !securityCheck.validCode) {
-      return;
-    }
-
-    if (securityCheck.isUsedOnAnyDevice || securityCheck.isUsedByAnotherDevice) {
-      // Blocked by Device-Binding Protection Tool!
-      return;
-    }
-
-    const res = validateLicenseCode(inputCode.trim(), licenseKey);
-    if (!res.valid || !res.matchedCode) {
-      soundEffects.playWarning();
-      setError(res.reason || 'كود التفعيل غير صالح');
-      notify('⛔ إشعار: الكود مستخدم أو غير صالح', res.reason || 'لا يمكن استخدام هذا الكود', 'error');
-      return;
-    }
-
-    const matched = res.matchedCode;
+  /**
+   * Prepares the confirmation step (either normal activation OR transfer from another device)
+   */
+  const buildPendingActivationStep = (
+    matched: PredefinedLicenseCode,
+    isTransfer: boolean,
+    securityCheck: LicenseDeviceVerificationResult
+  ) => {
     const now = new Date();
-
-    // Check if user currently has an active unexpired subscription
     const isExtension = Boolean(
       isAppPurchased &&
       licenseExpiresAt &&
@@ -184,7 +188,6 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     );
     const baseDate = isExtension ? new Date(licenseExpiresAt!) : now;
 
-    // Calculate new expiration date
     const targetDate = new Date(baseDate.getTime());
     if (matched.duration === '1_year' || matched.durationDays === 365) {
       targetDate.setFullYear(targetDate.getFullYear() + 1);
@@ -210,9 +213,13 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       });
     }
 
+    const targetId = simulateNewDeviceMode ? simulatedNewDeviceId : currentDevice.deviceId;
+    const targetFp = simulateNewDeviceMode ? simulatedNewFingerprint : currentDevice.deviceFingerprint;
+    const targetName = simulateNewDeviceMode ? 'جهاز جديد منتقل إليه التفعيل' : currentDevice.deviceName;
+
     setError('');
     setPendingActivation({
-      code: inputCode.trim(),
+      code: matched.code,
       matchedCode: matched,
       durationLabelAr: matched.durationLabelAr,
       daysGranted: matched.durationDays,
@@ -220,8 +227,73 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       newExpiresAtFormattedAr: formattedAr,
       isExtension,
       currentExpiresFormattedAr: currentExpAr,
-      boundToDeviceId: currentDevice.deviceId
+      boundToDeviceId: targetId,
+      boundToFingerprint: targetFp,
+      boundToDeviceName: targetName,
+      isTransferFromAnotherDevice: isTransfer,
+      previousDeviceIdToRevoke: securityCheck.boundDeviceId,
+      previousDeviceFingerprint: securityCheck.boundDeviceFingerprint,
+      previousDeviceName: securityCheck.boundDeviceName,
+      previousCodeUsedAtFormatted: formatCodeUsageTimestampAr(securityCheck.boundActivatedAt),
     });
+  };
+
+  const handleProceedToConfirmation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!inputCode.trim()) {
+      setError('يرجى كتابة أو لصق كود التفعيل أولاً');
+      return;
+    }
+
+    // Step 1: Always verify Device Fingerprint against Firebase Firestore first!
+    const securityCheck = await handleRunProtectionCheck(simulateNewDeviceMode);
+    if (!securityCheck || !securityCheck.validCode || !securityCheck.matchedCode) {
+      return;
+    }
+
+    // If used on ANOTHER device, do not silently activate — require explicit user confirmation to transfer or cancel!
+    if (securityCheck.isUsedByAnotherDevice) {
+      return;
+    }
+
+    // If already used on the SAME device, allow re-confirming/extending if user wants, or block if single-use already consumed
+    if (securityCheck.isUsedOnAnyDevice && !securityCheck.isUsedByAnotherDevice) {
+      return;
+    }
+
+    const res = validateLicenseCode(inputCode.trim(), licenseKey, false);
+    if (!res.valid || !res.matchedCode) {
+      soundEffects.playWarning();
+      setError(res.reason || 'كود التفعيل غير صالح');
+      return;
+    }
+
+    buildPendingActivationStep(res.matchedCode, false, securityCheck);
+  };
+
+  /**
+   * Triggered when user confirms they want to TRANSFER the activation from the other device to the current device
+   * and revoke/cancel the old device's subscription!
+   */
+  const handleRequestTransferToCurrentDevice = () => {
+    if (!verificationResult || !verificationResult.matchedCode) return;
+    soundEffects.playClick();
+    buildPendingActivationStep(verificationResult.matchedCode, true, verificationResult);
+  };
+
+  /**
+   * Triggered when a new unauthorized device tries to use the code and the user chooses to cancel/revoke the new device's subscription
+   */
+  const handleCancelNewDeviceSubscriptionNow = () => {
+    const usedTimeAr = formatCodeUsageTimestampAr(verificationResult?.boundActivatedAt || new Date().toISOString());
+    const attemptedId = verificationResult?.requestingDeviceId || currentDevice.deviceId;
+    const ownerId = verificationResult?.boundDeviceId || 'الجهاز الأصلي';
+
+    revokeCurrentDeviceSubscription(
+      `تم إلغاء اشتراك الجهاز الجديد (${attemptedId}) فوراً لمحاولته استخدام الكود (${inputCode.trim()}) المربوط بالجهاز (${ownerId}) منذ موعد (${usedTimeAr}).`
+    );
+    setVerificationResult(null);
+    setInputCode('');
   };
 
   const handleFinalConfirm = () => {
@@ -231,10 +303,22 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     const res = activatePurchaseCode(pendingActivation.code, {
       name: customerName,
       phone: customerPhone,
-      customExpiresAtIso: pendingActivation.newExpiresAtIso
+      customExpiresAtIso: pendingActivation.newExpiresAtIso,
+      allowTransfer: Boolean(pendingActivation.isTransferFromAnotherDevice),
+      previousDeviceIdToRevoke: pendingActivation.previousDeviceIdToRevoke,
+      targetDeviceId: pendingActivation.boundToDeviceId,
+      targetDeviceFingerprint: pendingActivation.boundToFingerprint,
+      targetDeviceName: pendingActivation.boundToDeviceName,
     });
 
     if (res.success) {
+      if (pendingActivation.isTransferFromAnotherDevice) {
+        notify(
+          '✅ تم نقل التفعيل إلى هذا الجهاز وإلغاء اشتراك الجهاز السابق!',
+          `تم ربط الكود (${pendingActivation.code}) ببصمة هذا الجهاز (${pendingActivation.boundToFingerprint}) في Firebase وإلغاء اشتراك الجهاز السابق (${pendingActivation.previousDeviceIdToRevoke}).`,
+          'success'
+        );
+      }
       setError('');
       setTimeout(() => {
         setIsConfirming(false);
@@ -324,10 +408,10 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   <span>الترخيص الحالي: {licenseDurationLabel}</span>
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-mono text-[10px] font-bold">
-                  نشط ✓
+                  نشط وموثق في Firebase ✓
                 </span>
               </div>
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-emerald-200/60 dark:border-emerald-800/60">
+              <div className="flex items-center justify-between text-xs pt-1 border-t border-emerald-200/60 dark:border-emerald-800/60 flex-wrap gap-2">
                 <span className="text-[11px] text-emerald-700 dark:text-emerald-300">
                   كود الترخيص: <span className="font-mono font-bold tracking-widest">••••••••</span>
                 </span>
@@ -337,14 +421,24 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </span>
                 )}
               </div>
+              {activeLocalRecord?.usedAt && (
+                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-emerald-200/60 dark:border-emerald-800/60 flex-wrap gap-1">
+                  <span className="text-emerald-700 dark:text-emerald-300 font-bold">
+                    موعد استخدام وتفعيل الكود:
+                  </span>
+                  <span className="font-mono font-black text-emerald-900 dark:text-emerald-100">
+                    {formatCodeUsageTimestampAr(activeLocalRecord.usedAt)}
+                  </span>
+                </div>
+              )}
             </div>
           ) : isLicenseExpired ? (
             <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200 flex items-center gap-2.5 text-xs">
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
               <div>
-                <p className="font-black">انتهت مدة الترخيص الخاص بهذا الجهاز</p>
+                <p className="font-black">انتهت مدة الترخيص أو تم إلغاء اشتراك هذا الجهاز</p>
                 <p className="text-[11px] text-rose-700 dark:text-rose-300">
-                  أدخل كود تجديد صالح (سنة أو شهر) لتجديد الاشتراك ومواصلة العمل.
+                  أدخل كود تفعيل صالح أو قم بتأكيد نقل التفعيل إلى بصمة هذا الجهاز عبر Firebase.
                 </p>
               </div>
             </div>
@@ -468,24 +562,38 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
             <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-amber-500/15 via-emerald-500/10 to-slate-50 dark:to-slate-900 border-2 border-amber-500/60 shadow-xl space-y-4 animate-in fade-in zoom-in-95">
               <div className="flex items-center gap-3 border-b border-amber-500/20 pb-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-md shrink-0">
-                  <CheckCircle2 className="w-6 h-6" />
+                  {pendingActivation.isTransferFromAnotherDevice ? (
+                    <ArrowLeftRight className="w-6 h-6" />
+                  ) : (
+                    <CheckCircle2 className="w-6 h-6" />
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
-                      تأكيد تفاصيل الاشتراك الجديد 👑
+                      {pendingActivation.isTransferFromAnotherDevice
+                        ? 'تأكيد نقل التفعيل إلى الجهاز الحالي وإلغاء اشتراك الجهاز الآخر 🔄'
+                        : 'تأكيد تفاصيل الاشتراك الجديد 👑'}
                     </h4>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[10px]">
-                      غير مستخدم في أي جهاز ✓
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-white font-black text-[10px] ${
+                        pendingActivation.isTransferFromAnotherDevice ? 'bg-indigo-600' : 'bg-emerald-600'
+                      }`}
+                    >
+                      {pendingActivation.isTransferFromAnotherDevice
+                        ? 'نقل ملكية الكود في Firebase'
+                        : 'غير مستخدم في أي جهاز ✓'}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    تم التحقق عبر أداة الحماية: الكود متاح وسيتم ربطه حصرياً بمعرف جهازك:
+                    {pendingActivation.isTransferFromAnotherDevice
+                      ? 'سيتم تحديث بصمة الجهاز في قاعدة بيانات Firebase وإلغاء اشتراك الجهاز السابق فوراً:'
+                      : 'تم التحقق عبر Firebase: الكود متاح وسيتم ربطه حصرياً ببصمة ومعرف جهازك:'}
                   </p>
                 </div>
               </div>
 
-              {/* Renewal Breakdown Summary */}
+              {/* Renewal / Transfer Breakdown Summary */}
               <div className="space-y-2.5 bg-white/90 dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 text-xs">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
                   <span className="text-slate-500 dark:text-slate-400 font-bold">نوع الاشتراك:</span>
@@ -499,10 +607,36 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
-                  <span className="text-slate-500 dark:text-slate-400 font-bold">معرف الجهاز الذي سيرتبط به الكود:</span>
+                {pendingActivation.isTransferFromAnotherDevice && pendingActivation.previousDeviceIdToRevoke && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/70 space-y-1.5 text-[11px]">
+                    <div className="font-black text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
+                      <Ban className="w-4 h-4 shrink-0" />
+                      <span>الجهاز السابق الذي سيتم إلغاء اشتراكه فوراً:</span>
+                    </div>
+                    <div className="flex items-center justify-between flex-wrap gap-1 text-rose-900 dark:text-rose-200">
+                      <span>المعرف والبصمة السابقة:</span>
+                      <span className="font-mono font-black">
+                        {pendingActivation.previousDeviceIdToRevoke} ({pendingActivation.previousDeviceFingerprint || 'FP'})
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between flex-wrap gap-1 text-rose-800 dark:text-rose-300">
+                      <span>موعد استخدام الكود السابق:</span>
+                      <span className="font-mono font-bold">{pendingActivation.previousCodeUsedAtFormatted}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700 flex-wrap gap-1">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold">معرف الجهاز الحالي (Device ID):</span>
                   <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 text-[11px]">
                     {pendingActivation.boundToDeviceId}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700 flex-wrap gap-1">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold">بصمة الجهاز في فايربيس (Fingerprint):</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-[11px]">
+                    {pendingActivation.boundToFingerprint}
                   </span>
                 </div>
 
@@ -521,7 +655,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
 
                 <div className="pt-1">
                   <span className="text-slate-500 dark:text-slate-400 font-bold block mb-1">
-                    تاريخ انتهاء الاشتراك الجديد بعد التجديد:
+                    تاريخ انتهاء الاشتراك الجديد:
                   </span>
                   <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2">
                     <Calendar className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -533,11 +667,11 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
 
                 <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>✨ تصفير شامل تلقائي: فور تأكيد كود الشهر أو السنة، سيتم تصفير كافة البيانات التجريبية (الفواتير، الديون، الأقساط، المشتريات، المنتجات، المخزون، والمصروفات) إلى (0) للبدء بحسابات متجرك الحقيقية على نظافة.</span>
+                  <span>✨ تصفير شامل تلقائي: فور التأكيد، سيتم تصفير كافة البيانات التجريبية إلى (0) للبدء بحسابات متجرك الحقيقية على نظافة.</span>
                 </div>
 
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
-                  🔒 سيتم قفل هذا الكود على معرف جهازك ({pendingActivation.boundToDeviceId}) لمنع أي جهاز آخر من استخدامه.
+                  🔒 سيتم حفظ بصمة الجهاز ({pendingActivation.boundToFingerprint}) وموعد الاستخدام في Firebase Firestore وإلغاء اشتراك أي أجهزة أخرى.
                 </div>
               </div>
 
@@ -550,7 +684,13 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs shadow-lg shadow-emerald-600/25 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span>{isConfirming ? 'جاري الربط والتفعيل...' : 'تأكيد وربط الكود بهذا الجهاز نهائياً'}</span>
+                  <span>
+                    {isConfirming
+                      ? 'جاري التوثيق في Firebase...'
+                      : pendingActivation.isTransferFromAnotherDevice
+                      ? 'تأكيد نقل التفعيل لهذا الجهاز وإلغاء اشتراك الجهاز السابق'
+                      : 'تأكيد وربط الكود ببصمة هذا الجهاز في Firebase'}
+                  </span>
                 </button>
 
                 <button
@@ -560,45 +700,53 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>تراجع وتعديل الكود</span>
+                  <span>تراجع</span>
                 </button>
               </div>
             </div>
           ) : (
-            /* Activation Form + Subscription Code Device-Binding Protection Tool */
+            /* Activation Form + Firebase Device Fingerprinting & Anti-Sharing Protection Tool */
             <div className="space-y-3.5">
-              {/* Protection Tool Header & Current Device Identifier */}
+              {/* Protection Tool Header & Current Device Identifier + Fingerprint */}
               <div className="p-3.5 rounded-2xl bg-slate-900 text-white border border-slate-800 space-y-2.5 shadow-md">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0">
-                      <ShieldCheck className="w-4 h-4" />
+                      <Fingerprint className="w-4 h-4" />
                     </div>
                     <div>
                       <h4 className="text-xs font-black text-white flex items-center gap-1.5">
-                        <span>أداة حماية وفحص أكواد الاشتراك عبر الأجهزة</span>
+                        <span>حماية التحقق من بصمة الجهاز (Device Fingerprinting & Firebase)</span>
                       </h4>
                       <p className="text-[10px] text-slate-400">
-                        تتحقق تلقائياً: هل الكود مستخدم في أي جهاز؟ وما هو معرفه؟ وتمنع استخدامه في جهاز جديد
+                        مقارنة معرف وبصمة الجهاز بقاعدة بيانات Firebase، مع إمكانية نقل التفعيل وإلغاء اشتراك الأجهزة الأخرى
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black">
-                    حماية نشطة 🛡️
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black flex items-center gap-1">
+                    <Database className="w-3 h-3" />
+                    <span>Firebase متصل ✓</span>
                   </span>
                 </div>
 
-                {/* Current Device Hardware ID Row */}
+                {/* Current Device Hardware ID & Fingerprint Row */}
                 <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
                     <Cpu className="w-4 h-4 text-amber-400 shrink-0" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-0.5">
                       <span className="text-[10px] text-slate-400 block">
-                        {simulateNewDeviceMode ? 'معرف الجهاز الجديد الافتراضي (وضع الاختبار):' : 'معرف هذا الجهاز الحالي (Device ID):'}
+                        {simulateNewDeviceMode
+                          ? 'معرف وبصمة الجهاز الجديد الافتراضي (وضع الاختبار):'
+                          : 'معرف وبصمة هذا الجهاز الحالي (Device ID & Fingerprint):'}
                       </span>
-                      <span className="font-mono font-black text-amber-300 text-xs truncate block">
-                        {simulateNewDeviceMode ? simulatedNewDeviceId : currentDevice.deviceId}
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-black text-amber-300 text-xs">
+                          {simulateNewDeviceMode ? simulatedNewDeviceId : currentDevice.deviceId}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-mono text-[10px] font-bold">
+                          بصمة: {simulateNewDeviceMode ? simulatedNewFingerprint : currentDevice.deviceFingerprint}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -609,10 +757,10 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                       type="button"
                       onClick={handleCopyDeviceId}
                       className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                      title="نسخ معرف الجهاز"
+                      title="نسخ معرف وبصمة الجهاز"
                     >
                       <Copy className="w-3 h-3" />
-                      <span>{copiedDeviceId ? 'تم النسخ' : 'نسخ المعرف'}</span>
+                      <span>{copiedDeviceId ? 'تم النسخ' : 'نسخ البصمة'}</span>
                     </button>
                   </div>
                 </div>
@@ -621,7 +769,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                 <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
                   <span className="text-slate-300 font-bold flex items-center gap-1.5">
                     <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>وضع محاكاة جهاز جديد (لتجربة إشعار "الكود مستخدم"):</span>
+                    <span>وضع محاكاة جهاز جديد (لتجربة نقل التفعيل أو إلغاء اشتراك الأجهزة الجديدة):</span>
                   </span>
                   <button
                     type="button"
@@ -656,7 +804,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                           setInputCode(e.target.value);
                           setError('');
                         }}
-                        placeholder="أدخل كود الاشتراك هنا لفحصه أو تفعيله..."
+                        placeholder="أدخل كود الاشتراك هنا للتحقق من بصمة الجهاز في فايربيس..."
                         className="w-full px-3.5 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500 focus:outline-none text-slate-900 dark:text-white font-mono font-black text-sm tracking-wider text-center"
                       />
                     </div>
@@ -665,19 +813,19 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                       disabled={isVerifyingDevice || !inputCode.trim()}
                       onClick={() => handleRunProtectionCheck(simulateNewDeviceMode)}
                       className="px-3.5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black text-xs flex items-center gap-1.5 shrink-0 shadow-md cursor-pointer transition-all"
-                      title="اسأل الموقع: هل هذا الكود مستخدم في أي جهاز وأيش معرفه؟"
+                      title="التحقق من بصمة الجهاز ومقارنتها بقاعدة بيانات فايربيس"
                     >
                       {isVerifyingDevice ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
                       ) : (
                         <Search className="w-4 h-4" />
                       )}
-                      <span>فحص الكود</span>
+                      <span>فحص في Firebase</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Live 3-Question Protection Result Card ("الموقع يسأل: هل هذا الكود مستخدم في أي جهاز؟ وأيش معرفه؟ هل هو مستخدم؟") */}
+                {/* Live Firebase Device Fingerprinting & Transfer Confirmation Result Card */}
                 {verificationResult && (
                   <div
                     className={`p-4 rounded-2xl border-2 space-y-3 animate-in fade-in duration-200 ${
@@ -694,29 +842,33 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                           <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         )}
                         <span className="font-black text-xs sm:text-sm">
-                          تقرير أداة حماية وفحص الكود ({inputCode.trim()})
+                          تقرير مقارنة بصمة الجهاز في Firebase ({inputCode.trim()})
                         </span>
                       </div>
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                          verificationResult.isUsedOnAnyDevice || !verificationResult.validCode
+                          verificationResult.isUsedByAnotherDevice
+                            ? 'bg-amber-600 text-white'
+                            : verificationResult.isUsedOnAnyDevice || !verificationResult.validCode
                             ? 'bg-rose-600 text-white'
                             : 'bg-emerald-600 text-white'
                         }`}
                       >
-                        {verificationResult.isUsedOnAnyDevice
-                          ? '⛔ الكود مستخدم'
+                        {verificationResult.isUsedByAnotherDevice
+                          ? '⚠️ مستخدم في جهاز آخر'
+                          : verificationResult.isUsedOnAnyDevice
+                          ? '✓ مفعل على جهازك'
                           : verificationResult.validCode
                           ? '✓ غير مستخدم (متاح)'
                           : 'غير صالح'}
                       </span>
                     </div>
 
-                    {/* The 3 Explicit Security Questions answered by the site */}
+                    {/* Security Questions + Exact Usage Timestamp */}
                     <div className="space-y-2 text-xs">
-                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2">
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2 flex-wrap">
                         <span className="font-bold text-slate-600 dark:text-slate-300">
-                          1. هل هذا الكود مستخدم في أي جهاز؟
+                          1. هل الكود مستخدم في قاعدة بيانات Firebase؟
                         </span>
                         <span
                           className={`font-black ${
@@ -731,22 +883,33 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
 
                       <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2 flex-wrap">
                         <span className="font-bold text-slate-600 dark:text-slate-300">
-                          2. أيش معرف الجهاز المستخدم للكود؟
+                          2. معرف وبصمة الجهاز المسجل في Firebase:
                         </span>
                         <span className="font-mono font-black text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg">
                           {verificationResult.boundDeviceId
-                            ? `${verificationResult.boundDeviceId} (${verificationResult.boundDeviceName || 'جهاز كاشير'})`
+                            ? `${verificationResult.boundDeviceId} | بصمة: ${verificationResult.boundDeviceFingerprint || 'FP'}`
                             : verificationResult.securityQuestions.q2_whatIsDeviceId}
                         </span>
                       </div>
 
-                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2">
+                      {verificationResult.boundActivatedAt && (
+                        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-bold text-slate-600 dark:text-slate-300">
+                            3. موعد استخدام الكود (تاريخ ووقت التفعيل):
+                          </span>
+                          <span className="font-mono font-black text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg">
+                            {formatCodeUsageTimestampAr(verificationResult.boundActivatedAt)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2 flex-wrap">
                         <span className="font-bold text-slate-600 dark:text-slate-300">
-                          3. هل هو مستخدم حالياً؟ (قرار الحماية):
+                          4. نتيجة مقارنة بصمة الجهاز (Device Fingerprinting):
                         </span>
                         <span
                           className={`font-black ${
-                            verificationResult.isUsedOnAnyDevice
+                            verificationResult.isUsedByAnotherDevice
                               ? 'text-rose-600 dark:text-rose-400'
                               : 'text-emerald-600 dark:text-emerald-400'
                           }`}
@@ -756,21 +919,57 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                       </div>
                     </div>
 
-                    {/* Prominent Notification Banner for the New Device attempting to use an already-used code */}
-                    {verificationResult.isUsedOnAnyDevice && (
-                      <div className="p-3 rounded-xl bg-rose-600 text-white space-y-1.5 shadow-lg">
-                        <div className="flex items-center gap-2 font-black text-xs sm:text-sm">
-                          <Ban className="w-5 h-5 shrink-0" />
-                          <span>إشعار للجهاز الجديد: الكود مستخدم ولا يمكن تفعيله!</span>
+                    {/* Transfer Confirmation & New Device Subscription Revocation Box when used on ANOTHER device */}
+                    {verificationResult.isUsedByAnotherDevice && (
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 text-white border-2 border-amber-500/80 space-y-3 shadow-xl">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <ArrowLeftRight className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className="font-black text-xs sm:text-sm text-amber-300">
+                              الكود مستخدم في جهاز آخر — هل ترغب في نقل التفعيل إلى الجهاز الحالي؟
+                            </h5>
+                            <p className="text-[11px] text-slate-300 leading-relaxed">
+                              أثبتت مقارنة البصمة في <strong>Firebase</strong> أن هذا الكود مفعل في جهاز آخر بمعرف{' '}
+                              <span className="font-mono font-black text-amber-300 underline">
+                                {verificationResult.boundDeviceId}
+                              </span>{' '}
+                              وبصمة{' '}
+                              <span className="font-mono font-bold text-indigo-300">
+                                ({verificationResult.boundDeviceFingerprint})
+                              </span>{' '}
+                              منذ موعد الاستخدام{' '}
+                              <span className="font-mono font-bold text-emerald-300">
+                                ({formatCodeUsageTimestampAr(verificationResult.boundActivatedAt)})
+                              </span>
+                              .
+                            </p>
+                            <p className="text-[11px] text-rose-300 font-bold">
+                              ⚠️ عند نقل التفعيل للجهاز الحالي ({verificationResult.requestingDeviceId}) سيتم فوراً إلغاء اشتراك الجهاز الآخر، أو يمكنك إلغاء اشتراك الأجهزة الجديدة المحاولة فوراً:
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-rose-100 leading-relaxed">
-                          هذا الكود مربوط ومفعل مسبقاً على الجهاز صاحب المعرف{' '}
-                          <strong className="font-mono underline">{verificationResult.boundDeviceId}</strong>
-                          {verificationResult.boundActivatedAt
-                            ? ` بتاريخ (${new Date(verificationResult.boundActivatedAt).toLocaleDateString('ar-SA')})`
-                            : ''}
-                          . قام نظام الحماية بحظر تفعيله على هذا الجهاز ({verificationResult.requestingDeviceId}).
-                        </p>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleRequestTransferToCurrentDevice}
+                            className="w-full sm:flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-600 hover:to-emerald-600 text-slate-950 font-black text-xs shadow-lg cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                          >
+                            <ArrowLeftRight className="w-4 h-4 shrink-0" />
+                            <span>تأكيد نقل التفعيل للجهاز الحالي وإلغاء اشتراك الجهاز الآخر</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleCancelNewDeviceSubscriptionNow}
+                            className="w-full sm:w-auto py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                          >
+                            <Ban className="w-4 h-4 shrink-0" />
+                            <span>إلغاء اشتراك الجهاز الجديد فوراً</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

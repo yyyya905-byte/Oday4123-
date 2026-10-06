@@ -1002,20 +1002,28 @@ app.post("/api/menu/submit-review", (req, res) => {
 
 interface LicenseAttemptLog {
   attemptedByDeviceId: string;
+  attemptedByDeviceFingerprint?: string;
   attemptedByDeviceName: string;
   attemptedAt: string;
+  action?: 'blocked' | 'transferred' | 'revoked';
 }
 
 interface ActivatedLicenseServerRecord {
   code: string;
   isUsed: boolean;
   deviceId: string;
+  deviceFingerprint?: string;
   deviceName: string;
   customerName: string;
   customerPhone: string;
   durationLabelAr: string;
   activatedAt: string;
+  firstActivatedAt?: string;
   expiresAt?: string;
+  transferCount?: number;
+  revokedDeviceIds?: string[];
+  lastRevokedDeviceId?: string;
+  lastRevokedAt?: string;
   attemptLogs: LicenseAttemptLog[];
 }
 
@@ -1060,11 +1068,12 @@ function saveLicenseRegistryToDisk() {
 
 loadLicenseRegistryFromDisk();
 
-// 1. Verify if a subscription code is used on ANY device and return its Device ID
+// 1. Verify if a subscription code is used on ANY device and compare Device Fingerprint
 app.post("/api/license/verify-device", (req, res) => {
-  const { code, requestingDeviceId, requestingDeviceName } = req.body;
+  const { code, requestingDeviceId, requestingDeviceFingerprint, requestingDeviceName } = req.body;
   const cleanKey = String(code || "").trim().toLowerCase();
   const reqDevId = String(requestingDeviceId || "KIAN-DEV-UNKNOWN").trim();
+  const reqDevFp = String(requestingDeviceFingerprint || `FP-${reqDevId}`).trim();
   const reqDevName = String(requestingDeviceName || "جهاز جديد").trim();
 
   const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
@@ -1076,6 +1085,7 @@ app.post("/api/license/verify-device", (req, res) => {
       isUsedByAnotherDevice: false,
       isSameDevice: false,
       boundDeviceId: null,
+      boundDeviceFingerprint: null,
       securityQuestions: {
         q1_isUsedOnAnyDevice: "الكود غير مسجل ضمن أكواد النظام المعتمدة",
         q2_whatIsDeviceId: "لا يوجد",
@@ -1094,12 +1104,13 @@ app.post("/api/license/verify-device", (req, res) => {
     const isUsedByAnotherDevice = !isSameDevice;
 
     if (isUsedByAnotherDevice) {
-      // Log the unauthorized/new device attempt
       existingRecord.attemptLogs = existingRecord.attemptLogs || [];
       existingRecord.attemptLogs.unshift({
         attemptedByDeviceId: reqDevId,
+        attemptedByDeviceFingerprint: reqDevFp,
         attemptedByDeviceName: reqDevName,
         attemptedAt: new Date().toISOString(),
+        action: "blocked",
       });
       if (existingRecord.attemptLogs.length > 25) {
         existingRecord.attemptLogs = existingRecord.attemptLogs.slice(0, 25);
@@ -1110,8 +1121,10 @@ app.post("/api/license/verify-device", (req, res) => {
       broadcastSseEvent("LICENSE_DUPLICATE_ATTEMPT", {
         code: predefined.code,
         boundDeviceId: existingRecord.deviceId,
+        boundDeviceFingerprint: existingRecord.deviceFingerprint,
         boundDeviceName: existingRecord.deviceName,
         attemptedByDeviceId: reqDevId,
+        attemptedByDeviceFingerprint: reqDevFp,
         attemptedByDeviceName: reqDevName,
         attemptedAt: new Date().toISOString(),
       });
@@ -1124,21 +1137,27 @@ app.post("/api/license/verify-device", (req, res) => {
       isUsedByAnotherDevice,
       isSameDevice,
       boundDeviceId: existingRecord.deviceId,
+      boundDeviceFingerprint: existingRecord.deviceFingerprint || `FP-${existingRecord.deviceId}`,
       boundDeviceName: existingRecord.deviceName,
       storeName: existingRecord.customerName,
       activatedAt: existingRecord.activatedAt,
+      firstActivatedAt: existingRecord.firstActivatedAt || existingRecord.activatedAt,
+      transferCount: existingRecord.transferCount || 0,
+      revokedDeviceIds: existingRecord.revokedDeviceIds || [],
+      lastRevokedDeviceId: existingRecord.lastRevokedDeviceId || null,
+      lastRevokedAt: existingRecord.lastRevokedAt || null,
       attemptCount: existingRecord.attemptLogs?.length || 0,
       securityQuestions: {
         q1_isUsedOnAnyDevice: "نعم، هذا الكود مستخدم ومفعل حالياً",
         q2_whatIsDeviceId: `${existingRecord.deviceId} (${existingRecord.deviceName})`,
         q3_isCurrentlyActive: true,
         statusSummaryAr: isUsedByAnotherDevice
-          ? `⛔ الكود مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId})`
-          : `⛔ الكود مستخدم ومفعل مسبقاً على هذا الجهاز (${existingRecord.deviceId})`,
+          ? `⚠️ مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId}) — يمكنك تأكيد نقل التفعيل وإلغاء اشتراك الجهاز الآخر`
+          : `✓ الكود مفعل ومربوط ببصمة هذا الجهاز (${existingRecord.deviceId})`,
       },
       message: isUsedByAnotherDevice
-        ? `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم مسبقاً في جهاز آخر يحمل المعرف (${existingRecord.deviceId} — ${existingRecord.deviceName}). لا يمكن استخدام نفس الكود في جهاز جديد!`
-        : `⛔ إشعار الكود مستخدم: تم تفعيل واستخدام هذا الكود (${predefined.code}) مسبقاً بمعرف الجهاز (${existingRecord.deviceId}). كل كود مخصص للاستخدام لمرة واحدة فقط.`,
+        ? `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم مسبقاً في جهاز آخر يحمل المعرف (${existingRecord.deviceId} — ${existingRecord.deviceName}). يمكنك تأكيد نقل التفعيل إلى جهازك الحالي وإلغاء اشتراك الجهاز الآخر!`
+        : `✓ هذا الكود (${predefined.code}) مفعل ومرتبط ببصمة هذا الجهاز (${existingRecord.deviceId}).`,
     });
   }
 
@@ -1150,12 +1169,13 @@ app.post("/api/license/verify-device", (req, res) => {
     isUsedByAnotherDevice: false,
     isSameDevice: false,
     boundDeviceId: null,
+    boundDeviceFingerprint: null,
     boundDeviceName: null,
     storeName: null,
     activatedAt: null,
     securityQuestions: {
       q1_isUsedOnAnyDevice: "لا، هذا الكود غير مستخدم في أي جهاز",
-      q2_whatIsDeviceId: `غير مرتبط بأي جهاز — سيتم ربطه بمعرف جهازك (${reqDevId})`,
+      q2_whatIsDeviceId: `غير مرتبط بأي جهاز — سيتم ربطه ببصمة جهازك (${reqDevFp})`,
       q3_isCurrentlyActive: false,
       statusSummaryAr: "متاح وآمن للتفعيل على هذا الجهاز ✓",
     },
@@ -1163,20 +1183,24 @@ app.post("/api/license/verify-device", (req, res) => {
   });
 });
 
-// 2. Bind and activate a subscription code for a specific Device ID
+// 2. Bind or Transfer a subscription code to a specific Device ID & Fingerprint (and revoke previous/other devices!)
 app.post("/api/license/activate-device", (req, res) => {
   const {
     code,
     deviceId,
+    deviceFingerprint,
     deviceName,
     customerName,
     customerPhone,
     expiresAt,
     durationLabelAr,
+    confirmTransfer,
+    previousDeviceIdToRevoke,
   } = req.body;
 
   const cleanKey = String(code || "").trim().toLowerCase();
   const reqDevId = String(deviceId || "KIAN-DEV-UNKNOWN").trim();
+  const reqDevFp = String(deviceFingerprint || `FP-${reqDevId}`).trim();
   const reqDevName = String(deviceName || "جهاز كاشير").trim();
 
   const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
@@ -1187,60 +1211,94 @@ app.post("/api/license/activate-device", (req, res) => {
     });
   }
 
+  const nowIso = new Date().toISOString();
   const existingRecord = activatedLicenseRegistry[cleanKey];
-  if (existingRecord && existingRecord.isUsed) {
-    const isOther = existingRecord.deviceId !== reqDevId;
-    existingRecord.attemptLogs = existingRecord.attemptLogs || [];
-    existingRecord.attemptLogs.unshift({
-      attemptedByDeviceId: reqDevId,
-      attemptedByDeviceName: reqDevName,
-      attemptedAt: new Date().toISOString(),
-    });
-    saveLicenseRegistryToDisk();
 
+  // If already bound to another device and user did NOT confirm transfer, block it!
+  if (existingRecord && existingRecord.isUsed && !confirmTransfer) {
+    const isOther = existingRecord.deviceId !== reqDevId;
     if (isOther) {
+      existingRecord.attemptLogs = existingRecord.attemptLogs || [];
+      existingRecord.attemptLogs.unshift({
+        attemptedByDeviceId: reqDevId,
+        attemptedByDeviceFingerprint: reqDevFp,
+        attemptedByDeviceName: reqDevName,
+        attemptedAt: nowIso,
+        action: "blocked",
+      });
+      saveLicenseRegistryToDisk();
+
       broadcastSseEvent("LICENSE_DUPLICATE_ATTEMPT", {
         code: predefined.code,
         boundDeviceId: existingRecord.deviceId,
         boundDeviceName: existingRecord.deviceName,
         attemptedByDeviceId: reqDevId,
         attemptedByDeviceName: reqDevName,
-        attemptedAt: new Date().toISOString(),
+        attemptedAt: nowIso,
+      });
+
+      return res.status(409).json({
+        success: false,
+        isUsed: true,
+        isUsedByAnotherDevice: true,
+        boundDeviceId: existingRecord.deviceId,
+        boundDeviceFingerprint: existingRecord.deviceFingerprint,
+        boundDeviceName: existingRecord.deviceName,
+        activatedAt: existingRecord.activatedAt,
+        error: `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId}). يرجى تأكيد نقل التفعيل لإلغاء اشتراك الجهاز الآخر وتفعيله هنا.`,
       });
     }
-
-    return res.status(409).json({
-      success: false,
-      isUsed: true,
-      isUsedByAnotherDevice: isOther,
-      boundDeviceId: existingRecord.deviceId,
-      boundDeviceName: existingRecord.deviceName,
-      activatedAt: existingRecord.activatedAt,
-      error: isOther
-        ? `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId}) ولا يمكن تفعيله على جهازك (${reqDevId})!`
-        : `⛔ إشعار الكود مستخدم: تم استهلاك هذا الكود (${predefined.code}) مسبقاً بمعرف الجهاز (${existingRecord.deviceId})!`,
-    });
   }
+
+  const prevRevoked = Array.isArray(existingRecord?.revokedDeviceIds)
+    ? [...existingRecord.revokedDeviceIds]
+    : [];
+  const oldDeviceId = previousDeviceIdToRevoke || existingRecord?.deviceId;
+  if (oldDeviceId && oldDeviceId !== reqDevId && !prevRevoked.includes(oldDeviceId)) {
+    prevRevoked.unshift(oldDeviceId);
+  }
+
+  const transferCount = confirmTransfer
+    ? Number(existingRecord?.transferCount || 0) + 1
+    : Number(existingRecord?.transferCount || 0);
 
   const newRecord: ActivatedLicenseServerRecord = {
     code: predefined.code,
     isUsed: true,
     deviceId: reqDevId,
+    deviceFingerprint: reqDevFp,
     deviceName: reqDevName,
-    customerName: customerName || "متجر كيان",
-    customerPhone: customerPhone || "",
+    customerName: customerName || existingRecord?.customerName || "متجر كيان",
+    customerPhone: customerPhone || existingRecord?.customerPhone || "",
     durationLabelAr: durationLabelAr || predefined.durationLabelAr,
-    activatedAt: new Date().toISOString(),
-    expiresAt: expiresAt || undefined,
-    attemptLogs: [],
+    activatedAt: nowIso,
+    firstActivatedAt: existingRecord?.firstActivatedAt || existingRecord?.activatedAt || nowIso,
+    expiresAt: expiresAt || existingRecord?.expiresAt || undefined,
+    transferCount,
+    revokedDeviceIds: prevRevoked.slice(0, 45),
+    lastRevokedDeviceId: oldDeviceId && oldDeviceId !== reqDevId ? oldDeviceId : existingRecord?.lastRevokedDeviceId,
+    lastRevokedAt: oldDeviceId && oldDeviceId !== reqDevId ? nowIso : existingRecord?.lastRevokedAt,
+    attemptLogs: existingRecord?.attemptLogs || [],
   };
 
   activatedLicenseRegistry[cleanKey] = newRecord;
   saveLicenseRegistryToDisk();
 
+  // Broadcast transfer & revocation so any previous or unauthorized devices immediately lose their subscription!
+  broadcastSseEvent("LICENSE_TRANSFERRED_OR_REVOKED", {
+    code: newRecord.code,
+    newOwnerDeviceId: newRecord.deviceId,
+    newOwnerFingerprint: newRecord.deviceFingerprint,
+    newOwnerDeviceName: newRecord.deviceName,
+    revokedDeviceIds: newRecord.revokedDeviceIds,
+    lastRevokedDeviceId: newRecord.lastRevokedDeviceId,
+    usedAt: nowIso,
+  });
+
   broadcastSseEvent("LICENSE_ACTIVATED_ON_DEVICE", {
     code: newRecord.code,
     deviceId: newRecord.deviceId,
+    deviceFingerprint: newRecord.deviceFingerprint,
     deviceName: newRecord.deviceName,
     activatedAt: newRecord.activatedAt,
   });
@@ -1248,7 +1306,9 @@ app.post("/api/license/activate-device", (req, res) => {
   res.json({
     success: true,
     record: newRecord,
-    message: `تم ربط الكود (${newRecord.code}) بمعرف الجهاز (${newRecord.deviceId}) بنجاح`,
+    message: confirmTransfer
+      ? `تم نقل التفعيل إلى جهازك (${newRecord.deviceId}) وإلغاء اشتراك الجهاز السابق بنجاح`
+      : `تم ربط الكود (${newRecord.code}) ببصمة ومعرف الجهاز (${newRecord.deviceId}) بنجاح`,
   });
 });
 
