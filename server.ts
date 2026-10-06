@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import zlib from "zlib";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -992,6 +993,330 @@ app.post("/api/menu/submit-review", (req, res) => {
     review: newReview,
     reviews: liveCustomerReviews,
     message: "شكراً لتقييمك! نسعد دائماً بخدمتك",
+  });
+});
+
+// ==========================================
+// 5.4.B. Subscription Code Device-Binding & Anti-Sharing Protection Engine
+// ==========================================
+
+interface LicenseAttemptLog {
+  attemptedByDeviceId: string;
+  attemptedByDeviceName: string;
+  attemptedAt: string;
+}
+
+interface ActivatedLicenseServerRecord {
+  code: string;
+  isUsed: boolean;
+  deviceId: string;
+  deviceName: string;
+  customerName: string;
+  customerPhone: string;
+  durationLabelAr: string;
+  activatedAt: string;
+  expiresAt?: string;
+  attemptLogs: LicenseAttemptLog[];
+}
+
+const LICENSE_REGISTRY_FILE = path.join(process.cwd(), ".kian_license_registry.json");
+
+const VALID_SERVER_LICENSE_CODES: Record<string, { code: string; durationLabelAr: string; days: number }> = {
+  k9_0u: { code: "K9_0u", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  so_s1df: { code: "SO_S1DF", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  so_klp1: { code: "SO_KLP1", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  so_ds1k9: { code: "SO_DS1K9", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  so_s1hgk: { code: "SO_S1HGK", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  k9_0s50: { code: "K9_0s50", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  k9_0asd: { code: "K9_0ASD", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  k9_7frs10: { code: "K9_7FRS10", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  k9_7fkjss9: { code: "K9_7FKJSS9", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  k9_grksc4: { code: "K9_GRKSC4", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+};
+
+let activatedLicenseRegistry: Record<string, ActivatedLicenseServerRecord> = {};
+
+function loadLicenseRegistryFromDisk() {
+  try {
+    if (fs.existsSync(LICENSE_REGISTRY_FILE)) {
+      const raw = fs.readFileSync(LICENSE_REGISTRY_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        activatedLicenseRegistry = parsed;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load license registry:", err);
+  }
+}
+
+function saveLicenseRegistryToDisk() {
+  try {
+    fs.writeFileSync(LICENSE_REGISTRY_FILE, JSON.stringify(activatedLicenseRegistry, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Failed to save license registry:", err);
+  }
+}
+
+loadLicenseRegistryFromDisk();
+
+// 1. Verify if a subscription code is used on ANY device and return its Device ID
+app.post("/api/license/verify-device", (req, res) => {
+  const { code, requestingDeviceId, requestingDeviceName } = req.body;
+  const cleanKey = String(code || "").trim().toLowerCase();
+  const reqDevId = String(requestingDeviceId || "KIAN-DEV-UNKNOWN").trim();
+  const reqDevName = String(requestingDeviceName || "جهاز جديد").trim();
+
+  const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
+  if (!predefined) {
+    return res.json({
+      success: true,
+      validCode: false,
+      isUsed: false,
+      isUsedByAnotherDevice: false,
+      isSameDevice: false,
+      boundDeviceId: null,
+      securityQuestions: {
+        q1_isUsedOnAnyDevice: "الكود غير مسجل ضمن أكواد النظام المعتمدة",
+        q2_whatIsDeviceId: "لا يوجد",
+        q3_isCurrentlyActive: false,
+        statusSummaryAr: "كود غير صالح",
+      },
+      message: "كود التفعيل غير صحيح، يرجى التأكد من كتابة الكود بدقة",
+    });
+  }
+
+  const existingRecord = activatedLicenseRegistry[cleanKey];
+
+  // If the code IS already used on a device
+  if (existingRecord && existingRecord.isUsed) {
+    const isSameDevice = existingRecord.deviceId === reqDevId;
+    const isUsedByAnotherDevice = !isSameDevice;
+
+    if (isUsedByAnotherDevice) {
+      // Log the unauthorized/new device attempt
+      existingRecord.attemptLogs = existingRecord.attemptLogs || [];
+      existingRecord.attemptLogs.unshift({
+        attemptedByDeviceId: reqDevId,
+        attemptedByDeviceName: reqDevName,
+        attemptedAt: new Date().toISOString(),
+      });
+      if (existingRecord.attemptLogs.length > 25) {
+        existingRecord.attemptLogs = existingRecord.attemptLogs.slice(0, 25);
+      }
+      saveLicenseRegistryToDisk();
+
+      // Broadcast security alert to connected devices
+      broadcastSseEvent("LICENSE_DUPLICATE_ATTEMPT", {
+        code: predefined.code,
+        boundDeviceId: existingRecord.deviceId,
+        boundDeviceName: existingRecord.deviceName,
+        attemptedByDeviceId: reqDevId,
+        attemptedByDeviceName: reqDevName,
+        attemptedAt: new Date().toISOString(),
+      });
+    }
+
+    return res.json({
+      success: true,
+      validCode: true,
+      isUsed: true,
+      isUsedByAnotherDevice,
+      isSameDevice,
+      boundDeviceId: existingRecord.deviceId,
+      boundDeviceName: existingRecord.deviceName,
+      storeName: existingRecord.customerName,
+      activatedAt: existingRecord.activatedAt,
+      attemptCount: existingRecord.attemptLogs?.length || 0,
+      securityQuestions: {
+        q1_isUsedOnAnyDevice: "نعم، هذا الكود مستخدم ومفعل حالياً",
+        q2_whatIsDeviceId: `${existingRecord.deviceId} (${existingRecord.deviceName})`,
+        q3_isCurrentlyActive: true,
+        statusSummaryAr: isUsedByAnotherDevice
+          ? `⛔ الكود مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId})`
+          : `⛔ الكود مستخدم ومفعل مسبقاً على هذا الجهاز (${existingRecord.deviceId})`,
+      },
+      message: isUsedByAnotherDevice
+        ? `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم مسبقاً في جهاز آخر يحمل المعرف (${existingRecord.deviceId} — ${existingRecord.deviceName}). لا يمكن استخدام نفس الكود في جهاز جديد!`
+        : `⛔ إشعار الكود مستخدم: تم تفعيل واستخدام هذا الكود (${predefined.code}) مسبقاً بمعرف الجهاز (${existingRecord.deviceId}). كل كود مخصص للاستخدام لمرة واحدة فقط.`,
+    });
+  }
+
+  // Code is NOT used on any device yet
+  return res.json({
+    success: true,
+    validCode: true,
+    isUsed: false,
+    isUsedByAnotherDevice: false,
+    isSameDevice: false,
+    boundDeviceId: null,
+    boundDeviceName: null,
+    storeName: null,
+    activatedAt: null,
+    securityQuestions: {
+      q1_isUsedOnAnyDevice: "لا، هذا الكود غير مستخدم في أي جهاز",
+      q2_whatIsDeviceId: `غير مرتبط بأي جهاز — سيتم ربطه بمعرف جهازك (${reqDevId})`,
+      q3_isCurrentlyActive: false,
+      statusSummaryAr: "متاح وآمن للتفعيل على هذا الجهاز ✓",
+    },
+    message: "الكود غير مستخدم في أي جهاز ومتاح للتفعيل الآن",
+  });
+});
+
+// 2. Bind and activate a subscription code for a specific Device ID
+app.post("/api/license/activate-device", (req, res) => {
+  const {
+    code,
+    deviceId,
+    deviceName,
+    customerName,
+    customerPhone,
+    expiresAt,
+    durationLabelAr,
+  } = req.body;
+
+  const cleanKey = String(code || "").trim().toLowerCase();
+  const reqDevId = String(deviceId || "KIAN-DEV-UNKNOWN").trim();
+  const reqDevName = String(deviceName || "جهاز كاشير").trim();
+
+  const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
+  if (!predefined) {
+    return res.status(400).json({
+      success: false,
+      error: "كود التفعيل غير صالح",
+    });
+  }
+
+  const existingRecord = activatedLicenseRegistry[cleanKey];
+  if (existingRecord && existingRecord.isUsed) {
+    const isOther = existingRecord.deviceId !== reqDevId;
+    existingRecord.attemptLogs = existingRecord.attemptLogs || [];
+    existingRecord.attemptLogs.unshift({
+      attemptedByDeviceId: reqDevId,
+      attemptedByDeviceName: reqDevName,
+      attemptedAt: new Date().toISOString(),
+    });
+    saveLicenseRegistryToDisk();
+
+    if (isOther) {
+      broadcastSseEvent("LICENSE_DUPLICATE_ATTEMPT", {
+        code: predefined.code,
+        boundDeviceId: existingRecord.deviceId,
+        boundDeviceName: existingRecord.deviceName,
+        attemptedByDeviceId: reqDevId,
+        attemptedByDeviceName: reqDevName,
+        attemptedAt: new Date().toISOString(),
+      });
+    }
+
+    return res.status(409).json({
+      success: false,
+      isUsed: true,
+      isUsedByAnotherDevice: isOther,
+      boundDeviceId: existingRecord.deviceId,
+      boundDeviceName: existingRecord.deviceName,
+      activatedAt: existingRecord.activatedAt,
+      error: isOther
+        ? `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId}) ولا يمكن تفعيله على جهازك (${reqDevId})!`
+        : `⛔ إشعار الكود مستخدم: تم استهلاك هذا الكود (${predefined.code}) مسبقاً بمعرف الجهاز (${existingRecord.deviceId})!`,
+    });
+  }
+
+  const newRecord: ActivatedLicenseServerRecord = {
+    code: predefined.code,
+    isUsed: true,
+    deviceId: reqDevId,
+    deviceName: reqDevName,
+    customerName: customerName || "متجر كيان",
+    customerPhone: customerPhone || "",
+    durationLabelAr: durationLabelAr || predefined.durationLabelAr,
+    activatedAt: new Date().toISOString(),
+    expiresAt: expiresAt || undefined,
+    attemptLogs: [],
+  };
+
+  activatedLicenseRegistry[cleanKey] = newRecord;
+  saveLicenseRegistryToDisk();
+
+  broadcastSseEvent("LICENSE_ACTIVATED_ON_DEVICE", {
+    code: newRecord.code,
+    deviceId: newRecord.deviceId,
+    deviceName: newRecord.deviceName,
+    activatedAt: newRecord.activatedAt,
+  });
+
+  res.json({
+    success: true,
+    record: newRecord,
+    message: `تم ربط الكود (${newRecord.code}) بمعرف الجهاز (${newRecord.deviceId}) بنجاح`,
+  });
+});
+
+// 3. Sync an already-active local license on startup so the server registry knows its Device ID
+app.post("/api/license/sync-current", (req, res) => {
+  const { code, deviceId, deviceName, customerName, customerPhone, expiresAt, durationLabelAr, usedCodesList } = req.body;
+
+  let updated = false;
+  if (code && deviceId) {
+    const cleanKey = String(code).trim().toLowerCase();
+    const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
+    if (predefined && !activatedLicenseRegistry[cleanKey]) {
+      activatedLicenseRegistry[cleanKey] = {
+        code: predefined.code,
+        isUsed: true,
+        deviceId: String(deviceId).trim(),
+        deviceName: String(deviceName || "جهاز كاشير رئيسي").trim(),
+        customerName: customerName || "متجر كيان",
+        customerPhone: customerPhone || "",
+        durationLabelAr: durationLabelAr || predefined.durationLabelAr,
+        activatedAt: new Date().toISOString(),
+        expiresAt,
+        attemptLogs: [],
+      };
+      updated = true;
+    }
+  }
+
+  if (Array.isArray(usedCodesList)) {
+    for (const item of usedCodesList) {
+      if (item && item.code) {
+        const k = String(item.code).trim().toLowerCase();
+        const pred = VALID_SERVER_LICENSE_CODES[k];
+        if (pred && !activatedLicenseRegistry[k]) {
+          activatedLicenseRegistry[k] = {
+            code: pred.code,
+            isUsed: true,
+            deviceId: item.deviceId || String(deviceId || "KIAN-DEV-MAIN"),
+            deviceName: item.deviceName || String(deviceName || "جهاز كاشير"),
+            customerName: item.customerName || customerName || "متجر كيان",
+            customerPhone: item.customerPhone || "",
+            durationLabelAr: item.durationLabelAr || pred.durationLabelAr,
+            activatedAt: item.usedAt || new Date().toISOString(),
+            expiresAt: item.expiresAt,
+            attemptLogs: [],
+          };
+          updated = true;
+        }
+      }
+    }
+  }
+
+  if (updated) {
+    saveLicenseRegistryToDisk();
+  }
+
+  res.json({
+    success: true,
+    registryCount: Object.keys(activatedLicenseRegistry).length,
+    records: Object.values(activatedLicenseRegistry),
+  });
+});
+
+// 4. Get full status of bound devices and blocked attempts
+app.get("/api/license/status", (_req, res) => {
+  res.json({
+    success: true,
+    records: Object.values(activatedLicenseRegistry),
   });
 });
 

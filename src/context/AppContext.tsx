@@ -60,6 +60,8 @@ import {
   calculateSubscriptionExpirationDate,
   markCodeAsUsed,
   isCodeAlreadyUsed,
+  getDeviceHardwareInfo,
+  getUsedLicenseCodes,
   PREDEFINED_LICENSE_CODES,
   MASTER_ACTIVATION_CODES
 } from '../utils/licenseUtils';
@@ -1332,10 +1334,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Enforce single-use: mark code as used in localStorage
+    // Enforce single-use & device binding: mark code as used in localStorage + server registry
+    const hwDevice = getDeviceHardwareInfo();
     if (matched.singleUse) {
-      markCodeAsUsed(matched.code, customerInfo);
+      markCodeAsUsed(matched.code, {
+        ...customerInfo,
+        deviceId: hwDevice.deviceId,
+        deviceName: hwDevice.deviceName,
+        expiresAt: expiresAtIso,
+        durationLabelAr: matched.durationLabelAr,
+      });
     }
+
+    // Bind code to this device ID on the server and broadcast across tabs/devices
+    fetch('/api/license/activate-device', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: cleanCode,
+        deviceId: hwDevice.deviceId,
+        deviceName: hwDevice.deviceName,
+        customerName: customerInfo?.name || settings.storeNameAr,
+        customerPhone: customerInfo?.phone || settings.phone,
+        expiresAt: expiresAtIso,
+        durationLabelAr: matched.durationLabelAr,
+      }),
+    }).catch(() => {});
+
+    try {
+      const bc = new BroadcastChannel('kian_pos_devices_mesh');
+      bc.postMessage({
+        type: 'LICENSE_ACTIVATED_ON_DEVICE',
+        payload: {
+          code: cleanCode,
+          deviceId: hwDevice.deviceId,
+          deviceName: hwDevice.deviceName,
+          customerName: customerInfo?.name || settings.storeNameAr,
+          expiresAt: expiresAtIso,
+          durationLabelAr: matched.durationLabelAr,
+        },
+      });
+      bc.close();
+    } catch {}
 
     // Store in localStorage
     localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'true');
@@ -5163,6 +5203,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Real-Time Mesh & SSE listener
   useEffect(() => {
+    // Sync active license & used codes with server device-binding registry on mount
+    const hwDevice = getDeviceHardwareInfo();
+    const usedLocal = getUsedLicenseCodes();
+    if (licenseKey || usedLocal.length > 0) {
+      fetch('/api/license/sync-current', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: licenseKey || undefined,
+          deviceId: hwDevice.deviceId,
+          deviceName: hwDevice.deviceName,
+          customerName: settings.storeNameAr,
+          customerPhone: settings.phone,
+          expiresAt: licenseExpiresAt || undefined,
+          durationLabelAr: licenseDurationLabel,
+          usedCodesList: usedLocal,
+        }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data?.records && Array.isArray(data.records)) {
+            data.records.forEach((rec: any) => {
+              if (rec?.code && rec?.deviceId) {
+                markCodeAsUsed(rec.code, {
+                  deviceId: rec.deviceId,
+                  deviceName: rec.deviceName,
+                  name: rec.customerName,
+                  expiresAt: rec.expiresAt,
+                  durationLabelAr: rec.durationLabelAr,
+                });
+              }
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
     // 1. BroadcastChannel for local cross-tab / cross-window instant communication
     let bc: BroadcastChannel | null = null;
     try {
@@ -5223,6 +5300,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 `⭐ تقييم جديد من العميل (${payload.review.rating}/5)`,
                 `${payload.review.tableName || 'منيو QR'}: ${payload.review.comment || (payload.review.tags || []).join('، ') || 'شكراً للخدمة الرائعة'}`,
                 'success'
+              );
+            }
+          } else if (type === 'LICENSE_ACTIVATED_ON_DEVICE') {
+            if (payload?.code && payload?.deviceId) {
+              markCodeAsUsed(payload.code, {
+                deviceId: payload.deviceId,
+                deviceName: payload.deviceName,
+                name: payload.customerName,
+                expiresAt: payload.expiresAt,
+                durationLabelAr: payload.durationLabelAr,
+              });
+            }
+          } else if (type === 'LICENSE_DUPLICATE_ATTEMPT') {
+            const myDevice = getDeviceHardwareInfo();
+            if (payload?.attemptedByDeviceId === myDevice.deviceId) {
+              soundEffects.playWarning();
+              notify(
+                '⛔ إشعار حماية الاشتراك: الكود مستخدم!',
+                `هذا الكود (${payload.code}) مستخدم ومفعل مسبقاً في جهاز آخر يحمل المعرف (${payload.boundDeviceId}). لا يمكن استخدامه في جهازك الجديد!`,
+                'error'
+              );
+            } else if (payload?.boundDeviceId === myDevice.deviceId) {
+              soundEffects.playWarning();
+              notify(
+                '🛡️ تنبيه أمان: محاولة استخدام كود اشتراكك!',
+                `حاول جهاز جديد بمعرف (${payload.attemptedByDeviceId} — ${payload.attemptedByDeviceName || 'جهاز خارجي'}) تفعيل كود اشتراكك (${payload.code}) وتم حظره فوراً!`,
+                'warning'
               );
             }
           } else if (type === 'CART_UPDATE') {
@@ -5380,6 +5484,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
       });
 
+      eventSource.addEventListener('LICENSE_ACTIVATED_ON_DEVICE', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.code && data?.deviceId) {
+            markCodeAsUsed(data.code, {
+              deviceId: data.deviceId,
+              deviceName: data.deviceName,
+            });
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('LICENSE_DUPLICATE_ATTEMPT', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          const myDevice = getDeviceHardwareInfo();
+          if (data?.attemptedByDeviceId === myDevice.deviceId) {
+            soundEffects.playWarning();
+            notify(
+              '⛔ إشعار حماية الاشتراك: الكود مستخدم!',
+              `هذا الكود (${data.code}) مستخدم مسبقاً في جهاز آخر بمعرف (${data.boundDeviceId} — ${data.boundDeviceName || 'جهاز مفعل'}) وتم رفض التفعيل على جهازك الجديد.`,
+              'error'
+            );
+          } else if (data?.boundDeviceId === myDevice.deviceId) {
+            soundEffects.playWarning();
+            notify(
+              '🛡️ تنبيه حماية: محاولة تفعيل كودك من جهاز آخر!',
+              `حاول جهاز جديد يحمل المعرف (${data.attemptedByDeviceId}) استخدام كود اشتراكك (${data.code}) وتم إيقافه تلقائياً.`,
+              'warning'
+            );
+          }
+        } catch {}
+      });
+
       eventSource.onerror = () => {
         // Handled automatically by browser reconnection
       };
@@ -5400,6 +5538,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Broadcast live cart changes to CFD
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('customerMenu') === '1' || params.get('qrMenu') === '1' || params.get('menu') === '1') {
+        return;
+      }
+    } catch {}
     const subtotal = cart.reduce((acc, it) => acc + (it.total || 0), 0);
     const total = Math.max(0, subtotal - (orderDiscount?.value || 0));
     fetch('/api/sync/cart', {
@@ -5419,6 +5563,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync Restaurant/Cafe Menu Catalog (products, images, target devices, categories, store settings, theme, reviews) to server for Customer QR Menu
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('customerMenu') === '1' || params.get('qrMenu') === '1' || params.get('menu') === '1') {
+        return;
+      }
+    } catch {}
     const timer = setTimeout(() => {
       fetch('/api/menu/sync-catalog', {
         method: 'POST',
@@ -5720,4 +5870,8 @@ export const useApp = () => {
     throw new Error('useApp must be used within an AppProvider');
   }
   return context;
+};
+
+export const useAppOptional = () => {
+  return useContext(AppContext);
 };

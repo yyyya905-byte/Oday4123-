@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   ShieldCheck,
+  ShieldAlert,
   KeyRound,
   CheckCircle2,
   Clock,
@@ -15,9 +16,22 @@ import {
   Sparkles,
   Check,
   ArrowRight,
-  RotateCcw
+  RotateCcw,
+  Cpu,
+  Smartphone,
+  Search,
+  Copy,
+  RefreshCw,
+  Ban
 } from 'lucide-react';
-import { validateLicenseCode, PredefinedLicenseCode } from '../../utils/licenseUtils';
+import {
+  validateLicenseCode,
+  PredefinedLicenseCode,
+  getDeviceHardwareInfo,
+  verifyCodeDeviceProtectionOnServer,
+  LicenseDeviceVerificationResult
+} from '../../utils/licenseUtils';
+import { soundEffects } from '../../services/audio';
 
 interface AppPurchaseModalProps {
   isOpen: boolean;
@@ -39,13 +53,25 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     trialHoursRemaining,
     isTrialExpired,
     activatePurchaseCode,
-    settings
+    settings,
+    notify
   } = useApp();
 
   const [inputCode, setInputCode] = useState('');
   const [customerName, setCustomerName] = useState(settings.storeNameAr || '');
   const [customerPhone, setCustomerPhone] = useState(settings.phone || '');
   const [error, setError] = useState('');
+  const [copiedDeviceId, setCopiedDeviceId] = useState(false);
+
+  // Device Protection & Anti-Sharing Verification State
+  const currentDevice = getDeviceHardwareInfo();
+  const [isVerifyingDevice, setIsVerifyingDevice] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<LicenseDeviceVerificationResult | null>(null);
+  const [simulateNewDeviceMode, setSimulateNewDeviceMode] = useState(false);
+  const [simulatedNewDeviceId] = useState(() => {
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return `KIAN-DEV-NEW-${rand}-EXT`;
+  });
 
   // Confirmation Dialog State before saving to localStorage
   interface PendingActivationDetails {
@@ -57,22 +83,93 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     newExpiresAtFormattedAr: string;
     isExtension: boolean;
     currentExpiresFormattedAr?: string;
+    boundToDeviceId: string;
   }
   const [pendingActivation, setPendingActivation] = useState<PendingActivationDetails | null>(null);
   const [isConfirming, setIsConfirming] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setVerificationResult(null);
+      setError('');
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const handleProceedToConfirmation = (e?: React.FormEvent) => {
+  const handleCopyDeviceId = () => {
+    navigator.clipboard?.writeText(currentDevice.deviceId).catch(() => {});
+    setCopiedDeviceId(true);
+    soundEffects.playClick();
+    setTimeout(() => setCopiedDeviceId(false), 2000);
+  };
+
+  /**
+   * Runs the Security Protection Check ("هل هذا الكود مستخدم في أي جهاز؟ وأيش معرفه؟ هل هو مستخدم؟")
+   */
+  const handleRunProtectionCheck = async (asSimulatedNewDevice: boolean = simulateNewDeviceMode): Promise<LicenseDeviceVerificationResult | null> => {
+    const trimmed = inputCode.trim();
+    if (!trimmed) {
+      setError('يرجى إدخال كود الاشتراك أولاً لفحص حالته عبر أداة الحماية');
+      return null;
+    }
+
+    setIsVerifyingDevice(true);
+    setError('');
+
+    const reqId = asSimulatedNewDevice ? simulatedNewDeviceId : currentDevice.deviceId;
+    const reqName = asSimulatedNewDevice ? 'جهاز جديد يحاول التفعيل (اختبار الحماية)' : currentDevice.deviceName;
+
+    const result = await verifyCodeDeviceProtectionOnServer(trimmed, reqId, reqName);
+    setIsVerifyingDevice(false);
+    setVerificationResult(result);
+
+    if (!result.validCode) {
+      soundEffects.playWarning();
+      setError(result.message);
+      return result;
+    }
+
+    // If the code is already used on another device (or already consumed), show immediate notification to the new device!
+    if (result.isUsedOnAnyDevice) {
+      soundEffects.playWarning();
+      const alertTitle = '⛔ إشعار حماية الاشتراك: الكود مستخدم!';
+      const alertBody = result.isUsedByAnotherDevice
+        ? `هذا الكود (${trimmed}) مستخدم مسبقاً في جهاز آخر بمعرف (${result.boundDeviceId}). تم رفض استخدامه في الجهاز الجديد (${reqId})!`
+        : `هذا الكود (${trimmed}) مستخدم ومفعل مسبقاً بمعرف الجهاز (${result.boundDeviceId}) ولا يمكن إعادة استخدامه!`;
+
+      setError(alertBody);
+      notify(alertTitle, alertBody, 'error');
+      return result;
+    }
+
+    soundEffects.playSuccess();
+    return result;
+  };
+
+  const handleProceedToConfirmation = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputCode.trim()) {
       setError('يرجى كتابة أو لصق كود التفعيل أولاً');
       return;
     }
 
+    // Step 1: Always run the Server & Cross-Device Protection Verification first!
+    const securityCheck = await handleRunProtectionCheck(simulateNewDeviceMode);
+    if (!securityCheck || !securityCheck.validCode) {
+      return;
+    }
+
+    if (securityCheck.isUsedOnAnyDevice || securityCheck.isUsedByAnotherDevice) {
+      // Blocked by Device-Binding Protection Tool!
+      return;
+    }
+
     const res = validateLicenseCode(inputCode.trim(), licenseKey);
     if (!res.valid || !res.matchedCode) {
+      soundEffects.playWarning();
       setError(res.reason || 'كود التفعيل غير صالح');
+      notify('⛔ إشعار: الكود مستخدم أو غير صالح', res.reason || 'لا يمكن استخدام هذا الكود', 'error');
       return;
     }
 
@@ -122,7 +219,8 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       newExpiresAtIso: targetDate.toISOString(),
       newExpiresAtFormattedAr: formattedAr,
       isExtension,
-      currentExpiresFormattedAr: currentExpAr
+      currentExpiresFormattedAr: currentExpAr,
+      boundToDeviceId: currentDevice.deviceId
     });
   };
 
@@ -373,16 +471,16 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
                       تأكيد تفاصيل الاشتراك الجديد 👑
                     </h4>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[10px]">
-                      كود صالح ومطابق ✓
+                      غير مستخدم في أي جهاز ✓
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    يرجى مراجعة تفاصيل التجديد وتاريخ الانتهاء قبل الحفظ النهائي في النظام:
+                    تم التحقق عبر أداة الحماية: الكود متاح وسيتم ربطه حصرياً بمعرف جهازك:
                   </p>
                 </div>
               </div>
@@ -398,6 +496,13 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                       <Calendar className="w-4 h-4 text-blue-500" />
                     )}
                     <span>{pendingActivation.durationLabelAr}</span>
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold">معرف الجهاز الذي سيرتبط به الكود:</span>
+                  <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 text-[11px]">
+                    {pendingActivation.boundToDeviceId}
                   </span>
                 </div>
 
@@ -432,7 +537,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                 </div>
 
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
-                  🔒 سيتم حفظ هذه البيانات وتاريخ الانتهاء نهائياً في متصفحك (localStorage) وتصفير النظام فور الضغط على تأكيد.
+                  🔒 سيتم قفل هذا الكود على معرف جهازك ({pendingActivation.boundToDeviceId}) لمنع أي جهاز آخر من استخدامه.
                 </div>
               </div>
 
@@ -445,7 +550,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs shadow-lg shadow-emerald-600/25 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span>{isConfirming ? 'جاري الحفظ والتفعيل...' : 'تأكيد وحفظ الاشتراك نهائياً (localStorage)'}</span>
+                  <span>{isConfirming ? 'جاري الربط والتفعيل...' : 'تأكيد وربط الكود بهذا الجهاز نهائياً'}</span>
                 </button>
 
                 <button
@@ -460,43 +565,239 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
               </div>
             </div>
           ) : (
-            /* Activation Form */
-            <form onSubmit={handleProceedToConfirmation} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  كود تفعيل التطبيق (Activation License Key) *
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={inputCode}
-                    onChange={e => {
-                      setInputCode(e.target.value);
+            /* Activation Form + Subscription Code Device-Binding Protection Tool */
+            <div className="space-y-3.5">
+              {/* Protection Tool Header & Current Device Identifier */}
+              <div className="p-3.5 rounded-2xl bg-slate-900 text-white border border-slate-800 space-y-2.5 shadow-md">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                        <span>أداة حماية وفحص أكواد الاشتراك عبر الأجهزة</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-400">
+                        تتحقق تلقائياً: هل الكود مستخدم في أي جهاز؟ وما هو معرفه؟ وتمنع استخدامه في جهاز جديد
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black">
+                    حماية نشطة 🛡️
+                  </span>
+                </div>
+
+                {/* Current Device Hardware ID Row */}
+                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Cpu className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-slate-400 block">
+                        {simulateNewDeviceMode ? 'معرف الجهاز الجديد الافتراضي (وضع الاختبار):' : 'معرف هذا الجهاز الحالي (Device ID):'}
+                      </span>
+                      <span className="font-mono font-black text-amber-300 text-xs truncate block">
+                        {simulateNewDeviceMode ? simulatedNewDeviceId : currentDevice.deviceId}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] text-slate-400 hidden sm:inline">
+                      {currentDevice.deviceName}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyDeviceId}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      title="نسخ معرف الجهاز"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>{copiedDeviceId ? 'تم النسخ' : 'نسخ المعرف'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Toggle to test what happens when a NEW device tries to use an active code */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
+                  <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                    <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>وضع محاكاة جهاز جديد (لتجربة إشعار "الكود مستخدم"):</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimulateNewDeviceMode(!simulateNewDeviceMode);
+                      setVerificationResult(null);
                       setError('');
                     }}
-                    placeholder="أدخل كود تفعيل التطبيق هنا"
-                    className="w-full px-3.5 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500 focus:outline-none text-slate-900 dark:text-white font-mono font-black text-sm tracking-wider text-center"
-                  />
+                    className={`px-2.5 py-1 rounded-lg font-black text-[10px] transition-all cursor-pointer border ${
+                      simulateNewDeviceMode
+                        ? 'bg-rose-600 text-white border-rose-500 shadow-xs'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    {simulateNewDeviceMode ? '🔴 وضع جهاز جديد مفعل' : 'تفعيل تجربة جهاز جديد'}
+                  </button>
                 </div>
               </div>
 
-              {error && (
-                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>{error}</span>
+              <form onSubmit={handleProceedToConfirmation} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    كود تفعيل الاشتراك (Activation License Key) *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        required
+                        value={inputCode}
+                        onChange={e => {
+                          setInputCode(e.target.value);
+                          setError('');
+                        }}
+                        placeholder="أدخل كود الاشتراك هنا لفحصه أو تفعيله..."
+                        className="w-full px-3.5 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500 focus:outline-none text-slate-900 dark:text-white font-mono font-black text-sm tracking-wider text-center"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isVerifyingDevice || !inputCode.trim()}
+                      onClick={() => handleRunProtectionCheck(simulateNewDeviceMode)}
+                      className="px-3.5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black text-xs flex items-center gap-1.5 shrink-0 shadow-md cursor-pointer transition-all"
+                      title="اسأل الموقع: هل هذا الكود مستخدم في أي جهاز وأيش معرفه؟"
+                    >
+                      {isVerifyingDevice ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Search className="w-4 h-4" />
+                      )}
+                      <span>فحص الكود</span>
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              <button
-                type="submit"
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/25 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <KeyRound className="w-4 h-4" />
-                <span>متابعة لتأكيد تفعيل الاشتراك</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </form>
+                {/* Live 3-Question Protection Result Card ("الموقع يسأل: هل هذا الكود مستخدم في أي جهاز؟ وأيش معرفه؟ هل هو مستخدم؟") */}
+                {verificationResult && (
+                  <div
+                    className={`p-4 rounded-2xl border-2 space-y-3 animate-in fade-in duration-200 ${
+                      verificationResult.isUsedOnAnyDevice || !verificationResult.validCode
+                        ? 'bg-rose-50/90 dark:bg-rose-950/40 border-rose-500/70 text-rose-950 dark:text-rose-100'
+                        : 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-500/70 text-emerald-950 dark:text-emerald-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between border-b border-current/15 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        {verificationResult.isUsedOnAnyDevice || !verificationResult.validCode ? (
+                          <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
+                        ) : (
+                          <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        )}
+                        <span className="font-black text-xs sm:text-sm">
+                          تقرير أداة حماية وفحص الكود ({inputCode.trim()})
+                        </span>
+                      </div>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                          verificationResult.isUsedOnAnyDevice || !verificationResult.validCode
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-emerald-600 text-white'
+                        }`}
+                      >
+                        {verificationResult.isUsedOnAnyDevice
+                          ? '⛔ الكود مستخدم'
+                          : verificationResult.validCode
+                          ? '✓ غير مستخدم (متاح)'
+                          : 'غير صالح'}
+                      </span>
+                    </div>
+
+                    {/* The 3 Explicit Security Questions answered by the site */}
+                    <div className="space-y-2 text-xs">
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">
+                          1. هل هذا الكود مستخدم في أي جهاز؟
+                        </span>
+                        <span
+                          className={`font-black ${
+                            verificationResult.isUsedOnAnyDevice
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
+                          {verificationResult.securityQuestions.q1_isUsedOnAnyDevice}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">
+                          2. أيش معرف الجهاز المستخدم للكود؟
+                        </span>
+                        <span className="font-mono font-black text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg">
+                          {verificationResult.boundDeviceId
+                            ? `${verificationResult.boundDeviceId} (${verificationResult.boundDeviceName || 'جهاز كاشير'})`
+                            : verificationResult.securityQuestions.q2_whatIsDeviceId}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-current/10 flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">
+                          3. هل هو مستخدم حالياً؟ (قرار الحماية):
+                        </span>
+                        <span
+                          className={`font-black ${
+                            verificationResult.isUsedOnAnyDevice
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
+                          {verificationResult.securityQuestions.statusSummaryAr}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Prominent Notification Banner for the New Device attempting to use an already-used code */}
+                    {verificationResult.isUsedOnAnyDevice && (
+                      <div className="p-3 rounded-xl bg-rose-600 text-white space-y-1.5 shadow-lg">
+                        <div className="flex items-center gap-2 font-black text-xs sm:text-sm">
+                          <Ban className="w-5 h-5 shrink-0" />
+                          <span>إشعار للجهاز الجديد: الكود مستخدم ولا يمكن تفعيله!</span>
+                        </div>
+                        <p className="text-[11px] text-rose-100 leading-relaxed">
+                          هذا الكود مربوط ومفعل مسبقاً على الجهاز صاحب المعرف{' '}
+                          <strong className="font-mono underline">{verificationResult.boundDeviceId}</strong>
+                          {verificationResult.boundActivatedAt
+                            ? ` بتاريخ (${new Date(verificationResult.boundActivatedAt).toLocaleDateString('ar-SA')})`
+                            : ''}
+                          . قام نظام الحماية بحظر تفعيله على هذا الجهاز ({verificationResult.requestingDeviceId}).
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {error && !verificationResult?.isUsedOnAnyDevice && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isVerifyingDevice}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/25 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>
+                    {isVerifyingDevice
+                      ? 'جاري فحص الكود عبر أداة الحماية...'
+                      : 'فحص الكود والمتابعة لتأكيد تفعيل الاشتراك'}
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
           )}
 
           {/* WhatsApp Support Box */}

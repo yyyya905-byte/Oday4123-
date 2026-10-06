@@ -86,72 +86,6 @@ const AppContent: React.FC = () => {
     wakeFromStandby
   } = useApp();
 
-  // Check if accessed via Customer QR Code URL (?customerMenu=1 or ?qrMenu=1)
-  const [qrCustomerRoute] = useState<{
-    isCustomerPage: boolean;
-    table: string;
-    type: 'dine_in' | 'takeaway' | 'delivery';
-  }>(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const isMenu =
-        params.get('customerMenu') === '1' ||
-        params.get('qrMenu') === '1' ||
-        params.get('menu') === '1';
-      const tbl = params.get('table') || 'الطاولة 1';
-      const tp = (params.get('type') as 'dine_in' | 'takeaway' | 'delivery') || 'dine_in';
-      return { isCustomerPage: isMenu, table: tbl, type: tp };
-    } catch {
-      return { isCustomerPage: false, table: 'الطاولة 1', type: 'dine_in' };
-    }
-  });
-
-  // PWA Service Worker Registration & Background Sync Listener
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      if ((import.meta as any).env?.DEV) {
-        navigator.serviceWorker.getRegistrations().then((regs) => {
-          regs.forEach((reg) => reg.unregister());
-        });
-        return;
-      }
-
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((registration) => {
-            console.log('[PWA SW] Successfully registered with scope:', registration.scope);
-          })
-          .catch((error) => {
-            console.warn('[PWA SW] Registration failed:', error);
-          });
-      });
-
-      // Listen for background sync triggers from Service Worker
-      const handleSwMessage = (event: MessageEvent) => {
-        if (event.data && event.data.type === 'TRIGGER_OFFLINE_SYNC') {
-          console.log('[App] Received background sync trigger from Service Worker');
-          syncOfflineQueueNow();
-        }
-      };
-
-      navigator.serviceWorker.addEventListener('message', handleSwMessage);
-      return () => {
-        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
-      };
-    }
-  }, [syncOfflineQueueNow]);
-
-  // If customer scanned the Restaurant/Cafe QR Menu Code, render the dedicated standalone Customer Page immediately
-  if (qrCustomerRoute.isCustomerPage) {
-    return (
-      <CustomerQrMenuPage
-        isStandalone={true}
-        initialTable={qrCustomerRoute.table}
-        initialDiningType={qrCustomerRoute.type}
-      />
-    );
-  }
-
   // If manager opened the Customer Menu Preview from POS
   if (isCustomerMenuPreviewOpen) {
     return (
@@ -409,7 +343,86 @@ const AppContent: React.FC = () => {
   );
 };
 
+function detectStandaloneCustomerQrRoute(): {
+  isCustomerPage: boolean;
+  table: string;
+  type: 'dine_in' | 'takeaway' | 'delivery';
+} {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const pathname = (window.location.pathname || '').toLowerCase();
+    const hash = (window.location.hash || '').toLowerCase();
+
+    const isQueryMenu =
+      params.get('customerMenu') === '1' ||
+      params.get('qrMenu') === '1' ||
+      params.get('menu') === '1';
+
+    const isPathMenu =
+      pathname === '/menu' ||
+      pathname === '/qr-menu' ||
+      pathname === '/customer-menu' ||
+      pathname.endsWith('/menu');
+
+    const isHashMenu =
+      hash.startsWith('#menu') ||
+      hash.startsWith('#/menu') ||
+      hash.startsWith('#qr-menu') ||
+      hash.startsWith('#/qr-menu') ||
+      hash.startsWith('#customer-menu');
+
+    // Also allow hash query params e.g. #/menu?table=...
+    let hashTable = '';
+    let hashType = '';
+    if (hash.includes('?')) {
+      const hashParams = new URLSearchParams(hash.slice(hash.indexOf('?')));
+      hashTable = hashParams.get('table') || '';
+      hashType = hashParams.get('type') || '';
+    }
+
+    const tbl = params.get('table') || hashTable || 'الطاولة 1';
+    const rawType = params.get('type') || hashType || 'dine_in';
+    const tp: 'dine_in' | 'takeaway' | 'delivery' =
+      rawType === 'takeaway' || rawType === 'delivery' ? rawType : 'dine_in';
+
+    return {
+      isCustomerPage: isQueryMenu || isPathMenu || isHashMenu,
+      table: tbl,
+      type: tp,
+    };
+  } catch {
+    return { isCustomerPage: false, table: 'الطاولة 1', type: 'dine_in' };
+  }
+}
+
 export default function App() {
+  const [customerRoute, setCustomerRoute] = useState(detectStandaloneCustomerQrRoute);
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCustomerRoute(detectStandaloneCustomerQrRoute());
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, []);
+
+  // Completely isolated Standalone Customer QR Menu Page (no POS AppProvider, Sidebar, Header, or Modals)
+  if (customerRoute.isCustomerPage) {
+    return (
+      <ErrorBoundary>
+        <CustomerQrMenuPage
+          isStandalone={true}
+          initialTable={customerRoute.table}
+          initialDiningType={customerRoute.type}
+        />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <AppProvider>

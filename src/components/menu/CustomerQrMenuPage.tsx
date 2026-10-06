@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useAppOptional } from '../../context/AppContext';
 import {
   Product,
   Category,
@@ -10,7 +10,7 @@ import {
   QrMenuThemeConfig,
   CustomerFeedbackReview,
 } from '../../types';
-import { initialProducts } from '../../data/seedData';
+import { initialProducts, initialCategories, initialSettings } from '../../data/seedData';
 import { soundEffects } from '../../services/audio';
 import {
   UtensilsCrossed,
@@ -397,18 +397,78 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   initialDiningType = 'dine_in',
   onClosePreview,
 }) => {
-  const {
-    products: contextProducts,
-    categories: contextCategories,
-    settings: contextSettings,
-    devices: contextDevices,
-    kitchenOrders: contextKitchenOrders,
-    updateProduct,
-    updateQrMenuTheme,
-    addKitchenOrder,
-    addCustomerReview,
-    notify,
-  } = useApp();
+  const appCtx = useAppOptional();
+
+  // Standalone local storage fallback when rendered outside AppProvider
+  const [localProducts, setLocalProducts] = useState<Product[]>(() => {
+    try {
+      const saved = localStorage.getItem('kian_pos_products_v1');
+      return saved ? JSON.parse(saved) : initialProducts;
+    } catch {
+      return initialProducts;
+    }
+  });
+
+  const [localCategories] = useState<Category[]>(() => {
+    try {
+      const saved = localStorage.getItem('kian_pos_categories_v1');
+      return saved ? JSON.parse(saved) : initialCategories;
+    } catch {
+      return initialCategories;
+    }
+  });
+
+  const [localSettings, setLocalSettings] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('kian_pos_settings_v1');
+      return saved ? JSON.parse(saved) : initialSettings;
+    } catch {
+      return initialSettings;
+    }
+  });
+
+  const contextProducts = appCtx?.products || localProducts;
+  const contextCategories = appCtx?.categories || localCategories;
+  const contextSettings = appCtx?.settings || localSettings;
+  const contextDevices = appCtx?.devices || [];
+  const contextKitchenOrders = appCtx?.kitchenOrders || [];
+
+  const safeNotify = (title: string, message: string, type: 'info' | 'warning' | 'error' | 'success' = 'info') => {
+    if (appCtx?.notify && !isStandalone) {
+      appCtx.notify(title, message, type);
+    }
+  };
+
+  const safeUpdateProduct = (id: string, updates: Partial<Product>) => {
+    if (appCtx?.updateProduct) {
+      appCtx.updateProduct(id, updates);
+    }
+    setLocalProducts(prev => {
+      const updated = prev.map(p => (p.id === id ? { ...p, ...updates } : p));
+      try {
+        localStorage.setItem('kian_pos_products_v1', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const safeUpdateQrMenuTheme = (themeUpdates: Partial<QrMenuThemeConfig>) => {
+    if (appCtx?.updateQrMenuTheme) {
+      appCtx.updateQrMenuTheme(themeUpdates);
+    }
+    setLocalSettings((prev: any) => {
+      const nextTheme = {
+        ...DEFAULT_QR_MENU_THEME,
+        ...(prev?.qrMenuTheme || {}),
+        ...themeUpdates,
+      };
+      const updated = { ...(prev || {}), qrMenuTheme: nextTheme };
+      try {
+        localStorage.setItem('kian_pos_settings_v1', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
   // Remote catalog state (fetched from /api/menu/catalog when customer scans QR on their phone)
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([]);
@@ -418,7 +478,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   const [remoteOrders, setRemoteOrders] = useState<KitchenOrder[]>([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
 
-  // Fetch live catalog from server on mount & listen to SSE updates
+  // Fetch live catalog from server on mount & listen to SSE + BroadcastChannel updates
   const fetchLiveCatalog = async () => {
     try {
       setIsLoadingCatalog(true);
@@ -442,7 +502,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
         }
       }
     } catch {
-      // Fallback to context state seamlessly
+      // Fallback to context / localStorage seamlessly
     } finally {
       setIsLoadingCatalog(false);
     }
@@ -452,6 +512,30 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     fetchLiveCatalog();
 
     let es: EventSource | null = null;
+    let bc: BroadcastChannel | null = null;
+
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('kian_pos_devices_mesh');
+        bc.onmessage = event => {
+          const { type, payload } = event.data || {};
+          if (type === 'MENU_PRODUCT_UPDATED' && payload?.productId && payload?.updates) {
+            setRemoteProducts(prev =>
+              prev.map(p => (p.id === payload.productId ? { ...p, ...payload.updates } : p))
+            );
+            setLocalProducts(prev =>
+              prev.map(p => (p.id === payload.productId ? { ...p, ...payload.updates } : p))
+            );
+          } else if (type === 'MENU_THEME_UPDATED' && payload?.qrMenuTheme) {
+            setRemoteSettings((prev: any) => ({ ...(prev || {}), qrMenuTheme: payload.qrMenuTheme }));
+            setLocalSettings((prev: any) => ({ ...(prev || {}), qrMenuTheme: payload.qrMenuTheme }));
+          } else if (type === 'KITCHEN_ORDERS_UPDATE' && Array.isArray(payload)) {
+            setRemoteOrders(payload);
+          }
+        };
+      }
+    } catch {}
+
     try {
       es = new EventSource('/api/sync/stream');
       es.addEventListener('MENU_CATALOG_UPDATED', (e: any) => {
@@ -466,6 +550,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
         try {
           const { productId, updates } = JSON.parse(e.data);
           setRemoteProducts(prev => prev.map(p => (p.id === productId ? { ...p, ...updates } : p)));
+          setLocalProducts(prev => prev.map(p => (p.id === productId ? { ...p, ...updates } : p)));
         } catch {}
       });
       es.addEventListener('MENU_THEME_UPDATED', (e: any) => {
@@ -473,6 +558,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
           const { qrMenuTheme } = JSON.parse(e.data);
           if (qrMenuTheme) {
             setRemoteSettings((prev: any) => ({ ...(prev || {}), qrMenuTheme }));
+            setLocalSettings((prev: any) => ({ ...(prev || {}), qrMenuTheme }));
           }
         } catch {}
       });
@@ -485,6 +571,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     } catch {}
 
     return () => {
+      bc?.close();
       es?.close();
     };
   }, []);
@@ -628,6 +715,51 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     });
   }, [activeProducts, selectedCategory, searchQuery]);
 
+  // Organized Category Sections for clean Restaurant/Cafe Menu Presentation
+  const groupedMenuSections = useMemo(() => {
+    if (selectedCategory !== 'cat_all' || searchQuery.trim() !== '') {
+      const activeCatObj = activeCategories.find(c => c.id === selectedCategory);
+      return [
+        {
+          id: selectedCategory,
+          title:
+            searchQuery.trim() !== ''
+              ? `نتائج البحث (${filteredProducts.length})`
+              : activeCatObj?.nameAr || 'الأصناف المتاحة',
+          items: filteredProducts,
+        },
+      ];
+    }
+
+    const sections: { id: string; title: string; items: Product[] }[] = [];
+    const seenIds = new Set<string>();
+
+    activeCategories
+      .filter(c => c.id !== 'cat_all')
+      .forEach(cat => {
+        const catItems = filteredProducts.filter(p => p.categoryId === cat.id);
+        if (catItems.length > 0) {
+          sections.push({
+            id: cat.id,
+            title: cat.nameAr,
+            items: catItems,
+          });
+          catItems.forEach(item => seenIds.add(item.id));
+        }
+      });
+
+    const uncategorized = filteredProducts.filter(p => !seenIds.has(p.id));
+    if (uncategorized.length > 0) {
+      sections.push({
+        id: 'other',
+        title: sections.length > 0 ? 'أصناف متنوعة أخرى' : 'قائمة الطعام والمشروبات',
+        items: uncategorized,
+      });
+    }
+
+    return sections;
+  }, [filteredProducts, activeCategories, selectedCategory, searchQuery]);
+
   // Customer Cart Helpers
   const getCartItem = (productId: string) => customerCart.find(c => c.product.id === productId);
 
@@ -690,7 +822,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       setEditImageInput(dataUrl);
       soundEffects.playSuccess();
     } catch {
-      notify('خطأ في الصورة', 'تعذر معالجة الصورة المختارة', 'error');
+      safeNotify('خطأ في الصورة', 'تعذر معالجة الصورة المختارة', 'error');
     }
   };
 
@@ -715,8 +847,8 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       targetStationName: resolvedStationName,
     };
 
-    // Update in AppContext (Inventory product record)
-    updateProduct(editingProductModal.id, updates);
+    // Update in AppContext / localStorage (Inventory product record)
+    safeUpdateProduct(editingProductModal.id, updates);
 
     // Update in remote catalog state
     setRemoteProducts(prev =>
@@ -742,7 +874,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     } catch {}
 
     soundEffects.saleSuccess();
-    notify(
+    safeNotify(
       'تم حفظ صورة المنتج في المخزون وتوجيه الجهاز',
       `سيظهر طلب [${editingProductModal.nameAr}] في: ${resolvedStationName}`,
       'success'
@@ -820,7 +952,15 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
           status: 'new',
           createdAt: new Date().toISOString(),
         };
-        addKitchenOrder(createdOrder);
+        if (appCtx?.addKitchenOrder) {
+          appCtx.addKitchenOrder(createdOrder);
+        } else {
+          try {
+            const saved = localStorage.getItem('kian_pos_kitchen_orders_v1');
+            const parsed = saved ? JSON.parse(saved) : [];
+            localStorage.setItem('kian_pos_kitchen_orders_v1', JSON.stringify([createdOrder, ...parsed]));
+          } catch {}
+        }
       }
 
       // Broadcast via BroadcastChannel for instant local tabs
@@ -899,8 +1039,22 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     };
 
     try {
-      // 1. Save in AppContext (localStorage) so Manager Dashboard has it immediately
-      const createdLocal = addCustomerReview(reviewPayload);
+      // 1. Save in AppContext / localStorage so Manager Dashboard has it immediately
+      let createdLocal: CustomerFeedbackReview;
+      if (appCtx?.addCustomerReview) {
+        createdLocal = appCtx.addCustomerReview(reviewPayload);
+      } else {
+        createdLocal = {
+          ...reviewPayload,
+          id: `rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          createdAt: new Date().toISOString(),
+        };
+        try {
+          const saved = localStorage.getItem('kian_pos_customer_reviews_v1');
+          const parsed = saved ? JSON.parse(saved) : [];
+          localStorage.setItem('kian_pos_customer_reviews_v1', JSON.stringify([createdLocal, ...parsed]));
+        } catch {}
+      }
 
       // 2. Post to backend so all connected screens receive SSE
       await fetch('/api/menu/submit-review', {
@@ -940,10 +1094,10 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       }}
       className="min-h-screen w-full flex flex-col font-sans select-none overflow-x-hidden transition-colors duration-300"
     >
-      {/* Top Preview / Manager Control Bar (Shown when previewing from POS or when Manager Mode is toggled) */}
-      {(onClosePreview || !isStandalone || isManagerEditMode) && (
+      {/* Top Preview / Manager Control Bar (ONLY shown when manager previews from POS — completely hidden in standalone customer mode) */}
+      {!isStandalone && (
         <div className="bg-slate-900 text-white px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 z-40">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {onClosePreview && (
               <button
                 type="button"
@@ -951,23 +1105,36 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition-all cursor-pointer"
               >
                 <ArrowRight className="w-4 h-4" />
-                <span>العودة لشاشة الكاشير</span>
+                <span>العودة لشاشة النظام</span>
               </button>
             )}
             <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
               <QrCode className="w-4 h-4" />
-              <span>صفحة منيو الزبون المخصصة (QR Menu)</span>
+              <span>معاينة صفحة الزبون المستقلة (CustomerQrMenuPage)</span>
             </span>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
+              onClick={() => {
+                const url = `${window.location.origin}${window.location.pathname}?customerMenu=1&table=${encodeURIComponent(tableName)}&type=${diningType}`;
+                window.history.pushState({}, '', url);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer"
+              title="فتح صفحة الزبون كصفحة مستقلة تماماً بدون أي أدوات إدارة"
+            >
+              <span>وضع الزبون المستقل بالكامل</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsThemeCustomizerOpen(!isThemeCustomizerOpen)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
             >
               <Palette className="w-3.5 h-3.5 text-amber-400" />
-              <span>تخصيص ألوان الهوية (الأزرار والخلفية)</span>
+              <span>تخصيص الألوان</span>
             </button>
 
             <button
@@ -988,16 +1155,16 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>
                 {isManagerEditMode
-                  ? '✓ وضع المسؤول مفعل (تعديل الصور وتوجيه الأجهزة)'
-                  : 'وضع المسؤول: وضع صور وتحديد جهاز كل منتج'}
+                  ? '✓ وضع تعديل الصور وتوجيه الأجهزة'
+                  : 'تعديل الصور وتحديد جهاز كل منتج'}
               </span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Manager Live Brand Color Customizer Drawer */}
-      {isThemeCustomizerOpen && (
+      {/* Manager Live Brand Color Customizer Drawer (Only when !isStandalone) */}
+      {!isStandalone && isThemeCustomizerOpen && (
         <div className="bg-slate-900 text-white border-b border-slate-800 px-4 py-4 z-30 animate-in slide-in-from-top-2">
           <div className="max-w-5xl mx-auto space-y-4">
             <div className="flex items-center justify-between">
@@ -1030,7 +1197,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     key={preset.id}
                     type="button"
                     onClick={() => {
-                      updateQrMenuTheme(preset.theme);
+                      safeUpdateQrMenuTheme(preset.theme);
                       setRemoteSettings((prev: any) => ({
                         ...(prev || {}),
                         qrMenuTheme: preset.theme,
@@ -1074,7 +1241,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     type="color"
                     value={activeTheme.primaryColor}
                     onChange={e =>
-                      updateQrMenuTheme({ primaryColor: e.target.value, presetId: 'custom' })
+                      safeUpdateQrMenuTheme({ primaryColor: e.target.value, presetId: 'custom' })
                     }
                     className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
                   />
@@ -1090,7 +1257,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                   <button
                     type="button"
                     onClick={() =>
-                      updateQrMenuTheme({ buttonTextColor: '#ffffff', presetId: 'custom' })
+                      safeUpdateQrMenuTheme({ buttonTextColor: '#ffffff', presetId: 'custom' })
                     }
                     className={`flex-1 py-1.5 rounded-lg text-[10px] font-black border cursor-pointer ${
                       activeTheme.buttonTextColor === '#ffffff'
@@ -1103,7 +1270,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                   <button
                     type="button"
                     onClick={() =>
-                      updateQrMenuTheme({ buttonTextColor: '#0f172a', presetId: 'custom' })
+                      safeUpdateQrMenuTheme({ buttonTextColor: '#0f172a', presetId: 'custom' })
                     }
                     className={`flex-1 py-1.5 rounded-lg text-[10px] font-black border cursor-pointer ${
                       activeTheme.buttonTextColor === '#0f172a'
@@ -1125,7 +1292,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     type="color"
                     value={activeTheme.backgroundColor}
                     onChange={e =>
-                      updateQrMenuTheme({ backgroundColor: e.target.value, presetId: 'custom' })
+                      safeUpdateQrMenuTheme({ backgroundColor: e.target.value, presetId: 'custom' })
                     }
                     className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
                   />
@@ -1142,7 +1309,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     type="color"
                     value={activeTheme.headerBackgroundColor}
                     onChange={e =>
-                      updateQrMenuTheme({
+                      safeUpdateQrMenuTheme({
                         headerBackgroundColor: e.target.value,
                         presetId: 'custom',
                       })
@@ -1164,7 +1331,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     type="color"
                     value={activeTheme.cardBackgroundColor}
                     onChange={e =>
-                      updateQrMenuTheme({
+                      safeUpdateQrMenuTheme({
                         cardBackgroundColor: e.target.value,
                         presetId: 'custom',
                       })
@@ -1487,20 +1654,6 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
               <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
               <span className="hidden md:inline">تقييم التجربة</span>
             </button>
-
-            {/* Subtle Manager Toggle Button on Customer Page for Store Owner */}
-            {isStandalone && !isManagerEditMode && (
-              <button
-                type="button"
-                onClick={() => setIsManagerEditMode(true)}
-                style={{ backgroundColor: activeTheme.cardBackgroundColor }}
-                className="px-2.5 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-amber-600 text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer"
-                title="تخصيص صور المنتجات وتوجيه الأجهزة والألوان (للمسؤول)"
-              >
-                <Camera className="w-4 h-4" />
-                <span className="hidden md:inline">إدارة المنيو</span>
-              </button>
-            )}
           </div>
 
           {/* Horizontal Categories Pills */}
@@ -1609,217 +1762,208 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
             </p>
           </div>
         ) : (
-          <div
-            className={
-              viewLayout === 'grid'
-                ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'
-                : 'grid grid-cols-1 md:grid-cols-2 gap-3.5'
-            }
-          >
-            {filteredProducts.map(product => {
-              const cartItem = getCartItem(product.id);
-              const cat = activeCategories.find(c => c.id === product.categoryId);
-              const targetLabel = getTargetDeviceLabel(product, activeDevices);
-              const invInfo = resolveProductFromInventory(product, combinedInventoryCatalog);
-              const displayImage = invInfo.imageUrl || product.image;
+          <div className="space-y-8">
+            {groupedMenuSections.map(section => (
+              <section key={section.id} className="space-y-3.5">
+                {/* Organized Section Header */}
+                <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      style={{ backgroundColor: activeTheme.primaryColor }}
+                      className="w-2 h-6 rounded-full shrink-0"
+                    />
+                    <h2 className="text-base sm:text-lg font-black tracking-tight">
+                      {section.title}
+                    </h2>
+                  </div>
+                  <span className="text-xs font-bold text-slate-400 font-mono">
+                    {section.items.length} صنف
+                  </span>
+                </div>
 
-              return (
                 <div
-                  key={product.id}
-                  style={{
-                    backgroundColor: activeTheme.cardBackgroundColor,
-                    borderColor: cartItem ? activeTheme.primaryColor : undefined,
-                  }}
-                  className={`group rounded-3xl border transition-all overflow-hidden flex flex-col justify-between ${
-                    cartItem
-                      ? 'ring-2 shadow-md'
-                      : 'border-slate-200/90 dark:border-slate-800 hover:shadow-md shadow-xs'
-                  }`}
+                  className={
+                    viewLayout === 'grid'
+                      ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'
+                      : 'grid grid-cols-1 md:grid-cols-2 gap-3.5'
+                  }
                 >
-                  {/* Optional Top Cover Image when in 'grid' layout */}
-                  {viewLayout === 'grid' && (
-                    <div className="relative w-full h-44 bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
-                      {displayImage ? (
-                        <img
-                          src={displayImage}
-                          alt={product.nameAr}
-                          onClick={() =>
-                            setZoomedImageProduct({ ...product, image: displayImage })
-                          }
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <UtensilsCrossed className="w-10 h-10 text-slate-400" />
-                        </div>
-                      )}
-                      {cat && cat.id !== 'cat_all' && (
-                        <span className="absolute top-2.5 start-2.5 px-2.5 py-1 rounded-xl bg-slate-900/75 backdrop-blur-md text-white text-[10px] font-extrabold">
-                          {cat.nameAr}
-                        </span>
-                      )}
-                      {isManagerEditMode && (
-                        <button
-                          type="button"
-                          onClick={e => {
-                            e.stopPropagation();
-                            openProductEditor(product);
-                          }}
-                          style={{
-                            backgroundColor: activeTheme.primaryColor,
-                            color: activeTheme.buttonTextColor,
-                          }}
-                          className="absolute top-2.5 end-2.5 px-2.5 py-1 rounded-xl font-black text-[11px] shadow-lg flex items-center gap-1 cursor-pointer"
-                        >
-                          <Camera className="w-3.5 h-3.5" />
-                          <span>تعديل الصورة والوجهة</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {section.items.map(product => {
+                    const cartItem = getCartItem(product.id);
+                    const cat = activeCategories.find(c => c.id === product.categoryId);
+                    const targetLabel = getTargetDeviceLabel(product, activeDevices);
+                    const invInfo = resolveProductFromInventory(product, combinedInventoryCatalog);
+                    const displayImage = invInfo.imageUrl || product.image;
 
-                  {/* Product Row: Inventory Image Directly Beside Name & Price */}
-                  <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      {/* Inventory-Linked Product Image Thumbnail Beside Name & Price */}
+                    return (
                       <div
-                        onClick={() =>
-                          displayImage
-                            ? setZoomedImageProduct({ ...product, image: displayImage })
-                            : isManagerEditMode
-                            ? openProductEditor(product)
-                            : undefined
-                        }
-                        className={`relative rounded-2xl overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer group/img ${
-                          viewLayout === 'list' ? 'w-24 h-24 sm:w-28 sm:h-28' : 'w-14 h-14'
+                        key={product.id}
+                        style={{
+                          backgroundColor: activeTheme.cardBackgroundColor,
+                          borderColor: cartItem ? activeTheme.primaryColor : undefined,
+                        }}
+                        className={`group rounded-3xl border transition-all overflow-hidden flex flex-col justify-between ${
+                          cartItem
+                            ? 'ring-2 shadow-md'
+                            : 'border-slate-200/90 dark:border-slate-800 hover:shadow-md shadow-xs'
                         }`}
-                        title="صورة المنتج من بيانات المخزون — اضغط للتكبير"
                       >
-                        {displayImage ? (
-                          <img
-                            src={displayImage}
-                            alt={product.nameAr}
-                            className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center">
-                            <UtensilsCrossed
-                              style={{ color: activeTheme.primaryColor }}
-                              className="w-6 h-6 mb-1"
-                            />
-                            <span className="text-[9px] text-slate-400 font-bold">صورة المخزون</span>
+                        {/* Optional Top Cover Image when in 'grid' layout */}
+                        {viewLayout === 'grid' && (
+                          <div className="relative w-full h-44 bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
+                            {displayImage ? (
+                              <img
+                                src={displayImage}
+                                alt={product.nameAr}
+                                onClick={() =>
+                                  setZoomedImageProduct({ ...product, image: displayImage })
+                                }
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <UtensilsCrossed className="w-10 h-10 text-slate-400" />
+                              </div>
+                            )}
+                            {!isStandalone && isManagerEditMode && (
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  openProductEditor(product);
+                                }}
+                                style={{
+                                  backgroundColor: activeTheme.primaryColor,
+                                  color: activeTheme.buttonTextColor,
+                                }}
+                                className="absolute top-2.5 end-2.5 px-2.5 py-1 rounded-xl font-black text-[11px] shadow-lg flex items-center gap-1 cursor-pointer"
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                                <span>تعديل الصورة والوجهة</span>
+                              </button>
+                            )}
                           </div>
                         )}
 
-                        {isManagerEditMode && viewLayout === 'list' && (
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              openProductEditor(product);
-                            }}
-                            style={{
-                              backgroundColor: activeTheme.primaryColor,
-                              color: activeTheme.buttonTextColor,
-                            }}
-                            className="absolute inset-x-1 bottom-1 py-1 rounded-lg font-black text-[9px] flex items-center justify-center gap-1 shadow-md cursor-pointer"
-                          >
-                            <Camera className="w-3 h-3" />
-                            <span>تعديل</span>
-                          </button>
-                        )}
-                      </div>
+                        {/* Product Row: Inventory Image Directly Beside Name & Price */}
+                        <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            {/* Inventory-Linked Product Image Thumbnail Beside Name & Price */}
+                            <div
+                              onClick={() =>
+                                displayImage
+                                  ? setZoomedImageProduct({ ...product, image: displayImage })
+                                  : !isStandalone && isManagerEditMode
+                                  ? openProductEditor(product)
+                                  : undefined
+                              }
+                              className={`relative rounded-2xl overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer group/img ${
+                                viewLayout === 'list' ? 'w-24 h-24 sm:w-28 sm:h-28' : 'w-14 h-14'
+                              }`}
+                              title="اضغط لتكبير صورة الصنف"
+                            >
+                              {displayImage ? (
+                                <img
+                                  src={displayImage}
+                                  alt={product.nameAr}
+                                  className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center">
+                                  <UtensilsCrossed
+                                    style={{ color: activeTheme.primaryColor }}
+                                    className="w-6 h-6 mb-1"
+                                  />
+                                  <span className="text-[9px] text-slate-400 font-bold">صورة الصنف</span>
+                                </div>
+                              )}
 
-                      {/* Name, Price & Linked Inventory Details */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <h3 className="text-sm sm:text-base font-black leading-snug truncate">
-                              {product.nameAr}
-                            </h3>
-                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                              {cat && cat.id !== 'cat_all' && (
-                                <span className="text-[10px] font-bold text-slate-400">
-                                  {cat.nameAr}
-                                </span>
+                              {!isStandalone && isManagerEditMode && viewLayout === 'list' && (
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    openProductEditor(product);
+                                  }}
+                                  style={{
+                                    backgroundColor: activeTheme.primaryColor,
+                                    color: activeTheme.buttonTextColor,
+                                  }}
+                                  className="absolute inset-x-1 bottom-1 py-1 rounded-lg font-black text-[9px] flex items-center justify-center gap-1 shadow-md cursor-pointer"
+                                >
+                                  <Camera className="w-3 h-3" />
+                                  <span>تعديل</span>
+                                </button>
                               )}
-                              {invInfo.stock > 0 && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                  <Package className="w-2.5 h-2.5" />
-                                  <span>
-                                    متوفر ({invInfo.stock} {invInfo.unit})
-                                  </span>
-                                </span>
-                              )}
-                              {product.preparationTimeMinutes && (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-400">
-                                  <Clock className="w-2.5 h-2.5" />
-                                  <span>{product.preparationTimeMinutes} د</span>
-                                </span>
+                            </div>
+
+                            {/* Name, Price & Clean Customer Details */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <h3 className="text-sm sm:text-base font-black leading-snug truncate">
+                                    {product.nameAr}
+                                  </h3>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                    {cat && cat.id !== 'cat_all' && (
+                                      <span>{cat.nameAr}</span>
+                                    )}
+                                    {invInfo.stock > 0 && (
+                                      <>
+                                        {cat && cat.id !== 'cat_all' && <span aria-hidden="true">·</span>}
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                          {!isStandalone && isManagerEditMode
+                                            ? `مخزون: ${invInfo.stock} ${invInfo.unit}`
+                                            : 'متوفر للطلب'}
+                                        </span>
+                                      </>
+                                    )}
+                                    {product.preparationTimeMinutes && (
+                                      <>
+                                        <span aria-hidden="true">·</span>
+                                        <span className="inline-flex items-center gap-0.5 font-semibold">
+                                          <Clock className="w-3 h-3" />
+                                          <span>{product.preparationTimeMinutes} د</span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Product Price Badge right beside Name & Photo */}
+                                <div
+                                  style={{
+                                    backgroundColor: `${activeTheme.primaryColor}18`,
+                                    color: isDarkPage ? '#ffffff' : '#0f172a',
+                                    borderColor: `${activeTheme.primaryColor}45`,
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-2xl border font-black font-mono text-xs sm:text-sm whitespace-nowrap shrink-0 shadow-2xs"
+                                >
+                                  {formatMoney(product.price)}
+                                </div>
+                              </div>
+
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
+                                {invInfo.description}
+                              </p>
+
+                              {/* Target Device Routing Badge (ONLY Visible in Manager Preview Edit Mode) */}
+                              {!isStandalone && isManagerEditMode && (
+                                <div
+                                  onClick={() => openProductEditor(product)}
+                                  className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/60 text-[10px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-100"
+                                >
+                                  <Monitor className="w-3 h-3 text-blue-500 shrink-0" />
+                                  <span className="truncate">يوجه إلى: {targetLabel}</span>
+                                  <Edit3 className="w-2.5 h-2.5 opacity-70 shrink-0" />
+                                </div>
                               )}
                             </div>
                           </div>
 
-                          {/* Product Price Badge right beside Name & Photo */}
-                          <div
-                            style={{
-                              backgroundColor: `${activeTheme.primaryColor}18`,
-                              color: isDarkPage ? '#ffffff' : '#0f172a',
-                              borderColor: `${activeTheme.primaryColor}45`,
-                            }}
-                            className="px-2.5 py-1.5 rounded-2xl border font-black font-mono text-xs sm:text-sm whitespace-nowrap shrink-0 shadow-2xs"
-                          >
-                            {formatMoney(product.price)}
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
-                          {invInfo.description}
-                        </p>
-
-                        {/* Target Device Routing Badge (Visible in Manager Mode) */}
-                        {isManagerEditMode && (
-                          <div
-                            onClick={() => openProductEditor(product)}
-                            className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/60 text-[10px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-100"
-                          >
-                            <Monitor className="w-3 h-3 text-blue-500 shrink-0" />
-                            <span className="truncate">يوجه إلى: {targetLabel}</span>
-                            <Edit3 className="w-2.5 h-2.5 opacity-70 shrink-0" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Add to Cart / Quantity Controls (Styled with activeTheme.primaryColor) */}
-                    <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
-                      {!cartItem ? (
-                        <button
-                          type="button"
-                          onClick={() => handleAddItem(product)}
-                          style={{
-                            backgroundColor: activeTheme.primaryColor,
-                            color: activeTheme.buttonTextColor,
-                          }}
-                          className="w-full py-2.5 px-4 rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>إضافة إلى الطلب</span>
-                        </button>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateQty(product.id, cartItem.quantity - 1)}
-                                className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-2xs active:scale-90 cursor-pointer"
-                              >
-                                <Minus className="w-4 h-4" />
-                              </button>
-                              <span className="w-8 text-center font-black font-mono text-sm">
-                                {cartItem.quantity}
-                              </span>
+                          {/* Add to Cart / Quantity Controls (Styled with activeTheme.primaryColor) */}
+                          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+                            {!cartItem ? (
                               <button
                                 type="button"
                                 onClick={() => handleAddItem(product)}
@@ -1827,66 +1971,95 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                                   backgroundColor: activeTheme.primaryColor,
                                   color: activeTheme.buttonTextColor,
                                 }}
-                                className="w-8 h-8 rounded-xl flex items-center justify-center shadow-2xs active:scale-90 cursor-pointer"
+                                className="w-full py-2.5 px-4 rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
                               >
                                 <Plus className="w-4 h-4" />
+                                <span>إضافة إلى الطلب</span>
                               </button>
-                            </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateQty(product.id, cartItem.quantity - 1)}
+                                      className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-2xs active:scale-90 cursor-pointer"
+                                    >
+                                      <Minus className="w-4 h-4" />
+                                    </button>
+                                    <span className="w-8 text-center font-black font-mono text-sm">
+                                      {cartItem.quantity}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddItem(product)}
+                                      style={{
+                                        backgroundColor: activeTheme.primaryColor,
+                                        color: activeTheme.buttonTextColor,
+                                      }}
+                                      className="w-8 h-8 rounded-xl flex items-center justify-center shadow-2xs active:scale-90 cursor-pointer"
+                                    >
+                                      <Plus className="w-4 h-4" />
+                                    </button>
+                                  </div>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEditingNoteProductId(
-                                  editingNoteProductId === product.id ? null : product.id
-                                )
-                              }
-                              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
-                                cartItem.notes
-                                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-                                  : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                              }`}
-                            >
-                              <MessageSquarePlus className="w-3.5 h-3.5" />
-                              <span>{cartItem.notes ? 'تعديل الملاحظة' : 'ملاحظة تحضير'}</span>
-                            </button>
-                          </div>
-
-                          {/* Item Special Note Input & Quick Presets */}
-                          {(editingNoteProductId === product.id || cartItem.notes) && (
-                            <div className="p-2 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-1.5">
-                              <input
-                                type="text"
-                                value={cartItem.notes}
-                                onChange={e => handleUpdateItemNote(product.id, e.target.value)}
-                                placeholder="ملاحظة خاصة (مثال: بدون سكر، زيادة ثلج...)"
-                                className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold focus:outline-none"
-                              />
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {QUICK_ITEM_NOTES.map(preset => (
                                   <button
-                                    key={preset}
                                     type="button"
-                                    onClick={() => {
-                                      const current = cartItem.notes ? `${cartItem.notes}، ` : '';
-                                      if (!cartItem.notes.includes(preset)) {
-                                        handleUpdateItemNote(product.id, `${current}${preset}`);
-                                      }
-                                    }}
-                                    className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                                    onClick={() =>
+                                      setEditingNoteProductId(
+                                        editingNoteProductId === product.id ? null : product.id
+                                      )
+                                    }
+                                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                      cartItem.notes
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                                    }`}
                                   >
-                                    + {preset}
+                                    <MessageSquarePlus className="w-3.5 h-3.5" />
+                                    <span>{cartItem.notes ? 'تعديل الملاحظة' : 'ملاحظة تحضير'}</span>
                                   </button>
-                                ))}
+                                </div>
+
+                                {/* Item Special Note Input & Quick Presets */}
+                                {(editingNoteProductId === product.id || cartItem.notes) && (
+                                  <div className="p-2 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                                    <input
+                                      type="text"
+                                      value={cartItem.notes}
+                                      onChange={e => handleUpdateItemNote(product.id, e.target.value)}
+                                      placeholder="ملاحظة خاصة (مثال: بدون سكر، زيادة ثلج...)"
+                                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold focus:outline-none"
+                                    />
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {QUICK_ITEM_NOTES.map(preset => (
+                                        <button
+                                          key={preset}
+                                          type="button"
+                                          onClick={() => {
+                                            const current = cartItem.notes ? `${cartItem.notes}، ` : '';
+                                            if (!cartItem.notes.includes(preset)) {
+                                              handleUpdateItemNote(product.id, `${current}${preset}`);
+                                            }
+                                          }}
+                                          className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                                        >
+                                          + {preset}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </section>
+            ))}
           </div>
         )}
       </main>
@@ -2386,8 +2559,8 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
         </div>
       )}
 
-      {/* Manager Product Image & Target Device Routing Modal */}
-      {editingProductModal && (
+      {/* Manager Product Image & Target Device Routing Modal (ONLY in Manager Preview Mode) */}
+      {!isStandalone && editingProductModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between">
