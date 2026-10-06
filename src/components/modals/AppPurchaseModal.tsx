@@ -443,13 +443,27 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
               </div>
             </div>
           ) : (
-            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-slate-800 dark:text-slate-200 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-500" />
-                <span className="font-bold">الوقت المتبقي في وضع الضيف:</span>
+            <div className="space-y-2.5">
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-amber-500/15 border border-amber-500/40 text-slate-900 dark:text-slate-100 flex items-start gap-2.5 text-xs">
+                <RotateCcw className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-black text-amber-800 dark:text-amber-300">
+                    تم إلغاء الأكواد والاشتراكات القديمة وإرجاع الحساب إلى الفترة المجانية
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    أنت الآن في الفترة التجريبية المجانية (7 أيام). لتفعيل الاشتراك الدائم، يرجى إدخال <strong>كود تفعيل جديد معتمد</strong> في الحقل أدناه.
+                  </p>
+                </div>
               </div>
-              <div className="font-mono font-black text-xs text-amber-600 dark:text-amber-400">
-                {trialDaysRemaining} أيام و {trialHoursRemaining} ساعات
+
+              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-slate-800 dark:text-slate-200 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-500" />
+                  <span className="font-bold">الوقت المتبقي في الفترة المجانية (وضع الضيف):</span>
+                </div>
+                <div className="font-mono font-black text-xs text-amber-600 dark:text-amber-400">
+                  {trialDaysRemaining} أيام و {trialHoursRemaining} ساعات
+                </div>
               </div>
             </div>
           )}

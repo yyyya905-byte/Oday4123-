@@ -65,6 +65,10 @@ import {
   bindOrTransferLicenseInFirebaseAndServer,
   subscribeToFirebaseLicenseBinding,
   formatCodeUsageTimestampAr,
+  isApprovedActiveLicenseCode,
+  isCancelledLegacyCode,
+  purgeLegacyCodesFromLocalAndFirebase,
+  LICENSE_POLICY_EPOCH_KEY,
   PREDEFINED_LICENSE_CODES,
   MASTER_ACTIVATION_CODES
 } from '../utils/licenseUtils';
@@ -1177,10 +1181,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isFirstLoginModalOpen, setIsFirstLoginModalOpen] = useState<boolean>(false);
 
   const [licenseKey, setLicenseKey] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
+    purgeLegacyCodesFromLocalAndFirebase();
+    const rawKey = localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
+    const policyEpoch = localStorage.getItem(LICENSE_POLICY_EPOCH_KEY);
+    // Cancel any old code not in the 8 approved codes OR any subscription from before the new policy epoch
+    if (!rawKey || !isApprovedActiveLicenseCode(rawKey) || policyEpoch !== 'v2026_approved_8_codes_v1') {
+      return '';
+    }
+    return rawKey;
   });
 
   const [licenseExpiresAt, setLicenseExpiresAt] = useState<string | null>(() => {
+    const rawKey = localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
+    const policyEpoch = localStorage.getItem(LICENSE_POLICY_EPOCH_KEY);
+    if (!rawKey || !isApprovedActiveLicenseCode(rawKey) || policyEpoch !== 'v2026_approved_8_codes_v1') {
+      return null;
+    }
     return localStorage.getItem(STORAGE_KEYS.LICENSE_EXPIRES_AT) || settings.licenseInfo?.licenseExpiresAt || null;
   });
 
@@ -1194,6 +1210,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const licenseDurationLabel = settings.licenseInfo?.licenseDurationLabel || (isLifetimeLicense ? 'ترخيص دائم مدى الحياة' : (licenseExpiresAt ? (licenseRemainingDays > 35 ? 'اشتراك سنوي (سنة)' : 'اشتراك شهري (شهر)') : 'ترخيص معتمد'));
 
   const [isAppPurchased, setIsAppPurchased] = useState<boolean>(() => {
+    const rawKey = localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
+    const policyEpoch = localStorage.getItem(LICENSE_POLICY_EPOCH_KEY);
+    if (!rawKey || !isApprovedActiveLicenseCode(rawKey) || policyEpoch !== 'v2026_approved_8_codes_v1') {
+      return false;
+    }
     const expiresSaved = localStorage.getItem(STORAGE_KEYS.LICENSE_EXPIRES_AT) || settings.licenseInfo?.licenseExpiresAt;
     if (expiresSaved) {
       const isExpired = new Date(expiresSaved).getTime() <= Date.now();
@@ -1312,19 +1333,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const revokeCurrentDeviceSubscription = useCallback((reasonAr?: string) => {
+    const freshTrialStart = new Date().toISOString();
     try {
       localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'false');
       localStorage.removeItem(STORAGE_KEYS.LICENSE_KEY);
       localStorage.removeItem(STORAGE_KEYS.LICENSE_EXPIRES_AT);
       localStorage.removeItem(STORAGE_KEYS.LICENSE_TYPE);
-      localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'true');
+      localStorage.setItem(STORAGE_KEYS.TRIAL_START_DATE, freshTrialStart);
+      localStorage.setItem(STORAGE_KEYS.IS_TRIAL_EXPIRED, 'false');
     } catch {}
 
     setIsAppPurchased(false);
     setLicenseKey('');
     setLicenseExpiresAt(null);
-    setIsLicenseExpired(true);
-    setIsTrialExpiredState(true);
+    setTrialStartDate(freshTrialStart);
+    setIsTrialExpiredState(false);
 
     setSettingsState(prev => {
       const updated: StoreSettings = {
@@ -1332,7 +1355,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         licenseInfo: {
           isPurchased: false,
           licenseKey: '',
-          licenseStatus: 'expired',
+          licenseStatus: 'trial',
+          trialStartDate: freshTrialStart,
         },
       };
       try {
@@ -1344,11 +1368,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundEffects.playWarning();
     setIsPurchaseModalOpen(true);
     notify(
-      '⛔ تم إلغاء اشتراك هذا الجهاز تلقائياً!',
-      reasonAr || 'تم إلغاء تفعيل الاشتراك على هذا الجهاز بسبب نقل التفعيل أو استخدام الكود في جهاز آخر.',
-      'error'
+      '🔄 تم إلغاء الاشتراك وإرجاع الحساب للفترة المجانية',
+      reasonAr || 'تم إلغاء الكود القديم وإرجاع حسابك إلى الفترة التجريبية المجانية (7 أيام). يرجى إدخال كود تفعيل جديد.',
+      'warning'
     );
   }, []);
+
+  // Automatically cancel any old code (such as K9_0u, K9_0s50) or pre-epoch subscription, return to 7-day free trial, and ask for a new code!
+  useEffect(() => {
+    purgeLegacyCodesFromLocalAndFirebase();
+    const rawSavedKey = localStorage.getItem(STORAGE_KEYS.LICENSE_KEY) || settings.licenseInfo?.licenseKey || '';
+    const wasPurchased =
+      localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true' ||
+      settings.licenseInfo?.isPurchased === true;
+    const policyEpoch = localStorage.getItem(LICENSE_POLICY_EPOCH_KEY);
+
+    if (
+      (rawSavedKey && !isApprovedActiveLicenseCode(rawSavedKey)) ||
+      (wasPurchased && policyEpoch !== 'v2026_approved_8_codes_v1')
+    ) {
+      localStorage.setItem(LICENSE_POLICY_EPOCH_KEY, 'v2026_approved_8_codes_v1');
+      revokeCurrentDeviceSubscription(
+        rawSavedKey
+          ? `تم إلغاء الكود القديم (${rawSavedKey}) وإرجاع حسابك إلى الفترة المجانية (7 أيام). يرجى إدخال كود تفعيل جديد من الأكواد المعتمدة.`
+          : 'تم إلغاء الاشتراك القديم وإرجاع حسابك إلى الفترة المجانية (7 أيام). يرجى إدخال كود تفعيل جديد.'
+      );
+    }
+  }, [revokeCurrentDeviceSubscription]);
 
   // Real-time Firebase Firestore listener: if this device's active license is transferred to another device or revoked, cancel subscription immediately!
   useEffect(() => {
@@ -1395,12 +1441,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? new Date(licenseExpiresAt)
         : now;
 
-      if (matched.duration === '1_year' || cleanCode.toLowerCase() === 'k9_0u' || matched.durationDays === 365) {
+      if (matched.duration === '1_year' || matched.durationDays === 365) {
         // 1 Year Subscription: 1 full calendar year
         const expDate = new Date(baseTime.getTime());
         expDate.setFullYear(expDate.getFullYear() + 1);
         expiresAtIso = expDate.toISOString();
-      } else if (matched.duration === '1_month' || cleanCode.toLowerCase() === 'k9_0s50' || matched.durationDays === 30) {
+      } else if (matched.duration === '1_month' || matched.durationDays === 30) {
         // 1 Month Subscription: 1 full calendar month
         const expDate = new Date(baseTime.getTime());
         expDate.setMonth(expDate.getMonth() + 1);
@@ -1445,7 +1491,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       previousDeviceIdToRevoke: customerInfo?.previousDeviceIdToRevoke,
     }).catch(() => {});
 
-    // Store in localStorage
+    // Store in localStorage with new policy epoch
+    localStorage.setItem(LICENSE_POLICY_EPOCH_KEY, 'v2026_approved_8_codes_v1');
     localStorage.setItem(STORAGE_KEYS.APP_PURCHASED, 'true');
     localStorage.setItem(STORAGE_KEYS.LICENSE_KEY, cleanCode);
     localStorage.setItem(STORAGE_KEYS.PURCHASED_AT, now.toISOString());
@@ -5299,9 +5346,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
         .then(r => r.json())
         .then(data => {
+          if (data?.cancelledOldCodeResetToTrial) {
+            revokeCurrentDeviceSubscription(
+              `تم إلغاء الكود القديم (${data.cancelledCode || licenseKey}) وإرجاع حسابك إلى الفترة المجانية (7 أيام). يرجى إدخال كود تفعيل جديد.`
+            );
+            return;
+          }
           if (data?.revokedCurrentDevice) {
             revokeCurrentDeviceSubscription(
-              `تم إلغاء اشتراك هذا الجهاز لأن الكود (${licenseKey}) تم نقله وتفعيله على جهاز آخر بمعرف (${data.boundToDeviceId || 'جهاز جديد'}).`
+              `تم إلغاء اشتراك هذا الجهاز لأن الكود (${licenseKey}) تم نقله وتفعيله على جهاز آخر بمعرف (${data.boundToDeviceId || 'جهاز جديد'}) وإرجاعك للفترة المجانية.`
             );
             return;
           }

@@ -34,20 +34,23 @@ export interface PredefinedLicenseCode {
 }
 
 /**
- * Predefined activation codes specified by the system owner:
- * - Annual (365 days, single use): K9_0u, SO_S1DF, SO_KLP1, SO_DS1K9, SO_S1HGK
- * - Monthly (30 days, single use): K9_0s50, K9_0ASD, K9_7FRS10, K9_7FKJSS9, K9_GRKSC4
+ * Predefined activation codes specified by the system owner (ONLY the 8 approved new codes):
+ * - Annual (365 days, single use): SO_S1DF, SO_KLP1, SO_DS1K9, SO_S1HGK
+ * - Monthly (30 days, single use): K9_0ASD, K9_7FRS10, K9_7FKJSS9, K9_GRKSC4
+ * All older codes (such as K9_0u, K9_0s50, etc.) are permanently cancelled and revoked.
  */
+export const CANCELLED_LEGACY_CODES: readonly string[] = [
+  'K9_0u',
+  'K9_0s50',
+  'KIAN-2025',
+  'KIAN-PRO',
+  'KIAN-FOREVER'
+];
+
+export const LICENSE_POLICY_EPOCH_KEY = 'kian_license_policy_epoch_v2026_new_codes_only';
+
 export const PREDEFINED_LICENSE_CODES: PredefinedLicenseCode[] = [
-  // --- أكواد السنة الكاملة (365 يوماً - استخدام لمرة واحدة) ---
-  {
-    code: 'K9_0u',
-    duration: '1_year',
-    durationDays: 365,
-    durationLabelAr: 'اشتراك سنوي (سنة كاملة)',
-    singleUse: true,
-    notes: 'كود ترخيص سنوي لمدة 365 يوماً — استخدام لمرة واحدة فقط'
-  },
+  // --- أكواد السنة الكاملة المعتمدة فقط (365 يوماً - استخدام لمرة واحدة) ---
   {
     code: 'SO_S1DF',
     duration: '1_year',
@@ -81,15 +84,7 @@ export const PREDEFINED_LICENSE_CODES: PredefinedLicenseCode[] = [
     notes: 'كود ترخيص سنوي لمدة 365 يوماً — استخدام لمرة واحدة فقط'
   },
 
-  // --- أكواد الشهر الكامل (30 يوماً - استخدام لمرة واحدة) ---
-  {
-    code: 'K9_0s50',
-    duration: '1_month',
-    durationDays: 30,
-    durationLabelAr: 'اشتراك شهري (شهر كامل)',
-    singleUse: true,
-    notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
-  },
+  // --- أكواد الشهر الكامل المعتمدة فقط (30 يوماً - استخدام لمرة واحدة) ---
   {
     code: 'K9_0ASD',
     duration: '1_month',
@@ -123,6 +118,32 @@ export const PREDEFINED_LICENSE_CODES: PredefinedLicenseCode[] = [
     notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
   }
 ];
+
+export function isCancelledLegacyCode(code?: string | null): boolean {
+  if (!code || typeof code !== 'string') return false;
+  const clean = code.trim().toLowerCase();
+  return CANCELLED_LEGACY_CODES.some(c => c.toLowerCase() === clean);
+}
+
+export function isApprovedActiveLicenseCode(code?: string | null): boolean {
+  if (!code || typeof code !== 'string') return false;
+  const clean = code.trim().toLowerCase();
+  if (isCancelledLegacyCode(clean)) return false;
+  return PREDEFINED_LICENSE_CODES.some(c => c.code.toLowerCase() === clean);
+}
+
+export function purgeLegacyCodesFromLocalAndFirebase(): void {
+  try {
+    const raw = localStorage.getItem(USED_CODES_STORAGE_KEY);
+    if (raw) {
+      const parsed: UsedCodeRecord[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter(item => isApprovedActiveLicenseCode(item.code));
+        localStorage.setItem(USED_CODES_STORAGE_KEY, JSON.stringify(filtered));
+      }
+    }
+  } catch {}
+}
 
 // Master activation codes list for backward compatibility
 export const MASTER_ACTIVATION_CODES = PREDEFINED_LICENSE_CODES.map(c => c.code);
@@ -508,11 +529,12 @@ export async function verifyCodeDeviceProtectionOnServer(
     (overrideRequestingDeviceId ? `FP-SIM-${overrideRequestingDeviceId.slice(-8)}` : devInfo.deviceFingerprint);
 
   const cleaned = (inputCode || '').trim();
+  const isLegacy = isCancelledLegacyCode(cleaned);
   const matched = PREDEFINED_LICENSE_CODES.find(
     c => c.code.toLowerCase() === cleaned.toLowerCase()
   );
 
-  if (!matched) {
+  if (!matched || isLegacy) {
     return {
       validCode: false,
       isUsedOnAnyDevice: false,
@@ -529,12 +551,16 @@ export async function verifyCodeDeviceProtectionOnServer(
       canTransferToCurrentDevice: false,
       firebaseVerified: true,
       securityQuestions: {
-        q1_isUsedOnAnyDevice: 'الكود المدخل غير مسجل في قائمة الأكواد المعتمدة',
-        q2_whatIsDeviceId: 'لا يوجد (الكود غير صحيح)',
+        q1_isUsedOnAnyDevice: isLegacy
+          ? '⛔ هذا الكود قديم وتم إلغاؤه نهائياً من النظام'
+          : 'الكود المدخل غير مسجل في قائمة الأكواد المعتمدة الجديدة',
+        q2_whatIsDeviceId: 'لا يوجد (كود ملغى أو غير صالح)',
         q3_isCurrentlyActive: false,
-        statusSummaryAr: 'كود غير صالح',
+        statusSummaryAr: isLegacy ? '⛔ كود قديم ملغى — مطلوب كود جديد' : 'كود غير صالح',
       },
-      message: 'كود التفعيل غير صحيح، يرجى التأكد من كتابة الكود بدقة كما استلمته من المطور',
+      message: isLegacy
+        ? `⛔ هذا الكود (${cleaned}) قديم وتم إلغاؤه نهائياً وإرجاع الاشتراكات القديمة إلى الفترة المجانية. يرجى إدخال كود تفعيل جديد من الأكواد المعتمدة.`
+        : 'كود التفعيل غير صحيح أو قديم ملغى، يرجى إدخال كود تفعيل جديد معتمد من المطور',
     };
   }
 
@@ -926,6 +952,13 @@ export function validateLicenseCode(
   const cleaned = inputCode.trim();
   const lowerCleaned = cleaned.toLowerCase();
 
+  if (isCancelledLegacyCode(cleaned)) {
+    return {
+      valid: false,
+      reason: `⛔ هذا الكود (${cleaned}) قديم وتم إلغاؤه نهائياً. تم إرجاع الحساب إلى الفترة المجانية، يرجى إدخال كود تفعيل جديد معتمد.`
+    };
+  }
+
   // 1. Check against predefined license codes
   const matched = PREDEFINED_LICENSE_CODES.find(
     c => c.code.toLowerCase() === lowerCleaned
@@ -934,7 +967,7 @@ export function validateLicenseCode(
   if (!matched) {
     return {
       valid: false,
-      reason: 'كود التفعيل غير صحيح، يرجى التأكد من كتابة الكود بدقة كما استلمته من المطور'
+      reason: 'كود التفعيل غير صحيح أو قديم ملغى، يرجى إدخال كود تفعيل جديد معتمد من المطور'
     };
   }
 

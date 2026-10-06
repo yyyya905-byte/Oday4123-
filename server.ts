@@ -1030,17 +1030,17 @@ interface ActivatedLicenseServerRecord {
 const LICENSE_REGISTRY_FILE = path.join(process.cwd(), ".kian_license_registry.json");
 
 const VALID_SERVER_LICENSE_CODES: Record<string, { code: string; durationLabelAr: string; days: number }> = {
-  k9_0u: { code: "K9_0u", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
   so_s1df: { code: "SO_S1DF", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
   so_klp1: { code: "SO_KLP1", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
   so_ds1k9: { code: "SO_DS1K9", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
   so_s1hgk: { code: "SO_S1HGK", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
-  k9_0s50: { code: "K9_0s50", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
   k9_0asd: { code: "K9_0ASD", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
   k9_7frs10: { code: "K9_7FRS10", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
   k9_7fkjss9: { code: "K9_7FKJSS9", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
   k9_grksc4: { code: "K9_GRKSC4", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
 };
+
+const CANCELLED_SERVER_LEGACY_CODES = new Set(["k9_0u", "k9_0s50", "kian-2025", "kian-pro", "kian-forever"]);
 
 let activatedLicenseRegistry: Record<string, ActivatedLicenseServerRecord> = {};
 
@@ -1050,7 +1050,21 @@ function loadLicenseRegistryFromDisk() {
       const raw = fs.readFileSync(LICENSE_REGISTRY_FILE, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
-        activatedLicenseRegistry = parsed;
+        // Keep only approved new codes; purge any old cancelled codes (such as k9_0u, k9_0s50)
+        const cleanRegistry: Record<string, ActivatedLicenseServerRecord> = {};
+        let purgedAny = false;
+        for (const [k, val] of Object.entries(parsed)) {
+          const normKey = k.trim().toLowerCase();
+          if (VALID_SERVER_LICENSE_CODES[normKey] && !CANCELLED_SERVER_LEGACY_CODES.has(normKey)) {
+            cleanRegistry[normKey] = val as ActivatedLicenseServerRecord;
+          } else {
+            purgedAny = true;
+          }
+        }
+        activatedLicenseRegistry = cleanRegistry;
+        if (purgedAny) {
+          saveLicenseRegistryToDisk();
+        }
       }
     }
   } catch (err) {
@@ -1314,7 +1328,37 @@ app.post("/api/license/activate-device", (req, res) => {
 
 // 3. Sync an already-active local license on startup so the server registry knows its Device ID
 app.post("/api/license/sync-current", (req, res) => {
-  const { code, deviceId, deviceName, customerName, customerPhone, expiresAt, durationLabelAr, usedCodesList } = req.body;
+  const { code, deviceId, deviceFingerprint, deviceName, customerName, customerPhone, expiresAt, durationLabelAr, usedCodesList } = req.body;
+
+  if (code) {
+    const cleanKey = String(code).trim().toLowerCase();
+    const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
+    if (!predefined || CANCELLED_SERVER_LEGACY_CODES.has(cleanKey)) {
+      return res.json({
+        success: true,
+        cancelledOldCodeResetToTrial: true,
+        cancelledCode: code,
+        registryCount: Object.keys(activatedLicenseRegistry).length,
+        records: Object.values(activatedLicenseRegistry),
+      });
+    }
+
+    const existing = activatedLicenseRegistry[cleanKey];
+    if (
+      existing &&
+      deviceId &&
+      ((existing.deviceId && existing.deviceId !== String(deviceId).trim()) ||
+        (Array.isArray(existing.revokedDeviceIds) && existing.revokedDeviceIds.includes(String(deviceId).trim())))
+    ) {
+      return res.json({
+        success: true,
+        revokedCurrentDevice: true,
+        boundToDeviceId: existing.deviceId,
+        registryCount: Object.keys(activatedLicenseRegistry).length,
+        records: Object.values(activatedLicenseRegistry),
+      });
+    }
+  }
 
   let updated = false;
   if (code && deviceId) {
@@ -1325,6 +1369,7 @@ app.post("/api/license/sync-current", (req, res) => {
         code: predefined.code,
         isUsed: true,
         deviceId: String(deviceId).trim(),
+        deviceFingerprint: String(deviceFingerprint || `FP-${deviceId}`).trim(),
         deviceName: String(deviceName || "جهاز كاشير رئيسي").trim(),
         customerName: customerName || "متجر كيان",
         customerPhone: customerPhone || "",
@@ -1342,11 +1387,12 @@ app.post("/api/license/sync-current", (req, res) => {
       if (item && item.code) {
         const k = String(item.code).trim().toLowerCase();
         const pred = VALID_SERVER_LICENSE_CODES[k];
-        if (pred && !activatedLicenseRegistry[k]) {
+        if (pred && !CANCELLED_SERVER_LEGACY_CODES.has(k) && !activatedLicenseRegistry[k]) {
           activatedLicenseRegistry[k] = {
             code: pred.code,
             isUsed: true,
             deviceId: item.deviceId || String(deviceId || "KIAN-DEV-MAIN"),
+            deviceFingerprint: item.deviceFingerprint || String(deviceFingerprint || `FP-${deviceId}`),
             deviceName: item.deviceName || String(deviceName || "جهاز كاشير"),
             customerName: item.customerName || customerName || "متجر كيان",
             customerPhone: item.customerPhone || "",
