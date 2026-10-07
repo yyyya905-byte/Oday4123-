@@ -20,7 +20,10 @@ import {
   Radio,
   Activity,
   Coins,
-  Cloud
+  Cloud,
+  Crown,
+  Monitor,
+  User
 } from 'lucide-react';
 
 interface NavSection {
@@ -46,7 +49,12 @@ export const Sidebar: React.FC = () => {
     settings,
     currentUser,
     businessMode,
-    language
+    language,
+    isMasterDevice,
+    currentDeviceAllowedPages,
+    currentDeviceName,
+    currentSubDeviceUserName,
+    exitSubDeviceMode
   } = useApp();
 
   const lowStockCount = products.filter(p => p.stock <= p.minStock && p.status === 'active').length;
@@ -189,7 +197,12 @@ export const Sidebar: React.FC = () => {
         {navSections
           .map(sec => ({
             ...sec,
-            items: sec.items.filter(item => canAccessTab(item.id, currentUser.role))
+            items: sec.items.filter(item => {
+              if (!isMasterDevice && currentDeviceAllowedPages && currentDeviceAllowedPages.length > 0) {
+                return currentDeviceAllowedPages.includes(item.id);
+              }
+              return canAccessTab(item.id, currentUser.role);
+            })
           }))
           .filter(sec => sec.items.length > 0)
           .map((section, sIdx) => (
@@ -239,6 +252,31 @@ export const Sidebar: React.FC = () => {
             </div>
           ))}
       </div>
+
+      {/* Sub-Device Status Card when operating as a Linked Sub-Device */}
+      {!isMasterDevice && (
+        <div className="mx-3 mb-2 p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 space-y-2 text-xs">
+          <div className="flex items-center gap-1.5 font-black text-indigo-700 dark:text-indigo-300">
+            <Monitor className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{currentDeviceName}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+            <User className="w-3 h-3 text-emerald-500 shrink-0" />
+            <span className="truncate">المستخدم: {currentSubDeviceUserName}</span>
+          </div>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+            تظهر لك فقط الصفحات المحددة من الجهاز الرئيسي ({currentDeviceAllowedPages?.length || 2} صفحات).
+          </p>
+          <button
+            type="button"
+            onClick={exitSubDeviceMode}
+            className="w-full py-1.5 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] flex items-center justify-center gap-1 transition cursor-pointer"
+          >
+            <Crown className="w-3 h-3" />
+            <span>العودة للجهاز الرئيسي</span>
+          </button>
+        </div>
+      )}
 
       {/* Quiet Single-Line Cloud Sync Footer */}
       <div className="px-4 py-3 border-t border-slate-200/60 dark:border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">

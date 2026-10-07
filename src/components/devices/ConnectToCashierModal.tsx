@@ -1,7 +1,11 @@
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { DeviceRole } from "../../types";
-import { getDefaultWorkPermissionsForRole } from "../../utils/licenseUtils";
+import {
+  getDefaultWorkPermissionsForRole,
+  getDefaultAllowedPagesForRole,
+  SUB_DEVICE_PAGE_LABELS,
+} from "../../utils/licenseUtils";
 import {
   X,
   Wifi,
@@ -46,6 +50,7 @@ export const ConnectToCashierModal: React.FC<ConnectToCashierModalProps> = ({
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedRole, setSelectedRole] = useState<DeviceRole>("secondary_pos");
   const [deviceName, setDeviceName] = useState("كاشير فرعي 2");
+  const [connectedUserName, setConnectedUserName] = useState("أحمد محمود (كاشير)");
   const [pinCode, setPinCode] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -171,7 +176,8 @@ export const ConnectToCashierModal: React.FC<ConnectToCashierModalProps> = ({
       pairingCode: cleanPin,
       uniqueDeviceCode: cleanPin.startsWith("DEV-") ? cleanPin : undefined,
       subscriptionLinkCode: cleanPin,
-      cashierName: preset.roleLabelAr,
+      cashierName: connectedUserName.trim() || preset.roleLabelAr,
+      connectedUserName: connectedUserName.trim() || preset.roleLabelAr,
       branchName: "الفرع الرئيسي",
       registerAsCurrentSubDevice: true,
     });
@@ -313,17 +319,48 @@ export const ConnectToCashierModal: React.FC<ConnectToCashierModalProps> = ({
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    اسم هذا الجهاز (يظهر في لوحة اطلاع الجهاز الرئيسي)
-                  </label>
-                  <input
-                    type="text"
-                    value={deviceName}
-                    onChange={(e) => setDeviceName(e.target.value)}
-                    placeholder={currentOption.defaultName}
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      اسم هذا الجهاز المتصل (يظهر للجهاز الرئيسي)
+                    </label>
+                    <input
+                      type="text"
+                      value={deviceName}
+                      onChange={(e) => setDeviceName(e.target.value)}
+                      placeholder={currentOption.defaultName}
+                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      اسم المستخدم / الموظف (يظهر للجهاز الرئيسي)
+                    </label>
+                    <input
+                      type="text"
+                      value={connectedUserName}
+                      onChange={(e) => setConnectedUserName(e.target.value)}
+                      placeholder="مثال: أحمد محمود (كاشير)"
+                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Allowed Pages Notice */}
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 block mb-1.5">
+                    الصفحات التي ستظهر لهذا الجهاز (حسب تحديد الجهاز الرئيسي):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {getDefaultAllowedPagesForRole(selectedRole).map((pageId) => (
+                      <span
+                        key={pageId}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-[11px] font-black border border-indigo-500/30"
+                      >
+                        {SUB_DEVICE_PAGE_LABELS[pageId] || pageId}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <div>

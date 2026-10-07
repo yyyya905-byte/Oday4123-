@@ -75,7 +75,10 @@ import {
   generateSubscriptionBoundDeviceCode,
   generateUniqueCodeForSingleDevice,
   extractNumericPinFromBoundCode,
-  getDefaultWorkPermissionsForRole
+  getDefaultWorkPermissionsForRole,
+  getDefaultAllowedPagesForRole,
+  inferRoleFromDeviceCode,
+  SUB_DEVICE_PAGE_LABELS
 } from '../utils/licenseUtils';
 import {
   initialSettings,
@@ -467,6 +470,10 @@ interface AppContextType {
   currentDeviceName: string;
   currentDeviceRole: DeviceRole;
   currentDeviceWorkPermissions: DeviceWorkPermissions;
+  currentDeviceAllowedPages: ActiveTab[] | null;
+  currentSubDeviceUserName: string;
+  activateSubDevicePreview: (device: LinkedDevice) => void;
+  exitSubDeviceMode: () => void;
   isPairingModalOpen: boolean;
   setIsPairingModalOpen: (open: boolean) => void;
   refreshDevices: () => Promise<void>;
@@ -481,6 +488,7 @@ interface AppContextType {
     uniqueDeviceCode?: string;
     deviceType: 'desktop' | 'tablet' | 'mobile';
     cashierName?: string;
+    connectedUserName?: string;
     branchName?: string;
     registerAsCurrentSubDevice?: boolean;
   }) => Promise<{ success: boolean; error?: string; device?: LinkedDevice }>;
@@ -492,6 +500,8 @@ interface AppContextType {
       roleLabelAr?: string;
       workDescription?: string;
       workPermissions?: DeviceWorkPermissions;
+      cashierName?: string;
+      connectedUserName?: string;
       uniqueDeviceCode?: string;
       pairingCode?: string;
     }
@@ -5015,25 +5025,147 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [activeSubDeviceId, setActiveSubDeviceId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('kian_sub_device_id') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [subDeviceCustomName, setSubDeviceCustomName] = useState<string>(() => {
+    try {
+      return localStorage.getItem('kian_sub_device_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [subDeviceUserName, setSubDeviceUserName] = useState<string>(() => {
+    try {
+      return localStorage.getItem('kian_sub_device_user_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [subDeviceAllowedPagesOverride, setSubDeviceAllowedPagesOverride] = useState<ActiveTab[] | null>(() => {
+    try {
+      const saved = localStorage.getItem('kian_sub_device_allowed_pages');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
   const currentHwDevice = React.useMemo(() => getDeviceHardwareInfo(), []);
   const currentDeviceId = currentHwDevice.deviceId;
   const isMasterDevice = !dedicatedDeviceRole || dedicatedDeviceRole === 'master_pos';
   const currentDeviceRole: DeviceRole = dedicatedDeviceRole || 'master_pos';
+
+  const matchedCurrentSubDevice = React.useMemo(() => {
+    if (isMasterDevice) return devices.find(d => d.id === currentDeviceId || d.role === 'master_pos');
+    return (
+      devices.find(d => d.id === activeSubDeviceId) ||
+      devices.find(d => d.id === currentDeviceId && d.role !== 'master_pos') ||
+      devices.find(d => d.role === dedicatedDeviceRole)
+    );
+  }, [devices, isMasterDevice, currentDeviceId, activeSubDeviceId, dedicatedDeviceRole]);
+
   const currentDeviceName: string = React.useMemo(() => {
-    const matched = devices.find(d => d.id === currentDeviceId);
-    if (matched?.name) return matched.name;
+    if (!isMasterDevice && subDeviceCustomName) return subDeviceCustomName;
+    if (matchedCurrentSubDevice?.name) return matchedCurrentSubDevice.name;
     if (isMasterDevice) {
       return `الجهاز الرئيسي (${settings?.storeNameAr || 'الكاشير المركزي'})`;
     }
     const preset = getDefaultWorkPermissionsForRole(currentDeviceRole);
     return `${preset.roleLabelAr} (${currentHwDevice.deviceName})`;
-  }, [devices, currentDeviceId, isMasterDevice, settings?.storeNameAr, currentDeviceRole, currentHwDevice.deviceName]);
+  }, [matchedCurrentSubDevice, isMasterDevice, subDeviceCustomName, settings?.storeNameAr, currentDeviceRole, currentHwDevice.deviceName]);
+
+  const currentSubDeviceUserName: string = React.useMemo(() => {
+    if (!isMasterDevice && subDeviceUserName) return subDeviceUserName;
+    if (matchedCurrentSubDevice?.connectedUserName) return matchedCurrentSubDevice.connectedUserName;
+    if (matchedCurrentSubDevice?.cashierName) return matchedCurrentSubDevice.cashierName;
+    return currentUser?.name || 'موظف مناوب';
+  }, [isMasterDevice, subDeviceUserName, matchedCurrentSubDevice, currentUser?.name]);
 
   const currentDeviceWorkPermissions: DeviceWorkPermissions = React.useMemo(() => {
-    const matched = devices.find(d => d.id === currentDeviceId);
-    if (matched?.workPermissions) return matched.workPermissions;
+    if (matchedCurrentSubDevice?.workPermissions) return matchedCurrentSubDevice.workPermissions;
     return getDefaultWorkPermissionsForRole(currentDeviceRole);
-  }, [devices, currentDeviceId, currentDeviceRole]);
+  }, [matchedCurrentSubDevice, currentDeviceRole]);
+
+  // الصفحات المحددة من الجهاز الرئيسي لتظهر للجهاز التابع (مثال للكاشير: لا تظهر له سوى صفحة الكاشير والفواتير)
+  const currentDeviceAllowedPages: ActiveTab[] | null = React.useMemo(() => {
+    if (isMasterDevice) return null;
+    if (
+      matchedCurrentSubDevice?.workPermissions?.allowedPages &&
+      Array.isArray(matchedCurrentSubDevice.workPermissions.allowedPages) &&
+      matchedCurrentSubDevice.workPermissions.allowedPages.length > 0
+    ) {
+      return matchedCurrentSubDevice.workPermissions.allowedPages;
+    }
+    if (subDeviceAllowedPagesOverride && subDeviceAllowedPagesOverride.length > 0) {
+      return subDeviceAllowedPagesOverride;
+    }
+    return getDefaultAllowedPagesForRole(currentDeviceRole);
+  }, [isMasterDevice, matchedCurrentSubDevice, subDeviceAllowedPagesOverride, currentDeviceRole]);
+
+  // إذا كان الجهاز تابعاً (مثلاً كاشير فرعي)، لا نسمح له بفتح أي صفحة خارج الصفحات التي حددها الجهاز الرئيسي
+  useEffect(() => {
+    if (!isMasterDevice && currentDeviceAllowedPages && currentDeviceAllowedPages.length > 0) {
+      if (!currentDeviceAllowedPages.includes(activeTab)) {
+        setActiveTab(currentDeviceAllowedPages[0] || 'pos');
+      }
+    }
+  }, [isMasterDevice, currentDeviceAllowedPages, activeTab]);
+
+  const activateSubDevicePreview = useCallback((device: LinkedDevice) => {
+    const role = device.role === 'master_pos' ? 'secondary_pos' : device.role;
+    const allowed =
+      device.workPermissions?.allowedPages && device.workPermissions.allowedPages.length > 0
+        ? device.workPermissions.allowedPages
+        : getDefaultAllowedPagesForRole(role);
+    const uName = device.connectedUserName || device.cashierName || 'كاشير فرعي';
+
+    setDedicatedDeviceRole(role);
+    setActiveSubDeviceId(device.id);
+    setSubDeviceCustomName(device.name);
+    setSubDeviceUserName(uName);
+    setSubDeviceAllowedPagesOverride(allowed);
+
+    try {
+      localStorage.setItem('kian_dedicated_device_role', role);
+      localStorage.setItem('kian_sub_device_id', device.id);
+      localStorage.setItem('kian_sub_device_name', device.name);
+      localStorage.setItem('kian_sub_device_user_name', uName);
+      localStorage.setItem('kian_sub_device_allowed_pages', JSON.stringify(allowed));
+    } catch {}
+
+    if (allowed.length > 0) {
+      setActiveTab(allowed[0]);
+    }
+    soundEffects.playSuccess();
+  }, []);
+
+  const exitSubDeviceMode = useCallback(() => {
+    setDedicatedDeviceRole(null);
+    setActiveSubDeviceId(null);
+    setSubDeviceCustomName('');
+    setSubDeviceUserName('');
+    setSubDeviceAllowedPagesOverride(null);
+    try {
+      localStorage.removeItem('kian_dedicated_device_role');
+      localStorage.removeItem('kian_sub_device_id');
+      localStorage.removeItem('kian_sub_device_name');
+      localStorage.removeItem('kian_sub_device_user_name');
+      localStorage.removeItem('kian_sub_device_allowed_pages');
+    } catch {}
+    soundEffects.playClick();
+  }, []);
 
   const subscriptionBoundLinkCode = React.useMemo(() => {
     return generateSubscriptionBoundDeviceCode(
@@ -5068,6 +5200,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     uniqueDeviceCode?: string;
     deviceType: 'desktop' | 'tablet' | 'mobile'; 
     cashierName?: string;
+    connectedUserName?: string;
     branchName?: string;
     registerAsCurrentSubDevice?: boolean;
   }): Promise<{ success: boolean; error?: string; device?: LinkedDevice }> => {
@@ -5085,11 +5218,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (d.pairingCode && d.pairingCode === extractedNumericPin))
     );
 
-    const effectiveRole: DeviceRole = matchedPreCreated?.role || deviceData.role;
+    const inferredFromCode = inferRoleFromDeviceCode(rawCode);
+    const effectiveRole: DeviceRole = matchedPreCreated?.role || inferredFromCode || deviceData.role;
     const preset = getDefaultWorkPermissionsForRole(effectiveRole);
-    const finalWorkPermissions = deviceData.workPermissions || matchedPreCreated?.workPermissions || preset;
-    const finalRoleLabelAr = deviceData.roleLabelAr || matchedPreCreated?.roleLabelAr || preset.roleLabelAr;
-    const finalWorkDescription = deviceData.workDescription || matchedPreCreated?.workDescription || preset.workDescription;
+    const baseWorkPermissions = matchedPreCreated?.workPermissions || deviceData.workPermissions || preset;
+    const finalAllowedPages =
+      baseWorkPermissions.allowedPages && baseWorkPermissions.allowedPages.length > 0
+        ? baseWorkPermissions.allowedPages
+        : getDefaultAllowedPagesForRole(effectiveRole);
+    const finalWorkPermissions: DeviceWorkPermissions = {
+      ...preset,
+      ...baseWorkPermissions,
+      allowedPages: finalAllowedPages,
+      autoShareDataWithMaster: true,
+    };
+    const finalRoleLabelAr = matchedPreCreated?.roleLabelAr || deviceData.roleLabelAr || preset.roleLabelAr;
+    const finalWorkDescription = matchedPreCreated?.workDescription || deviceData.workDescription || preset.workDescription;
+    const resolvedConnectedUser =
+      deviceData.connectedUserName ||
+      deviceData.cashierName ||
+      matchedPreCreated?.connectedUserName ||
+      matchedPreCreated?.cashierName ||
+      currentUser?.name ||
+      finalRoleLabelAr;
 
     const existingUniqueCodes = devices.map(d => d.uniqueDeviceCode || d.pairingCode || '');
     const generatedUniqueCode = generateUniqueCodeForSingleDevice(
@@ -5107,11 +5258,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const payload = {
       ...deviceData,
+      name: deviceData.name || matchedPreCreated?.name || preset.defaultDeviceNameAr,
       role: effectiveRole,
-      id: deviceData.registerAsCurrentSubDevice ? currentDeviceId : matchedPreCreated?.id,
+      id: deviceData.registerAsCurrentSubDevice ? (matchedPreCreated?.id || currentDeviceId) : matchedPreCreated?.id,
       roleLabelAr: finalRoleLabelAr,
       workDescription: finalWorkDescription,
       workPermissions: finalWorkPermissions,
+      cashierName: resolvedConnectedUser,
+      connectedUserName: resolvedConnectedUser,
       uniqueDeviceCode: resolvedUniqueDeviceCode,
       pairingCode: resolvedDevicePin || extractedNumericPin || rawCode || masterPairingPin,
       subscriptionLinkCode: deviceData.subscriptionLinkCode || subscriptionBoundLinkCode,
@@ -5133,13 +5287,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (json.device) {
           setDevices(prev => [...prev.filter(d => d.id !== json.device.id), json.device]);
         }
-        if (deviceData.registerAsCurrentSubDevice && deviceData.role !== 'master_pos') {
-          setDedicatedDeviceRole(deviceData.role);
-          try { localStorage.setItem('kian_dedicated_device_role', deviceData.role); } catch {}
+        if (deviceData.registerAsCurrentSubDevice && effectiveRole !== 'master_pos') {
+          const targetDev: LinkedDevice = json.device || {
+            ...payload,
+            id: payload.id || currentDeviceId,
+            pairedAt: new Date().toISOString(),
+            lastSeen: new Date().toISOString(),
+            isOnline: true,
+          };
+          activateSubDevicePreview(targetDev);
         }
         notify(
-          'تمت إضافة الجهاز وربطه بالاشتراك بنجاح',
-          `${json.device?.name || deviceData.name} — الوظيفة: ${finalRoleLabelAr} (مشاركة تلقائية للبيانات مع الجهاز الرئيسي)`,
+          'تم ربط الجهاز بالجهاز الرئيسي بنجاح',
+          `${json.device?.name || payload.name} — المستخدم: ${resolvedConnectedUser} — الوظيفة: ${finalRoleLabelAr}`,
           'success'
         );
         soundEffects.saleSuccess();
@@ -5178,7 +5338,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const localDevice: LinkedDevice = {
       id: deviceData.registerAsCurrentSubDevice
-        ? currentDeviceId
+        ? (matchedPreCreated?.id || currentDeviceId)
         : matchedPreCreated?.id || `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       name: deviceData.name || matchedPreCreated?.name || `${finalRoleLabelAr} جديد`,
       role: effectiveRole,
@@ -5197,25 +5357,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastSeen: new Date().toISOString(),
       isOnline: true,
       batteryLevel: 98,
-      cashierName: deviceData.cashierName || currentUser.name || finalRoleLabelAr,
+      cashierName: resolvedConnectedUser,
+      connectedUserName: resolvedConnectedUser,
       branchName: deviceData.branchName || "الفرع الرئيسي",
       salesCount: 0,
       totalSalesAmount: 0,
       ordersCount: 0,
-      lastActivitySummary: `تم ربط الجهاز كـ (${finalRoleLabelAr}) وتفعيل مشاركة البيانات التلقائية`,
+      lastActivitySummary: `تم ربط الجهاز كـ (${finalRoleLabelAr}) للمستخدم (${resolvedConnectedUser})`,
       lastActivityAt: new Date().toISOString(),
     };
     setDevices(prev => [...prev.filter(d => d.id !== localDevice.id), localDevice]);
-    if (deviceData.registerAsCurrentSubDevice && deviceData.role !== 'master_pos') {
-      setDedicatedDeviceRole(deviceData.role);
-      try { localStorage.setItem('kian_dedicated_device_role', deviceData.role); } catch {}
+    if (deviceData.registerAsCurrentSubDevice && effectiveRole !== 'master_pos') {
+      activateSubDevicePreview(localDevice);
     }
     setIsFirstLoginCompletedState(true);
     setIsFirstLoginModalOpen(false);
     try { localStorage.setItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED, 'true'); } catch {}
     notify(
-      'تمت إضافة الجهاز وربطه بالاشتراك',
-      `${localDevice.name} (${finalRoleLabelAr}) — مشاركة تلقائية نشطة`,
+      'تم ربط الجهاز بالجهاز الرئيسي بنجاح',
+      `${localDevice.name} (${finalRoleLabelAr}) — المستخدم: ${resolvedConnectedUser}`,
       'success'
     );
     soundEffects.saleSuccess();
@@ -5230,6 +5390,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       roleLabelAr?: string;
       workDescription?: string;
       workPermissions?: DeviceWorkPermissions;
+      cashierName?: string;
+      connectedUserName?: string;
       uniqueDeviceCode?: string;
       pairingCode?: string;
     }
@@ -5239,7 +5401,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const preset = getDefaultWorkPermissionsForRole(nextRole);
     const nextRoleLabelAr = updates.roleLabelAr || preset.roleLabelAr;
     const nextWorkDesc = updates.workDescription || preset.workDescription;
-    const nextPermissions = updates.workPermissions || preset;
+    const nextAllowedPages =
+      updates.workPermissions?.allowedPages && updates.workPermissions.allowedPages.length > 0
+        ? updates.workPermissions.allowedPages
+        : updates.role && updates.role !== target?.role
+        ? getDefaultAllowedPagesForRole(nextRole)
+        : target?.workPermissions?.allowedPages || getDefaultAllowedPagesForRole(nextRole);
+    const nextPermissions: DeviceWorkPermissions = {
+      ...(updates.workPermissions || preset),
+      allowedPages: nextAllowedPages,
+      autoShareDataWithMaster: true,
+    };
+    const nextUserName =
+      updates.connectedUserName !== undefined
+        ? updates.connectedUserName
+        : updates.cashierName !== undefined
+        ? updates.cashierName
+        : target?.connectedUserName || target?.cashierName;
 
     setDevices(prev =>
       prev.map(d => {
@@ -5251,16 +5429,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           roleLabelAr: nextRoleLabelAr,
           workDescription: nextWorkDesc,
           workPermissions: nextPermissions,
+          ...(nextUserName ? { cashierName: nextUserName, connectedUserName: nextUserName } : {}),
           ...(updates.uniqueDeviceCode ? { uniqueDeviceCode: updates.uniqueDeviceCode } : {}),
           ...(updates.pairingCode ? { pairingCode: updates.pairingCode } : {}),
           lastSeen: new Date().toISOString(),
           lastActivitySummary: updates.uniqueDeviceCode
             ? `تم تحديث الكود الخاص بالجهاز إلى (${updates.uniqueDeviceCode})`
-            : `تم تحديد عمل الجهاز كـ (${nextRoleLabelAr})`,
+            : `تم تحديد عمل الجهاز كـ (${nextRoleLabelAr}) والصفحات المسموحة (${nextAllowedPages.length})`,
           lastActivityAt: new Date().toISOString(),
         };
       })
     );
+
+    if (deviceId === activeSubDeviceId || (deviceId === currentDeviceId && !isMasterDevice)) {
+      if (nextRole !== 'master_pos') {
+        setDedicatedDeviceRole(nextRole);
+        setSubDeviceAllowedPagesOverride(nextAllowedPages);
+        if (updates.name) setSubDeviceCustomName(updates.name.trim());
+        if (nextUserName) setSubDeviceUserName(nextUserName);
+        try {
+          localStorage.setItem('kian_dedicated_device_role', nextRole);
+          localStorage.setItem('kian_sub_device_allowed_pages', JSON.stringify(nextAllowedPages));
+          if (updates.name) localStorage.setItem('kian_sub_device_name', updates.name.trim());
+          if (nextUserName) localStorage.setItem('kian_sub_device_user_name', nextUserName);
+        } catch {}
+      }
+    }
 
     try {
       const res = await fetch('/api/devices/update-sub-device', {
@@ -5273,6 +5467,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           roleLabelAr: nextRoleLabelAr,
           workDescription: nextWorkDesc,
           workPermissions: nextPermissions,
+          cashierName: nextUserName,
+          connectedUserName: nextUserName,
           uniqueDeviceCode: updates.uniqueDeviceCode,
           pairingCode: updates.pairingCode,
         }),
@@ -5293,13 +5489,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           roleLabelAr: nextRoleLabelAr,
           workDescription: nextWorkDesc,
           workPermissions: nextPermissions,
+          cashierName: nextUserName,
+          connectedUserName: nextUserName,
         },
       });
     } catch {}
 
     notify(
-      'تم تحديث وظيفة وعمل الجهاز بنجاح',
-      `تم تحديد وظيفة الجهاز إلى (${nextRoleLabelAr}) وتحديث صلاحيات المشاركة التلقائية`,
+      'تم تحديث وظيفة وصفحات الجهاز التابع بنجاح',
+      `تم تحديد وظيفة الجهاز إلى (${nextRoleLabelAr}) وتحديد الصفحات المسموح ظهورها له`,
       'success'
     );
     soundEffects.saleSuccess();
@@ -6058,14 +6256,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         roleLabelAr: payload.roleLabelAr || d.roleLabelAr,
                         workDescription: payload.workDescription || d.workDescription,
                         workPermissions: payload.workPermissions || d.workPermissions,
+                        cashierName: payload.cashierName || payload.connectedUserName || d.cashierName,
+                        connectedUserName: payload.connectedUserName || payload.cashierName || d.connectedUserName,
                       }
                     : d
                 )
               );
-              if (payload.deviceId === currentDeviceId && payload.role && payload.role !== 'master_pos') {
+              if (
+                (payload.deviceId === currentDeviceId || payload.deviceId === activeSubDeviceId) &&
+                payload.role &&
+                payload.role !== 'master_pos'
+              ) {
                 setDedicatedDeviceRole(payload.role);
+                const newAllowed =
+                  payload.workPermissions?.allowedPages || getDefaultAllowedPagesForRole(payload.role);
+                setSubDeviceAllowedPagesOverride(newAllowed);
+                if (payload.name) setSubDeviceCustomName(payload.name);
+                if (payload.connectedUserName || payload.cashierName) {
+                  setSubDeviceUserName(payload.connectedUserName || payload.cashierName);
+                }
                 try {
                   localStorage.setItem('kian_dedicated_device_role', payload.role);
+                  localStorage.setItem('kian_sub_device_allowed_pages', JSON.stringify(newAllowed));
+                  if (payload.name) localStorage.setItem('kian_sub_device_name', payload.name);
+                  if (payload.connectedUserName || payload.cashierName) {
+                    localStorage.setItem('kian_sub_device_user_name', payload.connectedUserName || payload.cashierName);
+                  }
                 } catch {}
               }
             }
@@ -6135,7 +6351,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
       });
 
-      eventSource.addEventListener('DEVICE_ROLE_UPDATED', (e: any) => {
+      const handleSseDeviceRoleUpdate = (e: any) => {
         try {
           const data = JSON.parse(e.data);
           if (data.devices && Array.isArray(data.devices)) {
@@ -6143,19 +6359,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else if (data.device) {
             setDevices(prev => prev.map(d => (d.id === data.device.id ? data.device : d)));
           }
-          if (data.device && data.device.id === currentDeviceId && data.device.role !== 'master_pos') {
+          if (
+            data.device &&
+            (data.device.id === currentDeviceId || data.device.id === activeSubDeviceId) &&
+            data.device.role !== 'master_pos'
+          ) {
             setDedicatedDeviceRole(data.device.role);
+            const newAllowed =
+              data.device.workPermissions?.allowedPages ||
+              getDefaultAllowedPagesForRole(data.device.role);
+            setSubDeviceAllowedPagesOverride(newAllowed);
+            if (data.device.name) setSubDeviceCustomName(data.device.name);
+            if (data.device.connectedUserName || data.device.cashierName) {
+              setSubDeviceUserName(data.device.connectedUserName || data.device.cashierName);
+            }
             try {
               localStorage.setItem('kian_dedicated_device_role', data.device.role);
+              localStorage.setItem('kian_sub_device_allowed_pages', JSON.stringify(newAllowed));
+              if (data.device.name) localStorage.setItem('kian_sub_device_name', data.device.name);
+              if (data.device.connectedUserName || data.device.cashierName) {
+                localStorage.setItem(
+                  'kian_sub_device_user_name',
+                  data.device.connectedUserName || data.device.cashierName
+                );
+              }
             } catch {}
             notify(
-              'تم تحديث وظيفة هذا الجهاز من الجهاز الرئيسي',
+              'تم تحديث وظيفة وصفحات هذا الجهاز من الجهاز الرئيسي',
               `الوظيفة الحالية: ${data.device.roleLabelAr || data.device.role}`,
               'info'
             );
           }
         } catch {}
-      });
+      };
+
+      eventSource.addEventListener('DEVICE_ROLE_UPDATED', handleSseDeviceRoleUpdate);
+      eventSource.addEventListener('DEVICE_WORK_UPDATED', handleSseDeviceRoleUpdate);
 
       eventSource.addEventListener('MESH_AUTO_DATA_SYNC', (e: any) => {
         try {
@@ -6651,6 +6890,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentDeviceName,
         currentDeviceRole,
         currentDeviceWorkPermissions,
+        currentDeviceAllowedPages,
+        currentSubDeviceUserName,
+        activateSubDevicePreview,
+        exitSubDeviceMode,
         isPairingModalOpen,
         setIsPairingModalOpen,
         refreshDevices,

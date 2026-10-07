@@ -1340,6 +1340,68 @@ export const DEVICE_ROLE_WORK_PRESETS: Record<string, RoleWorkPreset> = {
   },
 };
 
+export const SUB_DEVICE_PAGE_LABELS: Record<string, string> = {
+  pos: 'صفحة الكاشير (نقطة البيع)',
+  invoices: 'صفحة الفواتير',
+  products: 'صفحة المنتجات والأسعار',
+  inventory: 'صفحة المستودع والمخزون',
+  customers: 'صفحة العملاء والولاء',
+  debts: 'صفحة الديون والموردين',
+  returns: 'صفحة المرتجعات',
+  expenses: 'صفحة المصروفات',
+  reports: 'صفحة التقارير والأرباح',
+  dashboard: 'لوحة القيادة',
+  trade: 'مركز الجملة والتجزئة',
+};
+
+export function getDefaultAllowedPagesForRole(
+  role: string
+): ('pos' | 'invoices' | 'products' | 'inventory' | 'customers' | 'debts' | 'returns' | 'expenses' | 'reports' | 'dashboard' | 'trade')[] {
+  switch (role) {
+    case 'secondary_pos':
+      // إذا الجهاز الرئيسي حدد للجهاز المتصل أن يكون كاشير لا تظهر له سوى صفحة الكاشير والفواتير
+      return ['pos', 'invoices'];
+    case 'assistant':
+      return ['pos', 'invoices', 'products'];
+    case 'stock_scanner':
+      return ['inventory', 'products'];
+    case 'supervisor':
+      return ['pos', 'invoices', 'products', 'inventory', 'customers', 'debts', 'returns', 'expenses', 'reports'];
+    case 'waiter_mobile':
+    case 'kitchen_display':
+    case 'customer_display':
+      return ['pos'];
+    case 'master_pos':
+    default:
+      return [
+        'pos',
+        'dashboard',
+        'invoices',
+        'products',
+        'inventory',
+        'customers',
+        'debts',
+        'returns',
+        'expenses',
+        'reports',
+        'trade',
+      ];
+  }
+}
+
+export function inferRoleFromDeviceCode(code?: string): 'secondary_pos' | 'stock_scanner' | 'assistant' | 'supervisor' | 'waiter_mobile' | 'kitchen_display' | 'customer_display' | null {
+  if (!code) return null;
+  const upper = String(code).trim().toUpperCase();
+  if (upper.includes('DEV-CSH')) return 'secondary_pos';
+  if (upper.includes('DEV-SCN') || upper.includes('DEV-INV')) return 'stock_scanner';
+  if (upper.includes('DEV-AST')) return 'assistant';
+  if (upper.includes('DEV-SUP')) return 'supervisor';
+  if (upper.includes('DEV-WTR')) return 'waiter_mobile';
+  if (upper.includes('DEV-KDS')) return 'kitchen_display';
+  if (upper.includes('DEV-CFD')) return 'customer_display';
+  return null;
+}
+
 export function getDefaultWorkPermissionsForRole(role: string): {
   roleLabelAr: string;
   workDescription: string;
@@ -1347,6 +1409,7 @@ export function getDefaultWorkPermissionsForRole(role: string): {
   workDescriptionAr: string;
   defaultDeviceNameAr: string;
   defaultDeviceType: 'desktop' | 'tablet' | 'mobile';
+  allowedPages: ('pos' | 'invoices' | 'products' | 'inventory' | 'customers' | 'debts' | 'returns' | 'expenses' | 'reports' | 'dashboard' | 'trade')[];
   allowPosSales: boolean;
   allowTableOrders: boolean;
   allowCatalogAndStock: boolean;
@@ -1371,6 +1434,7 @@ export function getDefaultWorkPermissionsForRole(role: string): {
     workDescriptionAr: preset.workDescriptionAr,
     defaultDeviceNameAr: preset.defaultDeviceNameAr,
     defaultDeviceType: preset.defaultDeviceType,
+    allowedPages: getDefaultAllowedPagesForRole(role),
     allowPosSales: p.allowPosSales,
     allowTableOrders: p.allowTableOrders,
     allowCatalogAndStock: p.allowCatalogAndStock,
@@ -1380,9 +1444,9 @@ export function getDefaultWorkPermissionsForRole(role: string): {
     canProcessSales: p.allowPosSales,
     canTakeTableOrders: p.allowTableOrders,
     canManageInventory: p.allowCatalogAndStock,
-    canViewSalesReports: role === 'master_pos' || role === 'supervisor' || role === 'secondary_pos',
+    canViewSalesReports: role === 'master_pos' || role === 'supervisor',
     canApplyDiscounts: role === 'master_pos' || role === 'supervisor' || role === 'secondary_pos',
-    canManageCustomersAndDebts: p.allowCustomersAndDebts,
+    canManageCustomersAndDebts: role === 'master_pos' || role === 'supervisor',
     canAccessKitchenOrders: p.allowKitchenDisplay,
     autoShareDataWithMaster: true,
   };

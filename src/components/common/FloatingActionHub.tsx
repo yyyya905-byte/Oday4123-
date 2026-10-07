@@ -81,7 +81,9 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
     toggleTheme,
     theme,
     language,
-    notify
+    notify,
+    isMasterDevice,
+    currentDeviceAllowedPages
   } = useApp();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -330,8 +332,20 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
     setDraggedId(null);
   };
 
+  const tabActionIds = ['pos', 'dashboard', 'debts', 'products', 'inventory', 'reports', 'about'];
+
   const visibleItems = orderedIds
-    .filter(id => visibilityMap[id] !== false && catalogMap[id])
+    .filter(id => {
+      if (visibilityMap[id] === false || !catalogMap[id]) return false;
+      if (!isMasterDevice && currentDeviceAllowedPages && currentDeviceAllowedPages.length > 0) {
+        if (id === 'themeColor') return currentDeviceAllowedPages.includes('settings' as any);
+        if (id === 'customizeButtons') return false;
+        if (tabActionIds.includes(id)) {
+          return currentDeviceAllowedPages.includes(id as any);
+        }
+      }
+      return true;
+    })
     .map(id => catalogMap[id]);
 
   return (

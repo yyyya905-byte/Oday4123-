@@ -695,6 +695,7 @@ export type DeviceRole =
 export interface DeviceWorkPermissions {
   roleLabelAr?: string;
   workDescription?: string;
+  allowedPages?: ActiveTab[]; // الصفحات المحددة من الجهاز الرئيسي لتظهر للجهاز التابع (مثال للكاشير: ['pos', 'invoices'])
   allowPosSales?: boolean; // إصدار الفواتير والبيع المباشر
   allowTableOrders?: boolean; // استلام طلبات الطاولات وإرسالها (نادل)
   allowCatalogAndStock?: boolean; // إدارة المنتجات والجرد والباركود
@@ -726,6 +727,7 @@ export interface LinkedDevice {
   uniqueDeviceCode?: string; // الكود الخاص بهذا الجهاز تحديداً
   ipAddress?: string;
   browser?: string;
+  osAndBrowser?: string;
   deviceType: 'desktop' | 'tablet' | 'mobile';
   pairingCode: string;
   pairedAt: string;
@@ -733,6 +735,7 @@ export interface LinkedDevice {
   isOnline: boolean;
   batteryLevel?: number;
   cashierName?: string;
+  connectedUserName?: string;
   currentScreen?: string;
   branchName?: string;
   salesCount?: number;

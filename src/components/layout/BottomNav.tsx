@@ -12,12 +12,20 @@ import { SectionsNavModal } from '../modals/SectionsNavModal';
 import { soundEffects } from '../../services/audio';
 
 export const BottomNav: React.FC = () => {
-  const { activeTab, setActiveTab, t, cart, language } = useApp();
+  const {
+    activeTab,
+    setActiveTab,
+    t,
+    cart,
+    language,
+    isMasterDevice,
+    currentDeviceAllowedPages
+  } = useApp();
   const [isSectionsModalOpen, setIsSectionsModalOpen] = useState(false);
 
   const cartCount = cart.reduce((acc, it) => acc + it.quantity, 0);
 
-  const navButtons = [
+  const allNavButtons = [
     {
       id: 'pos' as ActiveTab,
       label: t('navPOS'),
@@ -57,6 +65,18 @@ export const BottomNav: React.FC = () => {
     }
   ];
 
+  const navButtons = allNavButtons.filter(tab => {
+    if (!isMasterDevice && currentDeviceAllowedPages && currentDeviceAllowedPages.length > 0) {
+      return currentDeviceAllowedPages.includes(tab.id);
+    }
+    return true;
+  });
+
+  const hasMoreAllowedSections =
+    isMasterDevice ||
+    !currentDeviceAllowedPages ||
+    currentDeviceAllowedPages.some(pageId => !navButtons.some(b => b.id === pageId));
+
   return (
     <>
       {/* Mobile & Tablet Apple-Glass Bottom Navigation Bar */}
@@ -91,22 +111,24 @@ export const BottomNav: React.FC = () => {
         })}
 
         {/* Single Unified Sections Navigator Button (الأقسام) */}
-        <button
-          id="mobile-tab-sections"
-          type="button"
-          onClick={() => {
-            soundEffects.playGlassPress();
-            setIsSectionsModalOpen(true);
-          }}
-          className="flex-1 flex flex-col items-center justify-center h-full min-h-[40px] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer active:scale-95 transition-all"
-        >
-          <div className="relative flex items-center justify-center">
-            <Grid className="w-5 h-5 text-slate-700 dark:text-slate-200" />
-          </div>
-          <span className="text-[10px] mt-0.5 font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-            {language === 'ar' ? 'الأقسام' : 'Sections'}
-          </span>
-        </button>
+        {hasMoreAllowedSections && (
+          <button
+            id="mobile-tab-sections"
+            type="button"
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setIsSectionsModalOpen(true);
+            }}
+            className="flex-1 flex flex-col items-center justify-center h-full min-h-[40px] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer active:scale-95 transition-all"
+          >
+            <div className="relative flex items-center justify-center">
+              <Grid className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+            </div>
+            <span className="text-[10px] mt-0.5 font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+              {language === 'ar' ? 'الأقسام' : 'Sections'}
+            </span>
+          </button>
+        )}
       </nav>
 
       {/* Sections Navigator Modal */}

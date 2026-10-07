@@ -3,6 +3,8 @@ import { useApp } from "../../context/AppContext";
 import { DeviceRole, LinkedDevice, Sale } from "../../types";
 import {
   getDefaultWorkPermissionsForRole,
+  getDefaultAllowedPagesForRole,
+  SUB_DEVICE_PAGE_LABELS,
   generateUniqueCodeForSingleDevice,
 } from "../../utils/licenseUtils";
 import { soundEffects } from "../../services/audio";
@@ -69,6 +71,9 @@ export const DevicesHubView: React.FC = () => {
     simulateSubDeviceSale,
     dedicatedDeviceRole,
     setDedicatedDeviceRole,
+    activateSubDevicePreview,
+    exitSubDeviceMode,
+    setIsFirstLoginModalOpen,
     setIsConnectToCashierModalOpen,
     regenerateSingleDeviceCode,
     setActiveTab,
@@ -396,15 +401,15 @@ export const DevicesHubView: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setIsConnectToCashierModalOpen(true)}
-                  className="flex-1 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5"
+                  onClick={() => setIsFirstLoginModalOpen(true)}
+                  className="flex-1 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Link2 className="w-3.5 h-3.5 text-emerald-400" />
-                  ربط هذا الجهاز بجهاز رئيسي
+                  صفحة التسجيل الأولى وربط جهاز تابع
                 </button>
                 <button
                   onClick={syncAllDevices}
-                  className="px-3.5 py-2.5 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5"
+                  className="px-3.5 py-2.5 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   title="مزامنة فورية مع جميع الأجهزة"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -446,12 +451,7 @@ export const DevicesHubView: React.FC = () => {
                 </button>
               )}
             <button
-              onClick={() => {
-                setDedicatedDeviceRole(null);
-                try {
-                  localStorage.removeItem("kian_dedicated_device_role");
-                } catch {}
-              }}
+              onClick={exitSubDeviceMode}
               className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black transition flex items-center gap-1.5"
             >
               <Crown className="w-3.5 h-3.5" />
@@ -581,13 +581,13 @@ export const DevicesHubView: React.FC = () => {
             <table className="w-full text-right text-xs">
               <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black">
                 <tr>
-                  <th className="p-3.5">اسم الجهاز</th>
+                  <th className="p-3.5">اسم الجهاز المتصل</th>
+                  <th className="p-3.5">اسم المستخدم</th>
                   <th className="p-3.5">الكود الخاص بالجهاز</th>
                   <th className="p-3.5">الوظيفة المحددة</th>
-                  <th className="p-3.5">طبيعة العمل والمهام</th>
+                  <th className="p-3.5">الصفحات المسموح ظهورها</th>
                   <th className="p-3.5">عدد الفواتير</th>
                   <th className="p-3.5">إجمالي المبيعات</th>
-                  <th className="p-3.5">آخر نشاط</th>
                   <th className="p-3.5 text-center">إجراءات الجهاز الرئيسي</th>
                 </tr>
               </thead>
@@ -600,10 +600,13 @@ export const DevicesHubView: React.FC = () => {
                     ordersCount: 0,
                     salesList: [],
                   };
-                  const preset = getDefaultWorkPermissionsForRole(dev.role);
                   const devUniqueCode =
                     dev.uniqueDeviceCode ||
                     generateUniqueCodeForSingleDevice(dev.role, dev.id);
+                  const allowedList =
+                    dev.workPermissions?.allowedPages && dev.workPermissions.allowedPages.length > 0
+                      ? dev.workPermissions.allowedPages
+                      : getDefaultAllowedPagesForRole(dev.role);
                   return (
                     <tr
                       key={dev.id}
@@ -618,6 +621,12 @@ export const DevicesHubView: React.FC = () => {
                           />
                           <span>{dev.name}</span>
                         </div>
+                      </td>
+                      <td className="p-3.5 font-bold text-indigo-700 dark:text-indigo-300">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                          <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+                          {dev.connectedUserName || dev.cashierName || "موظف مناوب"}
+                        </span>
                       </td>
                       <td className="p-3.5">
                         <span
@@ -634,17 +643,29 @@ export const DevicesHubView: React.FC = () => {
                           {badge.label}
                         </span>
                       </td>
-                      <td className="p-3.5 text-slate-600 dark:text-slate-400 max-w-xs truncate">
-                        {dev.workDescription || preset.workDescription}
+                      <td className="p-3.5">
+                        <div className="flex flex-wrap gap-1 max-w-xs">
+                          {dev.role === "master_pos" ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                              كافة صفحات النظام (جهاز رئيسي)
+                            </span>
+                          ) : (
+                            allowedList.map((pId) => (
+                              <span
+                                key={pId}
+                                className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-black"
+                              >
+                                {SUB_DEVICE_PAGE_LABELS[pId] || pId}
+                              </span>
+                            ))
+                          )}
+                        </div>
                       </td>
                       <td className="p-3.5 font-black text-slate-900 dark:text-white">
                         {st.salesCount} فاتورة
                       </td>
                       <td className="p-3.5 font-black text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(st.totalRevenue)}
-                      </td>
-                      <td className="p-3.5 text-slate-500 dark:text-slate-400">
-                        {dev.lastActivitySummary || "متصل ويشارك البيانات تلقائياً"}
                       </td>
                       <td className="p-3.5">
                         <div className="flex items-center justify-center gap-1.5">
@@ -658,7 +679,7 @@ export const DevicesHubView: React.FC = () => {
                             onClick={() => setEditingDevice(dev)}
                             className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-200 transition"
                           >
-                            تحديد العمل
+                            تحديد العمل والصفحات
                           </button>
                         </div>
                       </td>
@@ -830,41 +851,59 @@ export const DevicesHubView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Assigned Work & Permissions Box */}
+                  {/* Connected Device Name & User Name Box (يظهر اسم الجهاز المتصل واسم المستخدم) */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-400 block">
+                        اسم الجهاز المتصل:
+                      </span>
+                      <span className="text-xs font-black text-slate-900 dark:text-white truncate block mt-0.5">
+                        {dev.name}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/50">
+                      <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block">
+                        اسم المستخدم على الجهاز:
+                      </span>
+                      <span className="text-xs font-black text-indigo-950 dark:text-indigo-200 truncate flex items-center gap-1 mt-0.5">
+                        <UserCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        {dev.connectedUserName || dev.cashierName || "موظف مناوب"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Assigned Work & Allowed Pages Box */}
                   <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-3 mb-3 border border-slate-200/60 dark:border-slate-800">
                     <div className="flex items-center justify-between text-[11px] font-black text-slate-700 dark:text-slate-300 mb-1">
-                      <span>العمل المحدد للجهاز:</span>
-                      {dev.cashierName && (
-                        <span className="text-indigo-600 dark:text-indigo-400">
-                          المسؤول: {dev.cashierName}
+                      <span>الصفحات المحددة من الرئيسي:</span>
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                        {isMasterCard
+                          ? "وصول كامل"
+                          : `${(perms.allowedPages || getDefaultAllowedPagesForRole(dev.role)).length} صفحات فقط`}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {isMasterCard ? (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                          كافة صفحات النظام (الجهاز الرئيسي)
                         </span>
+                      ) : (
+                        (perms.allowedPages && perms.allowedPages.length > 0
+                          ? perms.allowedPages
+                          : getDefaultAllowedPagesForRole(dev.role)
+                        ).map((pageId) => (
+                          <span
+                            key={pageId}
+                            className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-black"
+                          >
+                            {SUB_DEVICE_PAGE_LABELS[pageId] || pageId}
+                          </span>
+                        ))
                       )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                       {dev.workDescription || preset.workDescription}
                     </p>
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {perms.canProcessSales && (
-                        <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-[10px] font-bold">
-                          إصدار مبيعات
-                        </span>
-                      )}
-                      {businessMode === "restaurant" && perms.canTakeTableOrders && (
-                        <span className="px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-300 text-[10px] font-bold">
-                          طلبات طاولات
-                        </span>
-                      )}
-                      {perms.canManageInventory && (
-                        <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[10px] font-bold">
-                          جرد ومخزون
-                        </span>
-                      )}
-                      {businessMode === "restaurant" && perms.canAccessKitchenOrders && (
-                        <span className="px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-300 text-[10px] font-bold">
-                          شاشة مطبخ
-                        </span>
-                      )}
-                    </div>
                   </div>
 
                   {/* Live Sales & Data Metrics Box (اطلاع الجهاز الرئيسي على بيانات الجهاز) */}
@@ -953,18 +992,16 @@ export const DevicesHubView: React.FC = () => {
                       </button>
                     )}
 
-                    {dev.role !== "master_pos" &&
-                      dev.role !== "secondary_pos" &&
-                      dev.role !== "supervisor" && (
-                        <button
-                          onClick={() => openRoleTerminalPreview(dev.role)}
-                          className="py-2 px-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold flex items-center justify-center gap-1 transition"
-                          title="معاينة شاشة هذا الجهاز"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          شاشته
-                        </button>
-                      )}
+                    {!isMasterCard && (
+                      <button
+                        onClick={() => activateSubDevicePreview(dev)}
+                        className="py-2 px-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 text-[11px] font-black flex items-center justify-center gap-1 transition cursor-pointer"
+                        title="تشغيل ومعاينة النظام بصلاحيات وصفحات هذا الجهاز التابع فقط"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        معاينة صفحاته
+                      </button>
+                    )}
 
                     <button
                       onClick={() => handlePing(dev.id)}

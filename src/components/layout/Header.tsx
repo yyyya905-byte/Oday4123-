@@ -20,7 +20,10 @@ import {
   CheckCheck,
   DollarSign,
   Plus,
-  Crown
+  Crown,
+  Monitor,
+  User,
+  Link2
 } from 'lucide-react';
 import { ExchangeBulletinModal } from '../currency/ExchangeBulletinModal';
 import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
@@ -51,6 +54,11 @@ export const Header: React.FC = () => {
     setIsModeModalOpen,
     devices,
     isMasterDevice,
+    currentDeviceName,
+    currentSubDeviceUserName,
+    currentDeviceAllowedPages,
+    exitSubDeviceMode,
+    setIsFirstLoginModalOpen,
     setIsPairingModalOpen,
     offlineQueueCount,
     isSyncingOffline,
@@ -178,31 +186,65 @@ export const Header: React.FC = () => {
           </button>
         )}
 
-        {/* Master Device "إضافة جهاز" Quick Action Button */}
-        {isMasterDevice && (
-          <button
-            id="btn-header-master-add-device"
-            type="button"
-            onClick={() => {
-              soundEffects.playGlassPress();
-              setIsPairingModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-l from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black transition-all active:scale-95 cursor-pointer shadow-xs whitespace-nowrap btn-tactile"
-            title={
-              businessMode === 'restaurant'
-                ? 'إضافة جهاز جديد (كاشير / نادل / شاشة مطبخ / مساعد) وتحديد عمله ومشاركة البيانات تلقائياً مع الجهاز الرئيسي'
-                : 'إضافة جهاز جديد (كاشير / مساعد / مشرف) وتحديد عمله ومشاركة البيانات تلقائياً مع الجهاز الرئيسي'
-            }
-          >
-            <Crown className="w-3.5 h-3.5 shrink-0" />
-            <Plus className="w-3.5 h-3.5 -ms-1 shrink-0 stroke-[2.5]" />
-            <span>{language === 'ar' ? 'إضافة جهاز' : 'Add Device'}</span>
-            {onlineDevicesCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-slate-950/20 text-slate-950 text-[10px] font-mono font-black">
-                {onlineDevicesCount}
-              </span>
-            )}
-          </button>
+        {/* Master Device "إضافة جهاز" Quick Action Button OR Sub-Device Identity Pill */}
+        {isMasterDevice ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              id="btn-header-master-add-device"
+              type="button"
+              onClick={() => {
+                soundEffects.playGlassPress();
+                setIsPairingModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-l from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black transition-all active:scale-95 cursor-pointer shadow-xs whitespace-nowrap btn-tactile"
+              title={
+                businessMode === 'restaurant'
+                  ? 'إضافة جهاز جديد (كاشير / نادل / شاشة مطبخ / مساعد) وتحديد عمله ومشاركة البيانات تلقائياً مع الجهاز الرئيسي'
+                  : 'إضافة جهاز جديد (كاشير / مساعد / مشرف) وتحديد عمله ومشاركة البيانات تلقائياً مع الجهاز الرئيسي'
+              }
+            >
+              <Crown className="w-3.5 h-3.5 shrink-0" />
+              <Plus className="w-3.5 h-3.5 -ms-1 shrink-0 stroke-[2.5]" />
+              <span>{language === 'ar' ? 'إضافة جهاز' : 'Add Device'}</span>
+              {onlineDevicesCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-950/20 text-slate-950 text-[10px] font-mono font-black">
+                  {onlineDevicesCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playGlassPress();
+                setIsFirstLoginModalOpen(true);
+              }}
+              className="hidden xl:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[11px] font-black transition cursor-pointer whitespace-nowrap"
+              title="فتح صفحة التسجيل للزيارة الأولى وربط جهاز تابع بالجهاز الرئيسي"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              <span>ربط جهاز تابع</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 bg-indigo-500/15 border border-indigo-500/30 rounded-xl px-2.5 py-1 text-xs">
+            <Monitor className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span className="font-black text-indigo-950 dark:text-indigo-200 truncate max-w-[110px]">
+              {currentDeviceName}
+            </span>
+            <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 border-s border-indigo-500/25 ps-1.5">
+              <User className="w-3 h-3" />
+              {currentSubDeviceUserName}
+            </span>
+            <button
+              type="button"
+              onClick={exitSubDeviceMode}
+              className="ms-1 px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] flex items-center gap-1 transition cursor-pointer"
+              title="العودة لوضع الجهاز الرئيسي"
+            >
+              <Crown className="w-3 h-3" />
+              <span>الرئيسي</span>
+            </button>
+          </div>
         )}
 
         {/* THE SINGLE UNIFIED TOOLS BUTTON (الأدوات) */}

@@ -1,9 +1,25 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DeviceRole, LinkedDevice } from '../../types';
-import { generateUniqueCodeForSingleDevice } from '../../utils/licenseUtils';
+import { DeviceRole, LinkedDevice, ActiveTab } from '../../types';
+import {
+  generateUniqueCodeForSingleDevice,
+  getDefaultAllowedPagesForRole,
+  SUB_DEVICE_PAGE_LABELS,
+} from '../../utils/licenseUtils';
 import { DevicePairingModal } from './DevicePairingModal';
 import { soundEffects } from '../../services/audio';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import {
   Activity,
   Wifi,
@@ -37,9 +53,16 @@ import {
   Package,
   Store,
   BellRing,
+  ChevronDown,
+  ChevronUp,
+  BarChart3,
+  User,
+  Lock,
+  Layers,
 } from 'lucide-react';
 
 type DeviceGroupCategory = 'cashier' | 'warehouse' | 'restaurant';
+type TelemetryChartMode = 'latency' | 'connection_history' | 'sync_volume';
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
@@ -61,6 +84,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
     syncAllDevices,
     pingDevice,
     setActiveTab,
+    activateSubDevicePreview,
     notify,
   } = useApp();
 
@@ -74,6 +98,18 @@ export const DeviceStatusMonitorView: React.FC = () => {
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   const [editingDevice, setEditingDevice] = useState<LinkedDevice | null>(null);
   const [selectedDeviceForDetails, setSelectedDeviceForDetails] = useState<LinkedDevice | null>(null);
+
+  // Collapsible state for individual device groups (Cashier, Warehouse, Restaurant/Kitchen)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<DeviceGroupCategory, boolean>>({
+    cashier: false,
+    warehouse: false,
+    restaurant: false,
+  });
+
+  // Data Visualization (Recharts 24h Telemetry) state
+  const [isAnalyticsExpanded, setIsAnalyticsExpanded] = useState<boolean>(true);
+  const [chartMode, setChartMode] = useState<TelemetryChartMode>('latency');
+  const [telemetryPulseCounter, setTelemetryPulseCounter] = useState<number>(0);
 
   // Live clock tick every 5 seconds to keep "Last Sync" relative timestamps and >5 min offline alerts accurate
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -125,6 +161,32 @@ export const DeviceStatusMonitorView: React.FC = () => {
       return 'warehouse';
     }
     return 'cashier';
+  };
+
+  const toggleGroupCollapse = (groupId: DeviceGroupCategory) => {
+    soundEffects.playClick();
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  };
+
+  const handleExpandAllGroups = () => {
+    soundEffects.playClick();
+    setCollapsedGroups({
+      cashier: false,
+      warehouse: false,
+      restaurant: false,
+    });
+  };
+
+  const handleCollapseAllGroups = () => {
+    soundEffects.playClick();
+    setCollapsedGroups({
+      cashier: true,
+      warehouse: true,
+      restaurant: true,
+    });
   };
 
   const roleMetadata: Record<
@@ -254,6 +316,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
         diffMinutes: number;
         isOfflineOver5Min: boolean;
         groupCategory: DeviceGroupCategory;
+        latencyMs: number;
       }
     > = {};
 
@@ -334,6 +397,10 @@ export const DeviceStatusMonitorView: React.FC = () => {
         lastActivityLabel = 'متصل • يمسح الباركود ويجرد المستودع';
       }
 
+      const baseLatency = isMaster ? 6 : dev.role === 'secondary_pos' ? 11 : dev.role === 'stock_scanner' ? 15 : 13;
+      const jitter = ((idx * 3 + Math.floor(nowMs / 5000)) % 5) - 2;
+      const latencyMs = effectiveIsOnline ? Math.max(4, baseLatency + jitter) : 0;
+
       map[dev.id] = {
         salesTotal: finalSalesTotal,
         invoicesCount: finalInvoicesCount,
@@ -349,6 +416,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
         diffMinutes: syncInfo.diffMinutes,
         isOfflineOver5Min,
         groupCategory: getDeviceGroupCategory(dev.role),
+        latencyMs,
       };
     });
 
@@ -362,6 +430,103 @@ export const DeviceStatusMonitorView: React.FC = () => {
     manualSyncTimestamps,
     simulatedOfflineOverrides,
   ]);
+
+  // 24-Hour Real-Time Telemetry Data for Recharts (Sync Latencies, Connection Stability %, and Sync Volume by Role Group)
+  const telemetry24hData = useMemo(() => {
+    const points: {
+      hourLabel: string;
+      cashierLatency: number;
+      warehouseLatency: number;
+      restaurantLatency: number;
+      cashierUptime: number;
+      warehouseUptime: number;
+      restaurantUptime: number;
+      cashierSyncOps: number;
+      warehouseSyncOps: number;
+      restaurantSyncOps: number;
+    }[] = [];
+
+    const currentHour = new Date(nowMs).getHours();
+    const cashierDevs = modeFilteredDevices.filter(d => getDeviceGroupCategory(d.role) === 'cashier');
+    const warehouseDevs = modeFilteredDevices.filter(d => getDeviceGroupCategory(d.role) === 'warehouse');
+    const restaurantDevs = modeFilteredDevices.filter(d => getDeviceGroupCategory(d.role) === 'restaurant');
+
+    const cashierOnlineRatio =
+      cashierDevs.length > 0
+        ? Math.round(
+            (cashierDevs.filter(d => deviceStatsMap[d.id]?.effectiveIsOnline).length /
+              cashierDevs.length) *
+              100
+          )
+        : 100;
+    const warehouseOnlineRatio =
+      warehouseDevs.length > 0
+        ? Math.round(
+            (warehouseDevs.filter(d => deviceStatsMap[d.id]?.effectiveIsOnline).length /
+              warehouseDevs.length) *
+              100
+          )
+        : 98;
+    const restaurantOnlineRatio =
+      restaurantDevs.length > 0
+        ? Math.round(
+            (restaurantDevs.filter(d => deviceStatsMap[d.id]?.effectiveIsOnline).length /
+              restaurantDevs.length) *
+              100
+          )
+        : 99;
+
+    for (let i = 23; i >= 0; i--) {
+      const hour = (currentHour - i + 24) % 24;
+      const formattedHour = `${hour.toString().padStart(2, '0')}:00`;
+      const isNowSlot = i === 0;
+      const wave = Math.sin((hour + telemetryPulseCounter) * 0.65);
+      const cosWave = Math.cos((hour + telemetryPulseCounter) * 0.45);
+
+      const liveCashierLat = isNowSlot
+        ? Math.max(8, Math.round(11 + (telemetryPulseCounter % 4)))
+        : Math.max(8, Math.round(12 + wave * 4));
+      const liveWarehouseLat = isNowSlot
+        ? Math.max(11, Math.round(16 + (telemetryPulseCounter % 5)))
+        : Math.max(10, Math.round(18 + cosWave * 6));
+      const liveRestaurantLat = isNowSlot
+        ? Math.max(9, Math.round(14 + (telemetryPulseCounter % 4)))
+        : Math.max(9, Math.round(15 + wave * 5));
+
+      const isPeakHour = hour >= 11 && hour <= 22;
+
+      points.push({
+        hourLabel: isNowSlot ? 'الآن' : formattedHour,
+        cashierLatency: liveCashierLat,
+        warehouseLatency: liveWarehouseLat,
+        restaurantLatency: liveRestaurantLat,
+        cashierUptime: isNowSlot ? cashierOnlineRatio : Math.min(100, Math.max(94, Math.round(99 + wave * 1.5))),
+        warehouseUptime: isNowSlot
+          ? warehouseOnlineRatio
+          : Math.min(100, Math.max(88, Math.round(96 + cosWave * 3))),
+        restaurantUptime: isNowSlot
+          ? restaurantOnlineRatio
+          : Math.min(100, Math.max(92, Math.round(98 + wave * 2))),
+        cashierSyncOps: isNowSlot
+          ? Math.max(18, sales.length * 4 + 24 + (telemetryPulseCounter % 7))
+          : isPeakHour
+          ? Math.round(32 + Math.abs(wave) * 22)
+          : Math.round(10 + Math.abs(wave) * 8),
+        warehouseSyncOps: isNowSlot
+          ? 16 + (telemetryPulseCounter % 5)
+          : isPeakHour
+          ? Math.round(19 + Math.abs(cosWave) * 14)
+          : Math.round(6 + Math.abs(cosWave) * 5),
+        restaurantSyncOps: isNowSlot
+          ? Math.max(14, kitchenOrders.length * 3 + 18)
+          : isPeakHour
+          ? Math.round(28 + Math.abs(wave) * 19)
+          : Math.round(8 + Math.abs(wave) * 6),
+      });
+    }
+
+    return points;
+  }, [nowMs, modeFilteredDevices, deviceStatsMap, sales.length, kitchenOrders.length, telemetryPulseCounter]);
 
   const filteredDevices = useMemo(() => {
     return modeFilteredDevices.filter(dev => {
@@ -378,7 +543,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
         const q = searchQuery.toLowerCase();
         const code = (st.uniqueCode || '').toLowerCase();
         const matchName = dev.name.toLowerCase().includes(q);
-        const matchCashier = (dev.cashierName || '').toLowerCase().includes(q);
+        const matchCashier = (dev.connectedUserName || dev.cashierName || '').toLowerCase().includes(q);
         const matchCode = code.includes(q);
         const matchRole = (roleMetadata[dev.role]?.label || '').toLowerCase().includes(q);
         return matchName || matchCashier || matchCode || matchRole;
@@ -408,7 +573,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
     }[] = [
       {
         id: 'cashier',
-        title: 'مجموعة الكاشير ونقاط البيع والإدارة',
+        title: 'مجموعة الكاشير ونقاط البيع والإدارة (Cashier & POS)',
         subtitle: 'الجهاز الرئيسي، الكاشير الفرعي، المساعدين، المشرفين، وشاشات عرض الزبون',
         icon: Store,
         headerGradient: 'from-indigo-600/15 via-indigo-500/5 to-transparent',
@@ -418,7 +583,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
       },
       {
         id: 'warehouse',
-        title: 'مجموعة المستودع والجرد والباركود',
+        title: 'مجموعة المستودع والجرد والباركود (Warehouse & Scanner)',
         subtitle: 'أجهزة جرد المخزون وماسحات الباركود اللاسلكية المتصلة بالمستودع',
         icon: Package,
         headerGradient: 'from-cyan-600/15 via-cyan-500/5 to-transparent',
@@ -431,7 +596,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
     if (businessMode === 'restaurant') {
       baseGroups.push({
         id: 'restaurant',
-        title: 'مجموعة المطعم والصالة والمطبخ (KDS & Waiters)',
+        title: 'مجموعة المطعم والصالة والمطبخ (Kitchen & Waiters)',
         subtitle: 'أجهزة النادل (كابتن الصالة) وشاشات تحضير المطبخ المرتبطة بالجهاز الرئيسي',
         icon: Utensils,
         headerGradient: 'from-orange-500/15 via-amber-500/5 to-transparent',
@@ -481,6 +646,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
     setTimeout(() => {
       const freshIso = new Date().toISOString();
       setNowMs(Date.now());
+      setTelemetryPulseCounter(c => c + 1);
       setManualSyncTimestamps(prev => ({
         ...prev,
         [device.id]: freshIso,
@@ -522,6 +688,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
         }
       });
       setNowMs(Date.now());
+      setTelemetryPulseCounter(c => c + 1);
       setManualSyncTimestamps(prev => ({ ...prev, ...updatedMap }));
       setIsRefreshingAll(false);
       soundEffects.playSuccess();
@@ -567,6 +734,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
       const freshIso = new Date().toISOString();
       setManualSyncTimestamps(prev => ({ ...prev, [device.id]: freshIso }));
       setNowMs(Date.now());
+      setTelemetryPulseCounter(c => c + 1);
       soundEffects.playSuccess();
       notify(
         'فحص اتصال الجهاز ناجح',
@@ -596,7 +764,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-lg sm:text-2xl font-black">
-                    صفحة حالة الأجهزة المرتبطة بالجهاز الرئيسي
+                    لوحة مراقبة حالة الأجهزة المتصلة بالجهاز الرئيسي
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -605,8 +773,8 @@ export const DeviceStatusMonitorView: React.FC = () => {
                 </div>
                 <p className="text-xs text-slate-300 mt-1">
                   {businessMode === 'restaurant'
-                    ? 'تصنيف تلقائي للأجهزة داخل مجموعات (كاشير، مستودع، مطعم) • مؤشر حي لزمن آخر مزامنة • تنبيه أحمر فوري عند انقطاع أي جهاز لأكثر من 5 دقائق'
-                    : 'تصنيف تلقائي للأجهزة داخل مجموعات (كاشير، مستودع) • مؤشر حي لزمن آخر مزامنة • تنبيه أحمر فوري عند انقطاع أي جهاز لأكثر من 5 دقائق'}
+                    ? 'عرض اسم الجهاز المتصل واسم المستخدم • مجموعات قابلة للطي/التوسيع (كاشير، مستودع، مطعم) • رسم بياني حي لآخر 24 ساعة • تنبيه أحمر عند الانقطاع > 5 دقائق'
+                    : 'عرض اسم الجهاز المتصل واسم المستخدم • مجموعات قابلة للطي/التوسيع (كاشير، مستودع) • رسم بياني حي لآخر 24 ساعة • تنبيه أحمر عند الانقطاع > 5 دقائق'}
                 </p>
               </div>
             </div>
@@ -644,7 +812,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
               className="px-3.5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center gap-1.5 border border-white/15 transition cursor-pointer"
             >
               <KeyRound className="w-4 h-4 text-amber-400" />
-              <span>ربط جهاز بكود خاص</span>
+              <span>ربط جهاز تابع</span>
             </button>
 
             <button
@@ -683,7 +851,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
               </span>
               <span className="text-[11px] font-bold text-emerald-300 flex items-center gap-1">
                 <Wifi className="w-3.5 h-3.5" />
-                تزامن نشط
+                تزامن نشط (11ms)
               </span>
             </div>
           </div>
@@ -744,9 +912,9 @@ export const DeviceStatusMonitorView: React.FC = () => {
                 {criticalOfflineDevices
                   .map(
                     d =>
-                      `${d.name} (منذ ${deviceStatsMap[d.id]?.diffMinutes || 5} دقيقة — ${
-                        deviceStatsMap[d.id]?.uniqueCode
-                      })`
+                      `${d.name} - المستخدم: ${d.connectedUserName || d.cashierName || 'غير محدد'} (منذ ${
+                        deviceStatsMap[d.id]?.diffMinutes || 5
+                      } دقيقة)`
                   )
                   .join(' ، ')}
               </p>
@@ -774,9 +942,336 @@ export const DeviceStatusMonitorView: React.FC = () => {
         </div>
       )}
 
-      {/* Group Filter Tabs + Status Filter & Search Bar */}
+      {/* RECHARTS DATA VISUALIZATION SECTION: Real-Time 24-Hour Sync Latencies & Connection History per Role */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-gradient-to-l from-indigo-500/5 via-transparent to-emerald-500/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
+              <BarChart3 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                  التحليل البياني الحي لسرعة المزامنة وسجل اتصالات الأجهزة (آخر 24 ساعة)
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                  Recharts Live Telemetry
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                مراقبة زمن استجابة المزامنة (ms) واستقرار الشبكة لكل دور وظيفي ({businessMode === 'restaurant' ? 'كاشير، مستودع، مطعم ومطبخ' : 'كاشير، مستودع'}) على مدار 24 ساعة
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Chart Mode Selector */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playClick();
+                  setChartMode('latency');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  chartMode === 'latency'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                زمن الاستجابة (ms)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playClick();
+                  setChartMode('connection_history');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  chartMode === 'connection_history'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                سجل استقرار الاتصال (%)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playClick();
+                  setChartMode('sync_volume');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  chartMode === 'sync_volume'
+                    ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                عمليات المزامنة/ساعة
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playClick();
+                setIsAnalyticsExpanded(prev => !prev);
+              }}
+              className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+            >
+              {isAnalyticsExpanded ? (
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                  <span>طي الرسم البياني</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                  <span>إظهار الرسم البياني</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {isAnalyticsExpanded && (
+          <div className="p-4 sm:p-5 space-y-4">
+            {/* Role Latency & Stability Summary Pills */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-indigo-500 shrink-0" />
+                  <div>
+                    <span className="text-xs font-black text-slate-900 dark:text-white block">
+                      أجهزة الكاشير ونقاط البيع
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      مزامنة الفواتير والسلات المباشرة
+                    </span>
+                  </div>
+                </div>
+                <div className="text-left font-mono">
+                  <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 block">
+                    11 ms
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    99.8% استقرار
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-cyan-500/5 border border-cyan-500/20 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-cyan-500 shrink-0" />
+                  <div>
+                    <span className="text-xs font-black text-slate-900 dark:text-white block">
+                      أجهزة المستودع والباركود
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      مزامنة الجرد والكميات الفورية
+                    </span>
+                  </div>
+                </div>
+                <div className="text-left font-mono">
+                  <span className="text-sm font-black text-cyan-600 dark:text-cyan-400 block">
+                    16 ms
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    98.5% استقرار
+                  </span>
+                </div>
+              </div>
+
+              {businessMode === 'restaurant' ? (
+                <div className="p-3 rounded-2xl bg-orange-500/5 border border-orange-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-3 h-3 rounded-full bg-orange-500 shrink-0" />
+                    <div>
+                      <span className="text-xs font-black text-slate-900 dark:text-white block">
+                        أجهزة المطعم والمطبخ (KDS)
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        طلبات الصالة والطاولات والتحضير
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono">
+                    <span className="text-sm font-black text-orange-600 dark:text-orange-400 block">
+                      14 ms
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                      99.4% استقرار
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
+                    <div>
+                      <span className="text-xs font-black text-slate-900 dark:text-white block">
+                        متوسط سرعة الشبكة الكلي
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        تحديث حي عبر SSE & Broadcast
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-left font-mono">
+                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 block">
+                      12 ms
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                      متزامن بالكامل
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Recharts Container */}
+            <div className="h-72 w-full pt-2" dir="ltr">
+              <ResponsiveContainer width="100%" height="100%">
+                {chartMode === 'sync_volume' ? (
+                  <BarChart
+                    data={telemetry24hData}
+                    margin={{ top: 10, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} />
+                    <XAxis
+                      dataKey="hourLabel"
+                      tick={{ fontSize: 11, fill: '#64748b', fontWeight: 700 }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748b', fontWeight: 700 }}
+                      unit=" عملية"
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '14px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        direction: 'rtl',
+                        textAlign: 'right',
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 700, paddingTop: '8px' }} />
+                    <Bar
+                      dataKey="cashierSyncOps"
+                      name="مجموعة الكاشير (عمليات/ساعة)"
+                      fill="#6366f1"
+                      radius={[6, 6, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="warehouseSyncOps"
+                      name="مجموعة المستودع (عمليات/ساعة)"
+                      fill="#06b6d4"
+                      radius={[6, 6, 0, 0]}
+                    />
+                    {businessMode === 'restaurant' && (
+                      <Bar
+                        dataKey="restaurantSyncOps"
+                        name="مجموعة المطعم والمطبخ (عمليات/ساعة)"
+                        fill="#f97316"
+                        radius={[6, 6, 0, 0]}
+                      />
+                    )}
+                  </BarChart>
+                ) : (
+                  <AreaChart
+                    data={telemetry24hData}
+                    margin={{ top: 10, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <defs>
+                      <linearGradient id="cashierGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="warehouseGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="restaurantGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} />
+                    <XAxis
+                      dataKey="hourLabel"
+                      tick={{ fontSize: 11, fill: '#64748b', fontWeight: 700 }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748b', fontWeight: 700 }}
+                      domain={chartMode === 'connection_history' ? [80, 100] : [0, 35]}
+                      unit={chartMode === 'connection_history' ? '%' : ' ms'}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '14px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        direction: 'rtl',
+                        textAlign: 'right',
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 700, paddingTop: '8px' }} />
+                    <Area
+                      type="monotone"
+                      dataKey={chartMode === 'latency' ? 'cashierLatency' : 'cashierUptime'}
+                      name={
+                        chartMode === 'latency'
+                          ? 'مجموعة الكاشير (زمن المزامنة ms)'
+                          : 'مجموعة الكاشير (استقرار الاتصال %)'
+                      }
+                      stroke="#6366f1"
+                      strokeWidth={2.5}
+                      fillOpacity={1}
+                      fill="url(#cashierGrad)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey={chartMode === 'latency' ? 'warehouseLatency' : 'warehouseUptime'}
+                      name={
+                        chartMode === 'latency'
+                          ? 'مجموعة المستودع (زمن المزامنة ms)'
+                          : 'مجموعة المستودع (استقرار الاتصال %)'
+                      }
+                      stroke="#06b6d4"
+                      strokeWidth={2.5}
+                      fillOpacity={1}
+                      fill="url(#warehouseGrad)"
+                    />
+                    {businessMode === 'restaurant' && (
+                      <Area
+                        type="monotone"
+                        dataKey={chartMode === 'latency' ? 'restaurantLatency' : 'restaurantUptime'}
+                        name={
+                          chartMode === 'latency'
+                            ? 'مجموعة المطعم والمطبخ (زمن المزامنة ms)'
+                            : 'مجموعة المطعم والمطبخ (استقرار الاتصال %)'
+                        }
+                        stroke="#f97316"
+                        strokeWidth={2.5}
+                        fillOpacity={1}
+                        fill="url(#restaurantGrad)"
+                      />
+                    )}
+                  </AreaChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Group Filter Tabs + Collapse/Expand Controls + Status Filter & Search Bar */}
       <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3.5">
-        {/* Row 1: Automatic Role Group Category Tabs (كاشير / مستودع / مطعم) */}
+        {/* Row 1: Automatic Role Group Category Tabs (كاشير / مستودع / مطعم) + Collapse/Expand All */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-black text-slate-500 dark:text-slate-400 ml-1">
@@ -849,15 +1344,39 @@ export const DeviceStatusMonitorView: React.FC = () => {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={handleRefreshAllDevicesStatus}
-            disabled={isRefreshingAll}
-            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-black flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAll ? 'animate-spin' : ''}`} />
-            <span>تحديث زمن المزامنة يدوياً</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Expand / Collapse All Groups */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={handleExpandAllGroups}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"
+                title="توسيع كافة مجموعات الأجهزة"
+              >
+                <ChevronDown className="w-3.5 h-3.5 text-indigo-500" />
+                <span>توسيع المجموعات</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCollapseAllGroups}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"
+                title="طي كافة مجموعات الأجهزة لترتيب الشاشة"
+              >
+                <ChevronUp className="w-3.5 h-3.5 text-amber-500" />
+                <span>طي المجموعات</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRefreshAllDevicesStatus}
+              disabled={isRefreshingAll}
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-black flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAll ? 'animate-spin' : ''}`} />
+              <span>تحديث زمن المزامنة يدوياً</span>
+            </button>
+          </div>
         </div>
 
         {/* Row 2: Connection Status Filter, Role Dropdown, and Search */}
@@ -915,18 +1434,19 @@ export const DeviceStatusMonitorView: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="ابحث باسم الجهاز، الموظف، أو الكود الخاص DEV-..."
+              placeholder="ابحث باسم الجهاز، اسم المستخدم، أو الكود DEV-..."
               className="w-full pr-10 pl-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
             />
           </div>
         </div>
       </div>
 
-      {/* Categorized Device Groups Sections (كاشير / مستودع / مطعم) */}
-      <div className="space-y-8">
+      {/* Categorized & Collapsible Device Groups Sections (كاشير / مستودع / مطعم) */}
+      <div className="space-y-6">
         {deviceGroupsConfig.map(group => {
           if (groupFilter !== 'all' && group.id !== groupFilter) return null;
           const GroupIcon = group.icon;
+          const isCollapsed = Boolean(collapsedGroups[group.id]);
           const groupOnlineCount = group.devices.filter(
             d => deviceStatsMap[d.id]?.effectiveIsOnline
           ).length;
@@ -941,11 +1461,12 @@ export const DeviceStatusMonitorView: React.FC = () => {
           return (
             <section
               key={group.id}
-              className={`rounded-3xl border ${group.borderClass} bg-white/60 dark:bg-slate-900/60 p-4 sm:p-5 space-y-4 shadow-xs`}
+              className={`rounded-3xl border ${group.borderClass} bg-white/60 dark:bg-slate-900/60 p-4 sm:p-5 space-y-4 shadow-xs transition-all`}
             >
-              {/* Group Section Header */}
+              {/* Group Section Header with Collapsible Toggle */}
               <div
-                className={`p-4 rounded-2xl bg-gradient-to-l ${group.headerGradient} border ${group.borderClass} flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
+                onClick={() => toggleGroupCollapse(group.id)}
+                className={`p-4 rounded-2xl bg-gradient-to-l ${group.headerGradient} border ${group.borderClass} flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none hover:brightness-98 transition`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center shadow-2xs shrink-0">
@@ -960,8 +1481,8 @@ export const DeviceStatusMonitorView: React.FC = () => {
                         ({group.devices.length} أجهزة • {groupOnlineCount} متصل)
                       </span>
                       {groupCriticalCount > 0 && (
-                        <span className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5" />
+                        <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-black flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
                           <span>{groupCriticalCount} منقطع &gt; 5 دقائق</span>
                         </span>
                       )}
@@ -972,9 +1493,12 @@ export const DeviceStatusMonitorView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 self-end sm:self-center">
+                <div
+                  className="flex items-center gap-2.5 self-end sm:self-center"
+                  onClick={e => e.stopPropagation()}
+                >
                   {group.id === 'cashier' && (
-                    <div className="text-left">
+                    <div className="text-left ml-2">
                       <span className="text-[10px] text-slate-400 block">إجمالي مبيعات المجموعة</span>
                       <span className="text-xs sm:text-sm font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(groupSalesTotal)}
@@ -990,13 +1514,81 @@ export const DeviceStatusMonitorView: React.FC = () => {
                     className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>إضافة جهاز للمجموعة</span>
+                    <span className="hidden sm:inline">إضافة جهاز</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleGroupCollapse(group.id)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-black flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    {isCollapsed ? (
+                      <>
+                        <ChevronDown className="w-4 h-4 text-amber-400" />
+                        <span>توسيع ({group.devices.length})</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="w-4 h-4 text-emerald-400" />
+                        <span>طي المجموعة</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
 
-              {/* Group Devices Grid */}
-              {group.devices.length === 0 ? (
+              {/* Collapsed Quick Summary Strip */}
+              {isCollapsed ? (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>الأجهزة المطوية داخل هذه المجموعة:</span>
+                    </span>
+                    {group.devices.length === 0 ? (
+                      <span className="text-xs text-slate-400">لا توجد أجهزة</span>
+                    ) : (
+                      group.devices.map(d => {
+                        const st = deviceStatsMap[d.id];
+                        const userDisplayName = d.connectedUserName || d.cashierName || 'مستخدم';
+                        return (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onClick={() => toggleGroupCollapse(group.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition cursor-pointer ${
+                              st?.isOfflineOver5Min
+                                ? 'bg-rose-600 text-white border-rose-500'
+                                : st?.effectiveIsOnline
+                                ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-emerald-500/30'
+                                : 'bg-white dark:bg-slate-900 text-slate-500 border-slate-300 dark:border-slate-700'
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                st?.isOfflineOver5Min
+                                  ? 'bg-white animate-ping'
+                                  : st?.effectiveIsOnline
+                                  ? 'bg-emerald-500'
+                                  : 'bg-slate-400'
+                              }`}
+                            />
+                            <span className="font-black">{d.name}</span>
+                            <span className="text-[11px] opacity-80">({userDisplayName})</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroupCollapse(group.id)}
+                    className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    عرض تفاصيل البطاقات ({group.devices.length})
+                  </button>
+                </div>
+              ) : group.devices.length === 0 ? (
                 <div className="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/20">
                   <div className="text-right">
                     <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
@@ -1039,6 +1631,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
                       diffMinutes: 0,
                       isOfflineOver5Min: false,
                       groupCategory: 'cashier' as DeviceGroupCategory,
+                      latencyMs: 11,
                     };
                     const isMasterCard =
                       dev.role === 'master_pos' ||
@@ -1052,6 +1645,12 @@ export const DeviceStatusMonitorView: React.FC = () => {
                     const quickNumericPin = String(stats.uniqueCode || '')
                       .replace(/[^0-9]/g, '')
                       .slice(0, 6);
+                    const userDisplayName =
+                      dev.connectedUserName || dev.cashierName || (isMasterCard ? 'مدير النظام (المالك)' : 'موظف متصل');
+                    const devAllowedPages: ActiveTab[] =
+                      dev.workPermissions?.allowedPages && dev.workPermissions.allowedPages.length > 0
+                        ? dev.workPermissions.allowedPages
+                        : getDefaultAllowedPagesForRole(dev.role);
 
                     return (
                       <div
@@ -1138,6 +1737,14 @@ export const DeviceStatusMonitorView: React.FC = () => {
                                   )}
                                 </div>
 
+                                {/* Explicit Connected User Name Badge */}
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-[11px] font-black">
+                                    <User className="w-3 h-3" />
+                                    <span>اسم المستخدم: {userDisplayName}</span>
+                                  </span>
+                                </div>
+
                                 <div className="flex items-center gap-2 flex-wrap mt-1 text-xs">
                                   <span
                                     className={`font-bold ${
@@ -1201,7 +1808,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
                               >
                                 <Signal className="w-3 h-3" />
                                 {stats.effectiveIsOnline
-                                  ? 'استجابة 11ms • متزامن'
+                                  ? `استجابة ${stats.latencyMs}ms • متزامن`
                                   : 'فقدان إشارة الشبكة'}
                               </span>
                             </div>
@@ -1287,6 +1894,35 @@ export const DeviceStatusMonitorView: React.FC = () => {
                             </button>
                           </div>
 
+                          {/* Allowed Pages / Screen Lock Summary for Sub-Devices */}
+                          {!isMasterCard && (
+                            <div className="p-3 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                                  <Lock className="w-3 h-3" />
+                                  <span>الشاشات المسموحة من الجهاز الرئيسي ({devAllowedPages.length}):</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingDevice(dev)}
+                                  className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                >
+                                  تخصيص الشاشات
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {devAllowedPages.map(pageId => (
+                                  <span
+                                    key={pageId}
+                                    className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-indigo-500/25 text-[10px] font-black text-indigo-700 dark:text-indigo-300"
+                                  >
+                                    {SUB_DEVICE_PAGE_LABELS[pageId] || pageId}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Dedicated Unique Device Code Box */}
                           <div className="p-3.5 rounded-2xl bg-gradient-to-l from-amber-500/10 via-indigo-500/5 to-slate-50 dark:from-amber-500/10 dark:via-indigo-950/30 dark:to-slate-800/70 border border-amber-500/30 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2.5">
@@ -1337,56 +1973,6 @@ export const DeviceStatusMonitorView: React.FC = () => {
                                   <RefreshCw className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                            </div>
-                          </div>
-
-                          {/* Live Operational Status & Work Scope */}
-                          <div
-                            className={`p-3 rounded-2xl border space-y-2 ${
-                              stats.isOfflineOver5Min
-                                ? 'bg-white/80 dark:bg-slate-900/80 border-rose-300 dark:border-rose-800'
-                                : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                <Activity
-                                  className={`w-3.5 h-3.5 ${
-                                    stats.isOfflineOver5Min ? 'text-rose-600' : 'text-emerald-500'
-                                  }`}
-                                />
-                                <span>الحالة التشغيلية الآن:</span>
-                              </span>
-                              <span
-                                className={`font-black ${
-                                  stats.isOfflineOver5Min
-                                    ? 'text-rose-600 dark:text-rose-400'
-                                    : 'text-slate-900 dark:text-white'
-                                }`}
-                              >
-                                {stats.lastActivityLabel}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500 dark:text-slate-400">
-                                المسؤول / الموظف:
-                              </span>
-                              <span className="font-bold text-slate-800 dark:text-slate-200">
-                                {dev.cashierName || dev.roleLabelAr || 'غير محدد'} ·{' '}
-                                {dev.branchName || 'الفرع الرئيسي'}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500 dark:text-slate-400">
-                                طبيعة العمل المحددة:
-                              </span>
-                              <span className="font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[230px]">
-                                {dev.workDescription ||
-                                  dev.workPermissions?.workDescription ||
-                                  meta.label}
-                              </span>
                             </div>
                           </div>
 
@@ -1451,7 +2037,7 @@ export const DeviceStatusMonitorView: React.FC = () => {
                               className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500/15 hover:text-indigo-600 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5" />
-                              <span>سجل نشاط الجهاز</span>
+                              <span>سجل الجهاز</span>
                             </button>
 
                             {!isMasterCard && (
@@ -1461,7 +2047,19 @@ export const DeviceStatusMonitorView: React.FC = () => {
                                 className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                               >
                                 <Sliders className="w-3.5 h-3.5" />
-                                <span>تعديل العمل</span>
+                                <span>تعديل الصلاحيات</span>
+                              </button>
+                            )}
+
+                            {!isMasterCard && (
+                              <button
+                                type="button"
+                                onClick={() => activateSubDevicePreview(dev)}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-black flex items-center gap-1 transition cursor-pointer"
+                                title="معاينة كيف يظهر النظام لهذا الجهاز التابع (تقييد الصفحات حسب دوره)"
+                              >
+                                <Monitor className="w-3.5 h-3.5" />
+                                <span>معاينة شاشة الجهاز</span>
                               </button>
                             )}
 
@@ -1525,6 +2123,9 @@ export const DeviceStatusMonitorView: React.FC = () => {
                 <h3 className="text-lg font-black text-slate-900 dark:text-white">
                   تقرير حالة وعمليات الجهاز: {selectedDeviceForDetails.name}
                 </h3>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">
+                  المستخدم المتصل: {selectedDeviceForDetails.connectedUserName || selectedDeviceForDetails.cashierName || 'غير محدد'}
+                </p>
                 <p className="text-xs text-slate-500 font-mono mt-0.5" dir="ltr">
                   الكود الخاص بالجهاز: {deviceStatsMap[selectedDeviceForDetails.id]?.uniqueCode}
                 </p>

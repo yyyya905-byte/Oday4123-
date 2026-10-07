@@ -57,6 +57,9 @@ const AppContent: React.FC = () => {
     setIsModeModalOpen,
     dedicatedDeviceRole,
     setDedicatedDeviceRole,
+    exitSubDeviceMode,
+    isMasterDevice,
+    currentDeviceAllowedPages,
     isFirstLoginCompleted,
     isFirstLoginModalOpen,
     isPurchaseModalOpen,
@@ -103,32 +106,28 @@ const AppContent: React.FC = () => {
 
   // If this device was paired or selected as a dedicated terminal
   if (dedicatedDeviceRole === 'kitchen_display' && businessMode === 'restaurant') {
-    return <KitchenDisplayView onBackToMain={() => {
-      setDedicatedDeviceRole(null);
-      try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
-    }} />;
+    return <KitchenDisplayView onBackToMain={exitSubDeviceMode} />;
   }
   if (dedicatedDeviceRole === 'customer_display') {
-    return <CustomerFacingDisplayView onBackToMain={() => {
-      setDedicatedDeviceRole(null);
-      try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
-    }} />;
+    return <CustomerFacingDisplayView onBackToMain={exitSubDeviceMode} />;
   }
   if (dedicatedDeviceRole === 'waiter_mobile' && businessMode === 'restaurant') {
-    return <MobileWaiterView onBackToMain={() => {
-      setDedicatedDeviceRole(null);
-      try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
-    }} />;
+    return <MobileWaiterView onBackToMain={exitSubDeviceMode} />;
   }
-  if (dedicatedDeviceRole === 'stock_scanner') {
-    return <MobileStockScannerView onBackToMain={() => {
-      setDedicatedDeviceRole(null);
-      try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
-    }} />;
+  if (dedicatedDeviceRole === 'stock_scanner' && (!currentDeviceAllowedPages || !currentDeviceAllowedPages.includes(activeTab))) {
+    return <MobileStockScannerView onBackToMain={exitSubDeviceMode} />;
   }
 
   const renderActiveView = () => {
-    switch (activeTab) {
+    const effectiveTab =
+      !isMasterDevice &&
+      currentDeviceAllowedPages &&
+      currentDeviceAllowedPages.length > 0 &&
+      !currentDeviceAllowedPages.includes(activeTab)
+        ? currentDeviceAllowedPages[0]
+        : activeTab;
+
+    switch (effectiveTab) {
       case 'pos':
         return <POSView />;
       case 'dashboard':

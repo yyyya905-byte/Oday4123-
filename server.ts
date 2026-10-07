@@ -376,6 +376,7 @@ interface ConnectedDevice {
   roleLabelAr?: string;
   workDescription?: string;
   workPermissions?: {
+    allowedPages?: string[];
     allowPosSales: boolean;
     allowTableOrders: boolean;
     allowCatalogAndStock: boolean;
@@ -397,6 +398,7 @@ interface ConnectedDevice {
   isOnline: boolean;
   batteryLevel?: number;
   cashierName?: string;
+  connectedUserName?: string;
   currentScreen?: string;
   branchName?: string;
   salesCount?: number;
@@ -476,6 +478,7 @@ let connectedDevices: ConnectedDevice[] = [
     isOnline: true,
     batteryLevel: 100,
     cashierName: "عدي الزعبي",
+    connectedUserName: "عدي الزعبي",
     currentScreen: "pos",
     branchName: "الفرع الرئيسي",
     salesCount: 0,
@@ -491,6 +494,7 @@ let connectedDevices: ConnectedDevice[] = [
     roleLabelAr: "كاشير فرعي (Cashier)",
     workDescription: "إصدار فواتير المبيعات وتحصيل المدفوعات ومشاركتها تلقائياً مع الجهاز الرئيسي",
     workPermissions: {
+      allowedPages: ['pos', 'invoices'],
       allowPosSales: true,
       allowTableOrders: true,
       allowCatalogAndStock: false,
@@ -507,7 +511,8 @@ let connectedDevices: ConnectedDevice[] = [
     lastSeen: new Date().toISOString(),
     isOnline: true,
     batteryLevel: 96,
-    cashierName: "كاشير الصالة",
+    cashierName: "أحمد محمود (كاشير)",
+    connectedUserName: "أحمد محمود (كاشير)",
     currentScreen: "pos",
     branchName: "الفرع الرئيسي",
     salesCount: 0,
@@ -555,6 +560,7 @@ let connectedDevices: ConnectedDevice[] = [
     roleLabelAr: "مساعد كاشير ومبيعات (Assistant)",
     workDescription: "مساعدة الكاشير في تجهيز السلة، البيع السريع، وفحص الأسعار والمخزون",
     workPermissions: {
+      allowedPages: ['pos', 'invoices', 'products'],
       allowPosSales: true,
       allowTableOrders: true,
       allowCatalogAndStock: true,
@@ -571,7 +577,8 @@ let connectedDevices: ConnectedDevice[] = [
     lastSeen: new Date().toISOString(),
     isOnline: true,
     batteryLevel: 88,
-    cashierName: "مساعد المبيعات",
+    cashierName: "سامر المساعد",
+    connectedUserName: "سامر المساعد",
     currentScreen: "pos",
     branchName: "الفرع الرئيسي",
     salesCount: 0,
@@ -799,6 +806,7 @@ app.post("/api/devices/pair", (req, res) => {
     deviceType,
     pairingCode,
     cashierName,
+    connectedUserName,
     branchName,
   } = req.body;
 
@@ -855,7 +863,19 @@ app.post("/api/devices/pair", (req, res) => {
     supervisor: 'مشرف / محاسب فرعي (Supervisor)',
   };
 
+  const defaultAllowedPagesByRole: Record<string, string[]> = {
+    secondary_pos: ['pos', 'invoices'],
+    assistant: ['pos', 'invoices', 'products'],
+    stock_scanner: ['inventory', 'products'],
+    supervisor: ['pos', 'invoices', 'products', 'inventory', 'customers', 'debts', 'returns', 'expenses', 'reports'],
+    waiter_mobile: ['pos'],
+    kitchen_display: ['pos'],
+    customer_display: ['pos'],
+    master_pos: ['pos', 'dashboard', 'invoices', 'products', 'inventory', 'customers', 'debts', 'returns', 'expenses', 'reports', 'trade'],
+  };
+
   const resolvedWorkPermissions = workPermissions || preCreatedDevice?.workPermissions || {
+    allowedPages: defaultAllowedPagesByRole[resolvedRole] || ['pos', 'invoices'],
     allowPosSales: resolvedRole === 'secondary_pos' || resolvedRole === 'assistant' || resolvedRole === 'supervisor',
     allowTableOrders: resolvedRole === 'waiter_mobile' || resolvedRole === 'secondary_pos' || resolvedRole === 'assistant',
     allowCatalogAndStock: resolvedRole === 'stock_scanner' || resolvedRole === 'assistant' || resolvedRole === 'supervisor',
@@ -864,6 +884,9 @@ app.post("/api/devices/pair", (req, res) => {
     allowKitchenDisplay: resolvedRole === 'kitchen_display' || resolvedRole === 'waiter_mobile',
     autoShareDataWithMaster: true,
   };
+  if (!resolvedWorkPermissions.allowedPages || !Array.isArray(resolvedWorkPermissions.allowedPages) || resolvedWorkPermissions.allowedPages.length === 0) {
+    resolvedWorkPermissions.allowedPages = defaultAllowedPagesByRole[resolvedRole] || ['pos', 'invoices'];
+  }
 
   const resolvedLinkCode =
     subscriptionLinkCode ||
@@ -914,7 +937,8 @@ app.post("/api/devices/pair", (req, res) => {
     lastSeen: new Date().toISOString(),
     isOnline: true,
     batteryLevel: 98,
-    cashierName: cashierName || preCreatedDevice?.cashierName || defaultRoleLabels[resolvedRole] || "موظف مناوب",
+    cashierName: connectedUserName || cashierName || preCreatedDevice?.connectedUserName || preCreatedDevice?.cashierName || defaultRoleLabels[resolvedRole] || "موظف مناوب",
+    connectedUserName: connectedUserName || cashierName || preCreatedDevice?.connectedUserName || preCreatedDevice?.cashierName || defaultRoleLabels[resolvedRole] || "موظف مناوب",
     branchName: branchName || preCreatedDevice?.branchName || "الفرع الرئيسي",
     salesCount: preCreatedDevice?.salesCount || 0,
     totalSalesAmount: preCreatedDevice?.totalSalesAmount || 0,
@@ -952,7 +976,7 @@ app.post("/api/devices/pair", (req, res) => {
 
 // Update a sub-device's role, work description, work permissions, or uniqueDeviceCode from the Master Device
 app.post("/api/devices/update-sub-device", (req, res) => {
-  const { deviceId, name, role, roleLabelAr, workDescription, workPermissions, branchName, cashierName, uniqueDeviceCode, pairingCode } = req.body;
+  const { deviceId, name, role, roleLabelAr, workDescription, workPermissions, branchName, cashierName, connectedUserName, uniqueDeviceCode, pairingCode } = req.body;
   const idx = connectedDevices.findIndex(d => d.id === deviceId);
   if (idx === -1) {
     return res.status(404).json({ success: false, error: "الجهاز غير موجود في قائمة الأجهزة المتصلة" });
@@ -960,6 +984,8 @@ app.post("/api/devices/update-sub-device", (req, res) => {
 
   if (uniqueDeviceCode) recentPairingPins.add(String(uniqueDeviceCode).toUpperCase());
   if (pairingCode) recentPairingPins.add(String(pairingCode).toUpperCase());
+
+  const resolvedUser = connectedUserName !== undefined ? connectedUserName : cashierName;
 
   const updated: ConnectedDevice = {
     ...connectedDevices[idx],
@@ -969,7 +995,7 @@ app.post("/api/devices/update-sub-device", (req, res) => {
     ...(workDescription !== undefined ? { workDescription } : {}),
     ...(workPermissions ? { workPermissions: { ...connectedDevices[idx].workPermissions, ...workPermissions, autoShareDataWithMaster: true } } : {}),
     ...(branchName ? { branchName } : {}),
-    ...(cashierName ? { cashierName } : {}),
+    ...(resolvedUser ? { cashierName: resolvedUser, connectedUserName: resolvedUser } : {}),
     ...(uniqueDeviceCode ? { uniqueDeviceCode } : {}),
     ...(pairingCode ? { pairingCode } : {}),
     lastSeen: new Date().toISOString(),
@@ -980,6 +1006,12 @@ app.post("/api/devices/update-sub-device", (req, res) => {
   connectedDevices[idx] = updated;
 
   broadcastSseEvent('DEVICE_WORK_UPDATED', {
+    device: updated,
+    devices: connectedDevices,
+    timestamp: new Date().toISOString(),
+  });
+
+  broadcastSseEvent('DEVICE_ROLE_UPDATED', {
     device: updated,
     devices: connectedDevices,
     timestamp: new Date().toISOString(),

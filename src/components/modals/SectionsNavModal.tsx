@@ -51,7 +51,9 @@ export const SectionsNavModal: React.FC<SectionsNavModalProps> = ({ isOpen, onCl
     devices,
     deliveryVehicles,
     businessMode,
-    currentUser
+    currentUser,
+    isMasterDevice,
+    currentDeviceAllowedPages
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -211,7 +213,11 @@ export const SectionsNavModal: React.FC<SectionsNavModalProps> = ({ isOpen, onCl
   const filteredCategories = categories.map(cat => ({
     ...cat,
     items: cat.items.filter(item => {
-      if (!canAccessTab(item.id, currentUser.role)) return false;
+      if (!isMasterDevice && currentDeviceAllowedPages && currentDeviceAllowedPages.length > 0) {
+        if (!currentDeviceAllowedPages.includes(item.id)) return false;
+      } else if (!canAccessTab(item.id, currentUser.role)) {
+        return false;
+      }
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       return (

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "../../context/AppContext";
-import { DeviceRole, DeviceWorkPermissions, LinkedDevice } from "../../types";
+import { DeviceRole, DeviceWorkPermissions, LinkedDevice, ActiveTab } from "../../types";
 import {
   getDefaultWorkPermissionsForRole,
+  getDefaultAllowedPagesForRole,
+  SUB_DEVICE_PAGE_LABELS,
   generateUniqueCodeForSingleDevice,
 } from "../../utils/licenseUtils";
 import { soundEffects } from "../../services/audio";
@@ -81,11 +83,18 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
       setName(editingDevice.name || "");
       setRole(editingDevice.role || "secondary_pos");
       setDeviceType(editingDevice.deviceType || "tablet");
-      setCashierName(editingDevice.cashierName || "");
+      setCashierName(editingDevice.connectedUserName || editingDevice.cashierName || "");
       setBranchName(editingDevice.branchName || "الفرع الرئيسي");
       const preset = getDefaultWorkPermissionsForRole(editingDevice.role || "secondary_pos");
       const perms = editingDevice.workPermissions || preset;
-      setWorkPermissions(perms);
+      setWorkPermissions({
+        ...preset,
+        ...perms,
+        allowedPages:
+          perms.allowedPages && perms.allowedPages.length > 0
+            ? perms.allowedPages
+            : getDefaultAllowedPagesForRole(editingDevice.role || "secondary_pos"),
+      });
       setWorkDescription(editingDevice.workDescription || perms.workDescription || preset.workDescription);
       setDeviceUniqueCode(
         editingDevice.uniqueDeviceCode ||
@@ -215,12 +224,33 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
     setTimeout(() => setCopiedUniqueCode(false), 2500);
   };
 
-  const togglePermission = (key: keyof Omit<DeviceWorkPermissions, "roleLabelAr" | "workDescription">) => {
+  const togglePermission = (key: keyof Omit<DeviceWorkPermissions, "roleLabelAr" | "workDescription" | "allowedPages">) => {
     soundEffects.playClick();
     setWorkPermissions((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const toggleAllowedPage = (pageId: ActiveTab) => {
+    soundEffects.playClick();
+    setWorkPermissions((prev) => {
+      const currentPages =
+        prev.allowedPages && prev.allowedPages.length > 0
+          ? prev.allowedPages
+          : getDefaultAllowedPagesForRole(role);
+      const exists = currentPages.includes(pageId);
+      if (exists && currentPages.length <= 1) {
+        return prev; // Must keep at least 1 allowed page
+      }
+      const nextPages = exists
+        ? currentPages.filter((p) => p !== pageId)
+        : [...currentPages, pageId];
+      return {
+        ...prev,
+        allowedPages: nextPages,
+      };
+    });
   };
 
   // Auto-generate pairing URL with this device's unique code
@@ -254,6 +284,10 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
     setIsSubmitting(true);
     const updatedPerms: DeviceWorkPermissions = {
       ...workPermissions,
+      allowedPages:
+        workPermissions.allowedPages && workPermissions.allowedPages.length > 0
+          ? workPermissions.allowedPages
+          : getDefaultAllowedPagesForRole(role),
       workDescription: workDescription.trim() || workPermissions.workDescription,
       autoShareDataWithMaster: true,
     };
@@ -265,6 +299,8 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
         roleLabelAr: updatedPerms.roleLabelAr,
         workDescription: updatedPerms.workDescription,
         workPermissions: updatedPerms,
+        cashierName: cashierName.trim() || editingDevice.cashierName,
+        connectedUserName: cashierName.trim() || editingDevice.connectedUserName || editingDevice.cashierName,
       });
       setIsSubmitting(false);
       handleClose();
@@ -282,6 +318,7 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
       subscriptionLinkCode: subscriptionBoundLinkCode,
       deviceType,
       cashierName: cashierName.trim() || updatedPerms.roleLabelAr,
+      connectedUserName: cashierName.trim() || updatedPerms.roleLabelAr,
       branchName: branchName.trim() || "الفرع الرئيسي",
     });
     setIsSubmitting(false);
@@ -295,7 +332,7 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
   };
 
   const allPermissionItems: {
-    key: keyof Omit<DeviceWorkPermissions, "roleLabelAr" | "workDescription" | "autoShareDataWithMaster">;
+    key: keyof Omit<DeviceWorkPermissions, "roleLabelAr" | "workDescription" | "autoShareDataWithMaster" | "allowedPages">;
     label: string;
     desc: string;
     restaurantOnly?: boolean;
@@ -695,6 +732,69 @@ export const DevicePairingModal: React.FC<DevicePairingModalProps> = ({
                     placeholder="حدد عمل الجهاز بالتفصيل..."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
+                </div>
+
+                {/* Allowed Pages Selector determined by the Master Device */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <span className="text-xs font-black text-indigo-950 dark:text-indigo-200 block">
+                        الصفحات التي تظهر لهذا الجهاز التابع فقط (حسب تحديد الجهاز الرئيسي):
+                      </span>
+                      <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                        {role === "secondary_pos"
+                          ? "كاشير فرعي: محدد افتراضياً لكي لا تظهر له سوى صفحة الكاشير وصفحة الفواتير فقط (ويمكنك التعديل أدناه)"
+                          : "اختر الصفحات التي يُسمح لهذا الجهاز التابع برؤيتها وفتحها فقط"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setWorkPermissions((prev) => ({
+                          ...prev,
+                          allowedPages: getDefaultAllowedPagesForRole(role),
+                        }))
+                      }
+                      className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      إعادة ضبط افتراضي للدور
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {(Object.entries(SUB_DEVICE_PAGE_LABELS) as [ActiveTab, string][]).map(
+                      ([pageId, pageLabel]) => {
+                        const currentAllowed =
+                          workPermissions.allowedPages && workPermissions.allowedPages.length > 0
+                            ? workPermissions.allowedPages
+                            : getDefaultAllowedPagesForRole(role);
+                        const isPageAllowed = currentAllowed.includes(pageId);
+                        return (
+                          <button
+                            key={pageId}
+                            type="button"
+                            onClick={() => toggleAllowedPage(pageId)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-black border flex items-center gap-1.5 transition cursor-pointer ${
+                              isPageAllowed
+                                ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-400"
+                            }`}
+                          >
+                            <div
+                              className={`w-4 h-4 rounded flex items-center justify-center ${
+                                isPageAllowed
+                                  ? "bg-white/20 text-white"
+                                  : "border border-slate-300 dark:border-slate-600"
+                              }`}
+                            >
+                              {isPageAllowed && <Check className="w-3 h-3" />}
+                            </div>
+                            <span>{pageLabel}</span>
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
