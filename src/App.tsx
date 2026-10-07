@@ -19,6 +19,8 @@ import { SettingsView } from './components/settings/SettingsView';
 import { AboutView } from './components/about/AboutView';
 import { AIAssistantView } from './components/ai/AIAssistantView';
 import { DevicesHubView } from './components/devices/DevicesHubView';
+import { DeviceStatusMonitorView } from './components/devices/DeviceStatusMonitorView';
+import { DevicePairingModal } from './components/devices/DevicePairingModal';
 import { KitchenDisplayView } from './components/devices/KitchenDisplayView';
 import { CustomerFacingDisplayView } from './components/devices/CustomerFacingDisplayView';
 import { MobileWaiterView } from './components/devices/MobileWaiterView';
@@ -77,6 +79,7 @@ const AppContent: React.FC = () => {
     setIsCustomerMenuPreviewOpen,
     selectedTable,
     restaurantDiningType,
+    businessMode,
     offlineQueueCount,
     isSyncingOffline,
     syncOfflineQueueNow,
@@ -86,8 +89,8 @@ const AppContent: React.FC = () => {
     wakeFromStandby
   } = useApp();
 
-  // If manager opened the Customer Menu Preview from POS
-  if (isCustomerMenuPreviewOpen) {
+  // If manager opened the Customer Menu Preview from POS (Restaurant Mode only)
+  if (isCustomerMenuPreviewOpen && businessMode === 'restaurant') {
     return (
       <CustomerQrMenuPage
         isStandalone={false}
@@ -99,7 +102,7 @@ const AppContent: React.FC = () => {
   }
 
   // If this device was paired or selected as a dedicated terminal
-  if (dedicatedDeviceRole === 'kitchen_display') {
+  if (dedicatedDeviceRole === 'kitchen_display' && businessMode === 'restaurant') {
     return <KitchenDisplayView onBackToMain={() => {
       setDedicatedDeviceRole(null);
       try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
@@ -111,7 +114,7 @@ const AppContent: React.FC = () => {
       try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
     }} />;
   }
-  if (dedicatedDeviceRole === 'waiter_mobile') {
+  if (dedicatedDeviceRole === 'waiter_mobile' && businessMode === 'restaurant') {
     return <MobileWaiterView onBackToMain={() => {
       setDedicatedDeviceRole(null);
       try { localStorage.removeItem('kian_dedicated_device_role'); } catch {}
@@ -154,6 +157,8 @@ const AppContent: React.FC = () => {
         return <StaffView />;
       case 'devices':
         return <DevicesHubView />;
+      case 'devices_status':
+        return <DeviceStatusMonitorView />;
       case 'settings':
         return <SettingsView />;
       case 'about':
@@ -205,6 +210,8 @@ const AppContent: React.FC = () => {
         onClose={() => setIsConnectToCashierModalOpen(false)}
       />
 
+      {activeTab !== 'devices' && activeTab !== 'devices_status' && <DevicePairingModal />}
+
       {/* First-Time Login Modal (Only when explicitly triggered) */}
       <FirstTimeLoginModal
         isOpen={!isFirstLoginCompleted || isFirstLoginModalOpen}
@@ -232,11 +239,13 @@ const AppContent: React.FC = () => {
         onClose={() => setIsPromotionsModalOpen(false)}
       />
 
-      {/* Restaurant & Cafe Customer QR Menu & Product Device Routing Modal */}
-      <RestaurantQrMenuModal
-        isOpen={isRestaurantQrModalOpen}
-        onClose={() => setIsRestaurantQrModalOpen(false)}
-      />
+      {/* Restaurant & Cafe Customer QR Menu & Product Device Routing Modal (Restaurant Mode Only) */}
+      {businessMode === 'restaurant' && (
+        <RestaurantQrMenuModal
+          isOpen={isRestaurantQrModalOpen}
+          onClose={() => setIsRestaurantQrModalOpen(false)}
+        />
+      )}
 
       {/* App Purchase Code Activation Modal */}
       <AppPurchaseModal

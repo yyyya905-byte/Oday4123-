@@ -25,7 +25,9 @@ import {
   Ban,
   Fingerprint,
   Database,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Trash2,
+  HardDrive
 } from 'lucide-react';
 import {
   validateLicenseCode,
@@ -36,6 +38,11 @@ import {
   formatCodeUsageTimestampAr,
   getUsedCodeRecord
 } from '../../utils/licenseUtils';
+import {
+  indexedDbService,
+  IndexedDbCleanWipeSummary,
+  formatStorageSize
+} from '../../services/indexedDbService';
 import { soundEffects } from '../../services/audio';
 
 interface AppPurchaseModalProps {
@@ -60,6 +67,10 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     activatePurchaseCode,
     revokeCurrentDeviceSubscription,
     settings,
+    products,
+    categories,
+    customers,
+    sales,
     notify
   } = useApp();
 
@@ -83,7 +94,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     return `FP-NEW-${rand}-EXT9`;
   });
 
-  // Confirmation Dialog State (supports both fresh activation AND transfer from another device)
+  // Confirmation Dialog State (supports both fresh activation AND transfer from another device + IndexedDB Clean Wipe Summary)
   interface PendingActivationDetails {
     code: string;
     matchedCode: PredefinedLicenseCode;
@@ -101,6 +112,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     previousDeviceFingerprint?: string | null;
     previousDeviceName?: string | null;
     previousCodeUsedAtFormatted?: string;
+    indexedDbSummary: IndexedDbCleanWipeSummary;
   }
   const [pendingActivation, setPendingActivation] = useState<PendingActivationDetails | null>(null);
   const [isConfirming, setIsConfirming] = useState<boolean>(false);
@@ -110,6 +122,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
   useEffect(() => {
     if (!isOpen) {
       setVerificationResult(null);
+      setPendingActivation(null);
       setError('');
     }
   }, [isOpen]);
@@ -173,9 +186,9 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
   };
 
   /**
-   * Prepares the confirmation step (either normal activation OR transfer from another device)
+   * Prepares the confirmation window before executing IndexedDB clean wipe & code activation
    */
-  const buildPendingActivationStep = (
+  const buildPendingActivationStep = async (
     matched: PredefinedLicenseCode,
     isTransfer: boolean,
     securityCheck: LicenseDeviceVerificationResult
@@ -213,6 +226,30 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       });
     }
 
+    // Fetch live IndexedDB summary so the user sees exact local data to be wiped before confirming
+    const rawIdbSummary = await indexedDbService.getCleanWipeSummary();
+    const effectiveProductsCount = Math.max(rawIdbSummary.productsCount, products.length);
+    const effectiveCategoriesCount = Math.max(rawIdbSummary.categoriesCount, categories.length);
+    const effectiveCustomersCount = Math.max(rawIdbSummary.customersCount, customers.length);
+    const effectiveSalesCount = Math.max(rawIdbSummary.salesCount, sales.length);
+    const effectiveTotalRecords =
+      effectiveProductsCount +
+      effectiveCategoriesCount +
+      effectiveCustomersCount +
+      effectiveSalesCount +
+      rawIdbSummary.offlineQueueCount +
+      rawIdbSummary.deviceTransfersCount;
+
+    const indexedDbSummary: IndexedDbCleanWipeSummary = {
+      ...rawIdbSummary,
+      productsCount: effectiveProductsCount,
+      categoriesCount: effectiveCategoriesCount,
+      customersCount: effectiveCustomersCount,
+      salesCount: effectiveSalesCount,
+      totalRecordsCount: effectiveTotalRecords,
+      estimatedSizeBytes: Math.max(rawIdbSummary.estimatedSizeBytes, effectiveTotalRecords * 512 + 4096),
+    };
+
     const targetId = simulateNewDeviceMode ? simulatedNewDeviceId : currentDevice.deviceId;
     const targetFp = simulateNewDeviceMode ? simulatedNewFingerprint : currentDevice.deviceFingerprint;
     const targetName = simulateNewDeviceMode ? 'جهاز جديد منتقل إليه التفعيل' : currentDevice.deviceName;
@@ -235,6 +272,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       previousDeviceFingerprint: securityCheck.boundDeviceFingerprint,
       previousDeviceName: securityCheck.boundDeviceName,
       previousCodeUsedAtFormatted: formatCodeUsageTimestampAr(securityCheck.boundActivatedAt),
+      indexedDbSummary,
     });
   };
 
@@ -256,7 +294,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       return;
     }
 
-    // If already used on the SAME device, allow re-confirming/extending if user wants, or block if single-use already consumed
+    // If already used on the SAME device, block if single-use already consumed
     if (securityCheck.isUsedOnAnyDevice && !securityCheck.isUsedByAnotherDevice) {
       return;
     }
@@ -268,17 +306,17 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
       return;
     }
 
-    buildPendingActivationStep(res.matchedCode, false, securityCheck);
+    await buildPendingActivationStep(res.matchedCode, false, securityCheck);
   };
 
   /**
    * Triggered when user confirms they want to TRANSFER the activation from the other device to the current device
    * and revoke/cancel the old device's subscription!
    */
-  const handleRequestTransferToCurrentDevice = () => {
+  const handleRequestTransferToCurrentDevice = async () => {
     if (!verificationResult || !verificationResult.matchedCode) return;
     soundEffects.playClick();
-    buildPendingActivationStep(verificationResult.matchedCode, true, verificationResult);
+    await buildPendingActivationStep(verificationResult.matchedCode, true, verificationResult);
   };
 
   /**
@@ -296,9 +334,12 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     setInputCode('');
   };
 
-  const handleFinalConfirm = () => {
+  const handleFinalConfirm = async () => {
     if (!pendingActivation) return;
     setIsConfirming(true);
+
+    // Explicitly wipe all locally stored data in IndexedDB (`KianCashier_OfflineDB`) before/during activation
+    await indexedDbService.clearAllDataForNewSubscription().catch(() => {});
 
     const res = activatePurchaseCode(pendingActivation.code, {
       name: customerName,
@@ -314,8 +355,8 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
     if (res.success) {
       if (pendingActivation.isTransferFromAnotherDevice) {
         notify(
-          '✅ تم نقل التفعيل إلى هذا الجهاز وإلغاء اشتراك الجهاز السابق!',
-          `تم ربط الكود (${pendingActivation.code}) ببصمة هذا الجهاز (${pendingActivation.boundToFingerprint}) في Firebase وإلغاء اشتراك الجهاز السابق (${pendingActivation.previousDeviceIdToRevoke}).`,
+          '✅ تم نقل التفعيل ومسح جميع بيانات IndexedDB المحلية!',
+          `تم ربط الكود (${pendingActivation.code}) ببصمة هذا الجهاز (${pendingActivation.boundToFingerprint}) في Firebase، وإلغاء اشتراك الجهاز السابق، ومسح بيانات IndexedDB لبداية نظيفة.`,
           'success'
         );
       }
@@ -324,7 +365,7 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
         setIsConfirming(false);
         setPendingActivation(null);
         onClose();
-      }, 700);
+      }, 650);
     } else {
       setIsConfirming(false);
       setError(res.message);
@@ -679,9 +720,45 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>✨ تصفير شامل تلقائي: فور التأكيد، سيتم تصفير كافة البيانات التجريبية إلى (0) للبدء بحسابات متجرك الحقيقية على نظافة.</span>
+                <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500/40 text-xs space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-black text-rose-800 dark:text-rose-200 flex items-center gap-1.5">
+                      <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                      <span>مسح شامل لبيانات IndexedDB المحلية لبداية نظيفة:</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-mono text-[10px] font-black">
+                      {pendingActivation.indexedDbSummary.dbName} ({formatStorageSize(pendingActivation.indexedDbSummary.estimatedSizeBytes)})
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed">
+                    عند تأكيد تفعيل كود الاشتراك الجديد ({pendingActivation.durationLabelAr})، سيتم <strong>مسح جميع البيانات المخزنة محلياً في IndexedDB</strong> بالكامل لضمان بداية جديدة ونظيفة للمشترك.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 text-[10px]">
+                    <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-rose-200/70 dark:border-rose-800/60 text-center">
+                      <span className="text-slate-500 dark:text-slate-400 block">المنتجات والأصناف</span>
+                      <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs">
+                        {pendingActivation.indexedDbSummary.productsCount + pendingActivation.indexedDbSummary.categoriesCount}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-rose-200/70 dark:border-rose-800/60 text-center">
+                      <span className="text-slate-500 dark:text-slate-400 block">المبيعات والفواتير</span>
+                      <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs">
+                        {pendingActivation.indexedDbSummary.salesCount}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-rose-200/70 dark:border-rose-800/60 text-center">
+                      <span className="text-slate-500 dark:text-slate-400 block">العملاء والديون</span>
+                      <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs">
+                        {pendingActivation.indexedDbSummary.customersCount}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-rose-200/70 dark:border-rose-800/60 text-center">
+                      <span className="text-slate-500 dark:text-slate-400 block">جداول IndexedDB</span>
+                      <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs">
+                        {pendingActivation.indexedDbSummary.objectStoreNames.length} جداول
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
@@ -700,10 +777,10 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   <ShieldCheck className="w-4 h-4" />
                   <span>
                     {isConfirming
-                      ? 'جاري التوثيق في Firebase...'
+                      ? 'جاري مسح IndexedDB والتوثيق في Firebase...'
                       : pendingActivation.isTransferFromAnotherDevice
-                      ? 'تأكيد نقل التفعيل لهذا الجهاز وإلغاء اشتراك الجهاز السابق'
-                      : 'تأكيد وربط الكود ببصمة هذا الجهاز في Firebase'}
+                      ? 'تأكيد مسح IndexedDB ونقل التفعيل لهذا الجهاز'
+                      : 'تأكيد مسح بيانات IndexedDB وتفعيل الاشتراك الآن'}
                   </span>
                 </button>
 
@@ -1050,6 +1127,148 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
           )}
         </div>
       </div>
+
+      {/* Dedicated Modal Confirmation Window before Wiping IndexedDB & Activating New Subscription Code */}
+      {pendingActivation && (
+        <div className="fixed inset-0 z-[70] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full shadow-2xl border-2 border-amber-500/80 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+            {/* Confirmation Window Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-rose-600 via-amber-600 to-amber-700 text-white flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 shadow-md">
+                  <HardDrive className="w-6 h-6 text-amber-100" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm sm:text-base">
+                    نافذة تأكيد مسح بيانات IndexedDB وتفعيل الاشتراك
+                  </h4>
+                  <p className="text-[11px] text-white/90 mt-0.5">
+                    يرجى التأكيد قبل التنفيذ لضمان بداية جديدة ونظيفة للمشترك
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isConfirming}
+                onClick={() => setPendingActivation(null)}
+                className="p-1.5 rounded-full text-white/80 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+                title="إلغاء وتراجع"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Confirmation Window Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3.5 text-xs">
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/70 text-slate-900 dark:text-slate-100 space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="font-black text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    {pendingActivation.matchedCode.duration === '1_year' ? (
+                      <Crown className="w-4 h-4 text-amber-500" />
+                    ) : (
+                      <Calendar className="w-4 h-4 text-blue-500" />
+                    )}
+                    <span>كود اشتراك جديد: {pendingActivation.durationLabelAr}</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-mono text-[10px] font-black">
+                    +{pendingActivation.daysGranted} يوماً
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  أنت على وشك تفعيل كود الاشتراك <strong>({pendingActivation.code})</strong> حتى تاريخ{' '}
+                  <strong>{pendingActivation.newExpiresAtFormattedAr}</strong> وربطه ببصمة هذا الجهاز{' '}
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                    ({pendingActivation.boundToFingerprint})
+                  </span>
+                  .
+                </p>
+              </div>
+
+              {/* IndexedDB Wipe Warning & Store Breakdown */}
+              <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500/60 space-y-2.5">
+                <div className="flex items-start gap-2.5">
+                  <Trash2 className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h5 className="font-black text-xs sm:text-sm text-rose-800 dark:text-rose-200">
+                      ⚠️ تنبيه هام: سيتم مسح جميع البيانات المخزنة محلياً في IndexedDB
+                    </h5>
+                    <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed">
+                      بمجرد الضغط على زر التأكيد أدناه، سيقوم النظام تلقائياً بتفريغ ومسح كافة الجداول والسجلات المخزنة محلياً في قاعدة بيانات المتصفح{' '}
+                      <strong className="font-mono">({pendingActivation.indexedDbSummary.dbName})</strong> لبدء اشتراكك الجديد ({pendingActivation.matchedCode.duration === '1_year' ? 'سنة كاملة' : 'شهر كامل'}) بصفحة بيضاء ونظيفة 100%:
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/60 flex flex-col items-center text-center">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">المنتجات والأصناف</span>
+                    <span className="font-mono font-black text-sm text-rose-600 dark:text-rose-400 mt-0.5">
+                      {pendingActivation.indexedDbSummary.productsCount + pendingActivation.indexedDbSummary.categoriesCount} سجل
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/60 flex flex-col items-center text-center">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">الفواتير والمبيعات</span>
+                    <span className="font-mono font-black text-sm text-rose-600 dark:text-rose-400 mt-0.5">
+                      {pendingActivation.indexedDbSummary.salesCount} فاتورة
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/60 flex flex-col items-center text-center col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">العملاء والطابور المحلي</span>
+                    <span className="font-mono font-black text-sm text-rose-600 dark:text-rose-400 mt-0.5">
+                      {pendingActivation.indexedDbSummary.customersCount + pendingActivation.indexedDbSummary.offlineQueueCount} سجل
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-rose-200/80 dark:border-rose-800/60 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                  <span className="font-bold text-slate-600 dark:text-slate-300">
+                    إجمالي الجداول المجدولة للمسح في IndexedDB:
+                  </span>
+                  <span className="font-mono font-black text-rose-700 dark:text-rose-300">
+                    {pendingActivation.indexedDbSummary.objectStoreNames.length} جداول ({formatStorageSize(pendingActivation.indexedDbSummary.estimatedSizeBytes)})
+                  </span>
+                </div>
+              </div>
+
+              {pendingActivation.isTransferFromAnotherDevice && pendingActivation.previousDeviceIdToRevoke && (
+                <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-[11px] text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                  <ArrowLeftRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span>
+                    سيتم كذلك نقل ملكية الكود إلى هذا الجهاز وإلغاء اشتراك الجهاز السابق ({pendingActivation.previousDeviceIdToRevoke}) فوراً في Firebase.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Confirmation Window Footer Actions */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center gap-2.5">
+              <button
+                type="button"
+                disabled={isConfirming}
+                onClick={handleFinalConfirm}
+                className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs shadow-lg shadow-emerald-600/25 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span>
+                  {isConfirming
+                    ? 'جاري مسح IndexedDB وتفعيل الاشتراك...'
+                    : 'موافق، امسح بيانات IndexedDB وفعل الاشتراك الجديد'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isConfirming}
+                onClick={() => setPendingActivation(null)}
+                className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>إلغاء وتراجع</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

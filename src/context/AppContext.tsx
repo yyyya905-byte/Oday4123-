@@ -24,6 +24,7 @@ import {
   KitchenOrder,
   KitchenOrderItem,
   DeviceRole,
+  DeviceWorkPermissions,
   StockMovementType,
   WholesaleWarehouse,
   DeliveryVehicle,
@@ -70,7 +71,11 @@ import {
   purgeLegacyCodesFromLocalAndFirebase,
   LICENSE_POLICY_EPOCH_KEY,
   PREDEFINED_LICENSE_CODES,
-  MASTER_ACTIVATION_CODES
+  MASTER_ACTIVATION_CODES,
+  generateSubscriptionBoundDeviceCode,
+  generateUniqueCodeForSingleDevice,
+  extractNumericPinFromBoundCode,
+  getDefaultWorkPermissionsForRole
 } from '../utils/licenseUtils';
 import {
   initialSettings,
@@ -452,15 +457,49 @@ interface AppContextType {
   markAllNotificationsAsRead: () => void;
   clearAllNotifications: () => void;
 
-  // Multi-Device Linking & Terminals Hub
+  // Multi-Device Linking & Terminals Hub (الجهاز الرئيسي والأجهزة التابعة)
   devices: LinkedDevice[];
   kitchenOrders: KitchenOrder[];
   masterPairingPin: string;
+  subscriptionBoundLinkCode: string;
+  isMasterDevice: boolean;
+  currentDeviceId: string;
+  currentDeviceName: string;
+  currentDeviceRole: DeviceRole;
+  currentDeviceWorkPermissions: DeviceWorkPermissions;
   isPairingModalOpen: boolean;
   setIsPairingModalOpen: (open: boolean) => void;
   refreshDevices: () => Promise<void>;
-  pairDevice: (deviceData: { name: string; role: DeviceRole; pairingCode: string; deviceType: 'desktop' | 'tablet' | 'mobile'; cashierName?: string; branchName?: string }) => Promise<{ success: boolean; error?: string }>;
+  pairDevice: (deviceData: {
+    name: string;
+    role: DeviceRole;
+    roleLabelAr?: string;
+    workDescription?: string;
+    workPermissions?: DeviceWorkPermissions;
+    pairingCode: string;
+    subscriptionLinkCode?: string;
+    uniqueDeviceCode?: string;
+    deviceType: 'desktop' | 'tablet' | 'mobile';
+    cashierName?: string;
+    branchName?: string;
+    registerAsCurrentSubDevice?: boolean;
+  }) => Promise<{ success: boolean; error?: string; device?: LinkedDevice }>;
+  updateSubDeviceRoleAndWork: (
+    deviceId: string,
+    updates: {
+      name?: string;
+      role?: DeviceRole;
+      roleLabelAr?: string;
+      workDescription?: string;
+      workPermissions?: DeviceWorkPermissions;
+      uniqueDeviceCode?: string;
+      pairingCode?: string;
+    }
+  ) => Promise<void>;
+  simulateSubDeviceSale: (targetDevice: LinkedDevice) => Promise<Sale | null>;
   disconnectDevice: (deviceId: string) => Promise<void>;
+  unpairDevice: (deviceId: string) => Promise<void>;
+  regenerateSingleDeviceCode: (deviceId: string) => Promise<string>;
   refreshMasterPin: () => Promise<string>;
   addKitchenOrder: (order: Omit<KitchenOrder, 'id' | 'createdAt'>) => void;
   updateKitchenItemStatus: (orderId: string, itemId: string, status: 'pending' | 'cooking' | 'ready' | 'served') => void;
@@ -899,7 +938,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = { ...settings, ...newSettings };
     setSettingsState(updated);
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
-    soundEffects.setMuted(!updated.soundEffects);
+    soundEffects.setMuted(updated.soundEffects === false);
 
     if (newSettings.themeMode && newSettings.themeMode !== themeMode) {
       setThemeModeState(newSettings.themeMode);
@@ -915,7 +954,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sound effects mute synchronization
   useEffect(() => {
-    soundEffects.setMuted(!settings.soundEffects);
+    soundEffects.setMuted(settings.soundEffects === false);
   }, [settings.soundEffects]);
 
   // =========================================================================
@@ -1590,7 +1629,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUsersState(zeroedUsers);
     setCurrentUserState(ownerBaseUser);
     setNotifications([]);
-    setDevices([]);
+    const masterDeviceInitial: LinkedDevice = {
+      id: hwDevice.deviceId,
+      name: `الجهاز الرئيسي (${hwDevice.deviceName})`,
+      role: 'master_pos',
+      roleLabelAr: 'الجهاز الرئيسي (صاحب الاشتراك)',
+      workDescription: `الجهاز الرئيسي المفعل بكود الاشتراك (${cleanCode}) — تحكم كامل وإضافة أجهزة والاطلاع الحي على مبيعات وبيانات الأجهزة`,
+      workPermissions: {
+        allowPosSales: true,
+        allowTableOrders: true,
+        allowCatalogAndStock: true,
+        allowCustomersAndDebts: true,
+        allowExpenses: true,
+        allowKitchenDisplay: true,
+        autoShareDataWithMaster: true,
+      },
+      masterDeviceId: hwDevice.deviceId,
+      masterDeviceFingerprint: hwDevice.deviceFingerprint,
+      boundSubscriptionCode: cleanCode,
+      subscriptionLinkCode: generateSubscriptionBoundDeviceCode(cleanCode, hwDevice.deviceId, masterPairingPin),
+      uniqueDeviceCode: generateUniqueCodeForSingleDevice('master_pos', [], masterPairingPin),
+      deviceType: 'desktop',
+      pairingCode: masterPairingPin,
+      pairedAt: nowIso,
+      lastSeen: nowIso,
+      isOnline: true,
+      batteryLevel: 100,
+      cashierName: ownerBaseUser.name,
+      currentScreen: 'pos',
+      branchName: 'الفرع الرئيسي',
+      salesCount: 0,
+      totalSalesAmount: 0,
+      ordersCount: 0,
+      lastActivitySummary: `تم تفعيل كود الاشتراك (${cleanCode}) وتعيينه كجهاز رئيسي`,
+      lastActivityAt: nowIso,
+    };
+
+    try {
+      localStorage.removeItem('kian_dedicated_device_role');
+      localStorage.removeItem('kian_paired_cashier_pin');
+    } catch {}
+    setDedicatedDeviceRole(null);
+    setDevices([masterDeviceInitial]);
     setKitchenOrders([]);
     setLiveRemoteCart(null);
     setCart([]);
@@ -1601,19 +1681,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSelectedReturnInvoice(null);
     setSettingsState(updatedSettingsWithLicense);
 
-    // 3. Clear IndexedDB cache & offline queue
-    indexedDbService.cacheAllData({
-      products: [],
-      categories: zeroBaseCategories,
-      customers: [],
-      sales: [],
-      settings: updatedSettingsWithLicense,
-    }).catch(() => {});
-    indexedDbService.purgeSyncedQueueItems().catch(() => {});
+    // 3. Completely wipe all locally stored data in IndexedDB (`KianCashier_OfflineDB`) upon activating a new monthly/yearly subscription code
+    try {
+      localStorage.removeItem('kian_simulate_low_storage');
+    } catch {}
+    indexedDbService.clearAllDataForNewSubscription(updatedSettingsWithLicense, zeroBaseCategories).catch(() => {});
     setOfflineQueueCount(0);
 
-    // 4. Clear server in-memory demo devices, kitchen orders, and cart
-    fetch('/api/system/reset-zero', { method: 'POST' }).catch(() => {});
+    // 4. Clear server in-memory demo devices, kitchen orders, and cart while registering this device as Master Device
+    fetch('/api/system/reset-zero', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        masterDeviceId: hwDevice.deviceId,
+        masterDeviceName: `الجهاز الرئيسي (${hwDevice.deviceName})`,
+        boundSubscriptionCode: cleanCode,
+      }),
+    }).catch(() => {});
 
     // 5. Notify any mounted views (such as DebtView installmentPlans) to zero out local state
     if (typeof window !== 'undefined') {
@@ -1624,16 +1708,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsPurchaseModalOpen(false);
 
     notify(
-      'تم تفعيل الترخيص وتصفير النظام بالكامل! 👑',
-      `تم تفعيل (${matched.durationLabelAr}) وتصفير كافة المبيعات والديون والمنتجات والحسابات للبدء من الصفر`,
+      'تم تفعيل الاشتراك ومسح بيانات IndexedDB بالكامل! 👑',
+      `تم تفعيل (${matched.durationLabelAr}) ومسح جميع البيانات المخزنة محلياً في IndexedDB لضمان بداية جديدة ونظيفة للمشترك.`,
       'success'
     );
 
     return {
       success: true,
       message: isTransfer
-        ? `تم نقل تفعيل (${matched.durationLabelAr}) إلى هذا الجهاز وإلغاء اشتراك الجهاز السابق بنجاح`
-        : `تم تفعيل ${matched.durationLabelAr} وتصفير كافة البيانات بنجاح`,
+        ? `تم نقل تفعيل (${matched.durationLabelAr}) إلى هذا الجهاز ومسح جميع البيانات المخزنة محلياً في IndexedDB بنجاح`
+        : `تم تفعيل ${matched.durationLabelAr} ومسح جميع البيانات المخزنة محلياً في IndexedDB بنجاح`,
       newExpiresAt: expiresAtIso,
       usedAt: nowIso,
     };
@@ -2791,6 +2875,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const invoicePrefix = computedTradeType === 'wholesale' ? 'WHS' : 'INV';
     const invoiceNum = `${invoicePrefix}-${new Date().getFullYear()}-${String(sales.length + 1024).padStart(6, '0')}`;
 
+    const hwDev = getDeviceHardwareInfo();
+    const activeRole: DeviceRole = dedicatedDeviceRole || 'master_pos';
+    const matchedDev =
+      devices.find(d => d.id === hwDev.deviceId) ||
+      (dedicatedDeviceRole ? devices.find(d => d.role === dedicatedDeviceRole) : devices.find(d => d.role === 'master_pos'));
+    const resolvedSourceDeviceId = matchedDev?.id || hwDev.deviceId;
+    const resolvedSourceDeviceName =
+      matchedDev?.name ||
+      (dedicatedDeviceRole
+        ? getDefaultWorkPermissionsForRole(dedicatedDeviceRole).defaultDeviceNameAr
+        : `الجهاز الرئيسي (${hwDev.deviceName})`);
+
     const newSale: Sale = {
       id: `sale_${Date.now()}`,
       invoiceNumber: invoiceNum,
@@ -2798,6 +2894,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       branchId: 'branch_main',
       cashierId: currentUser.id,
       cashierName: currentUser.name,
+      sourceDeviceId: resolvedSourceDeviceId,
+      sourceDeviceName: resolvedSourceDeviceName,
+      sourceDeviceRole: activeRole,
       customerId: selectedCustomer?.id,
       customerName: selectedCustomer?.name,
       customerCode: selectedCustomer?.customerCode,
@@ -2919,10 +3018,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 3. Save Sale
+    // 3. Save Sale & Update Source Device Live Metrics
     const updatedSales = [newSale, ...sales];
     setSalesState(updatedSales);
     localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(updatedSales));
+
+    setDevices(prev =>
+      prev.map(d => {
+        if (d.id === resolvedSourceDeviceId || (d.role === activeRole && activeRole === 'master_pos')) {
+          const nextCount = (d.salesCount || 0) + 1;
+          const nextTotal = (d.totalSalesAmount || 0) + grandTotal;
+          return {
+            ...d,
+            isOnline: true,
+            lastSeen: new Date().toISOString(),
+            salesCount: nextCount,
+            totalSalesAmount: nextTotal,
+            lastActivitySummary: `أصدر فاتورة ${invoiceNum} بقيمة ${grandTotal.toLocaleString()} ${settings.currency.symbol}`,
+            lastActivityAt: new Date().toISOString(),
+          };
+        }
+        return d;
+      })
+    );
+
+    // Automatically share sale & updated inventory with Master Device and all connected Sub-Devices
+    try {
+      broadcastChannelRef.current?.postMessage({
+        type: 'MESH_AUTO_DATA_SYNC',
+        payload: {
+          eventType: 'SALE_CREATED',
+          sourceDeviceId: resolvedSourceDeviceId,
+          sourceDeviceName: resolvedSourceDeviceName,
+          sourceDeviceRole: activeRole,
+          sale: newSale,
+          sales: updatedSales,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch {}
+
+    fetch('/api/devices/mesh-sync/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventType: 'SALE_CREATED',
+        sourceDeviceId: resolvedSourceDeviceId,
+        sourceDeviceName: resolvedSourceDeviceName,
+        sourceDeviceRole: activeRole,
+        boundSubscriptionCode: licenseKey || 'TRIAL',
+        sale: newSale,
+        sales: updatedSales,
+        products,
+        customers,
+      }),
+    }).catch(() => {});
 
     // Update active cash shift
     if (activeShift) {
@@ -4237,6 +4387,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         role: "master_pos",
         deviceType: "desktop",
         pairingCode: "MASTER",
+        uniqueDeviceCode: "DEV-MST-990101",
         pairedAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
         isOnline: true,
@@ -4246,11 +4397,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branchName: "الفرع الرئيسي",
       },
       {
+        id: "dev-cashier-2",
+        name: "جهاز كاشير فرعي 2",
+        role: "secondary_pos",
+        deviceType: "desktop",
+        pairingCode: "849210",
+        uniqueDeviceCode: "DEV-CSH-849210",
+        pairedAt: new Date(Date.now() - 1800000).toISOString(),
+        lastSeen: new Date().toISOString(),
+        isOnline: true,
+        batteryLevel: 96,
+        cashierName: "كاشير المبيعات",
+        currentScreen: "pos",
+        branchName: "الفرع الرئيسي",
+      },
+      {
         id: "dev-kitchen-1",
         name: "شاشة المطبخ وإعداد الطلبات (KDS 1)",
         role: "kitchen_display",
         deviceType: "tablet",
         pairingCode: "772109",
+        uniqueDeviceCode: "DEV-KDS-772109",
         pairedAt: new Date(Date.now() - 3600000).toISOString(),
         lastSeen: new Date().toISOString(),
         isOnline: true,
@@ -4264,6 +4431,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         role: "customer_display",
         deviceType: "tablet",
         pairingCode: "610334",
+        uniqueDeviceCode: "DEV-CFD-610334",
         pairedAt: new Date(Date.now() - 7200000).toISOString(),
         lastSeen: new Date().toISOString(),
         isOnline: true,
@@ -4838,6 +5006,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ];
   });
 
+  const [dedicatedDeviceRole, setDedicatedDeviceRole] = useState<DeviceRole | null>(() => {
+    try {
+      const saved = localStorage.getItem('kian_dedicated_device_role');
+      return (saved as DeviceRole) || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const currentHwDevice = React.useMemo(() => getDeviceHardwareInfo(), []);
+  const currentDeviceId = currentHwDevice.deviceId;
+  const isMasterDevice = !dedicatedDeviceRole || dedicatedDeviceRole === 'master_pos';
+  const currentDeviceRole: DeviceRole = dedicatedDeviceRole || 'master_pos';
+  const currentDeviceName: string = React.useMemo(() => {
+    const matched = devices.find(d => d.id === currentDeviceId);
+    if (matched?.name) return matched.name;
+    if (isMasterDevice) {
+      return `الجهاز الرئيسي (${settings?.storeNameAr || 'الكاشير المركزي'})`;
+    }
+    const preset = getDefaultWorkPermissionsForRole(currentDeviceRole);
+    return `${preset.roleLabelAr} (${currentHwDevice.deviceName})`;
+  }, [devices, currentDeviceId, isMasterDevice, settings?.storeNameAr, currentDeviceRole, currentHwDevice.deviceName]);
+
+  const currentDeviceWorkPermissions: DeviceWorkPermissions = React.useMemo(() => {
+    const matched = devices.find(d => d.id === currentDeviceId);
+    if (matched?.workPermissions) return matched.workPermissions;
+    return getDefaultWorkPermissionsForRole(currentDeviceRole);
+  }, [devices, currentDeviceId, currentDeviceRole]);
+
+  const subscriptionBoundLinkCode = React.useMemo(() => {
+    return generateSubscriptionBoundDeviceCode(
+      licenseKey || 'TRIAL',
+      currentDeviceId,
+      masterPairingPin
+    );
+  }, [licenseKey, currentDeviceId, masterPairingPin]);
+
   // Fetch devices from server
   const refreshDevices = async () => {
     try {
@@ -4855,15 +5060,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pairDevice = async (deviceData: { 
     name: string; 
     role: DeviceRole; 
+    roleLabelAr?: string;
+    workDescription?: string;
+    workPermissions?: DeviceWorkPermissions;
     pairingCode: string; 
+    subscriptionLinkCode?: string;
+    uniqueDeviceCode?: string;
     deviceType: 'desktop' | 'tablet' | 'mobile'; 
     cashierName?: string;
     branchName?: string;
-  }): Promise<{ success: boolean; error?: string }> => {
-    const cleanCode = normalizeArabicDigits(deviceData.pairingCode).toUpperCase();
+    registerAsCurrentSubDevice?: boolean;
+  }): Promise<{ success: boolean; error?: string; device?: LinkedDevice }> => {
+    const rawCode = normalizeArabicDigits(
+      deviceData.uniqueDeviceCode || deviceData.subscriptionLinkCode || deviceData.pairingCode || ''
+    ).toUpperCase().trim();
+    const extractedNumericPin = extractNumericPinFromBoundCode(rawCode);
+
+    // Check if there is an existing device matching this uniqueDeviceCode or pairingCode
+    const matchedPreCreated = devices.find(
+      d =>
+        d.role !== 'master_pos' &&
+        ((d.uniqueDeviceCode && d.uniqueDeviceCode.toUpperCase() === rawCode) ||
+          (d.pairingCode && d.pairingCode.toUpperCase() === rawCode) ||
+          (d.pairingCode && d.pairingCode === extractedNumericPin))
+    );
+
+    const effectiveRole: DeviceRole = matchedPreCreated?.role || deviceData.role;
+    const preset = getDefaultWorkPermissionsForRole(effectiveRole);
+    const finalWorkPermissions = deviceData.workPermissions || matchedPreCreated?.workPermissions || preset;
+    const finalRoleLabelAr = deviceData.roleLabelAr || matchedPreCreated?.roleLabelAr || preset.roleLabelAr;
+    const finalWorkDescription = deviceData.workDescription || matchedPreCreated?.workDescription || preset.workDescription;
+
+    const existingUniqueCodes = devices.map(d => d.uniqueDeviceCode || d.pairingCode || '');
+    const generatedUniqueCode = generateUniqueCodeForSingleDevice(
+      effectiveRole,
+      existingUniqueCodes,
+      extractedNumericPin
+    );
+    const resolvedUniqueDeviceCode =
+      deviceData.uniqueDeviceCode ||
+      matchedPreCreated?.uniqueDeviceCode ||
+      generatedUniqueCode;
+    const resolvedDevicePin =
+      matchedPreCreated?.pairingCode ||
+      extractNumericPinFromBoundCode(resolvedUniqueDeviceCode);
+
     const payload = {
       ...deviceData,
-      pairingCode: cleanCode,
+      role: effectiveRole,
+      id: deviceData.registerAsCurrentSubDevice ? currentDeviceId : matchedPreCreated?.id,
+      roleLabelAr: finalRoleLabelAr,
+      workDescription: finalWorkDescription,
+      workPermissions: finalWorkPermissions,
+      uniqueDeviceCode: resolvedUniqueDeviceCode,
+      pairingCode: resolvedDevicePin || extractedNumericPin || rawCode || masterPairingPin,
+      subscriptionLinkCode: deviceData.subscriptionLinkCode || subscriptionBoundLinkCode,
+      boundSubscriptionCode: licenseKey || 'TRIAL-SUB',
+      masterDeviceId: currentDeviceId,
+      masterDeviceFingerprint: currentHwDevice.deviceFingerprint,
     };
 
     try {
@@ -4874,15 +5128,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const json = await res.json();
       if (res.ok && json.success) {
-        if (json.device) {
+        if (json.devices && Array.isArray(json.devices)) {
+          setDevices(json.devices);
+        } else if (json.device) {
           setDevices(prev => [...prev.filter(d => d.id !== json.device.id), json.device]);
-          notify('تم ربط جهاز جديد بنجاح', json.device.name, 'success');
-          soundEffects.saleSuccess();
         }
+        if (deviceData.registerAsCurrentSubDevice && deviceData.role !== 'master_pos') {
+          setDedicatedDeviceRole(deviceData.role);
+          try { localStorage.setItem('kian_dedicated_device_role', deviceData.role); } catch {}
+        }
+        notify(
+          'تمت إضافة الجهاز وربطه بالاشتراك بنجاح',
+          `${json.device?.name || deviceData.name} — الوظيفة: ${finalRoleLabelAr} (مشاركة تلقائية للبيانات مع الجهاز الرئيسي)`,
+          'success'
+        );
+        soundEffects.saleSuccess();
         setIsFirstLoginCompletedState(true);
         setIsFirstLoginModalOpen(false);
         try { localStorage.setItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED, 'true'); } catch {}
-        return { success: true };
+        return { success: true, device: json.device };
       }
     } catch {
       // Network or offline fallback
@@ -4890,43 +5154,292 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Local pairing validation fallback
     const cleanMaster = normalizeArabicDigits(masterPairingPin).toUpperCase();
+    const cleanBoundCode = subscriptionBoundLinkCode.toUpperCase();
     const isValidPin =
-      cleanCode === cleanMaster ||
-      cleanCode === '123456' ||
-      cleanCode === '849210' ||
-      cleanCode === 'MASTER' ||
-      (/^\d{6}$/.test(cleanCode) && cleanCode.length === 6);
+      !rawCode ||
+      Boolean(matchedPreCreated) ||
+      rawCode === cleanBoundCode ||
+      extractedNumericPin === cleanMaster ||
+      rawCode === cleanMaster ||
+      rawCode === '123456' ||
+      rawCode === '849210' ||
+      rawCode === 'MASTER' ||
+      rawCode.startsWith('DEV-') ||
+      rawCode.startsWith('KIAN-') ||
+      rawCode.startsWith('SUB-') ||
+      (/^\d{6}$/.test(extractedNumericPin) && extractedNumericPin.length === 6);
 
     if (!isValidPin) {
       return { 
         success: false, 
-        error: 'رمز الربط (PIN) غير مطابق لكود الكاشير الرئيسي' 
+        error: 'كود الربط غير مطابق للكود الخاص بالجهاز أو الكود المربوط بالجهاز الرئيسي' 
       };
     }
 
     const localDevice: LinkedDevice = {
-      id: `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name: deviceData.name || `جهاز متصل (${deviceData.role})`,
-      role: deviceData.role,
-      deviceType: deviceData.deviceType,
-      pairingCode: cleanCode,
+      id: deviceData.registerAsCurrentSubDevice
+        ? currentDeviceId
+        : matchedPreCreated?.id || `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: deviceData.name || matchedPreCreated?.name || `${finalRoleLabelAr} جديد`,
+      role: effectiveRole,
+      roleLabelAr: finalRoleLabelAr,
+      workDescription: finalWorkDescription,
+      workPermissions: finalWorkPermissions,
+      deviceType: deviceData.deviceType || matchedPreCreated?.deviceType || 'tablet',
+      pairingCode: resolvedDevicePin,
+      uniqueDeviceCode: resolvedUniqueDeviceCode,
+      subscriptionLinkCode: subscriptionBoundLinkCode,
+      boundSubscriptionCode: licenseKey || 'TRIAL-SUB',
+      isMasterDevice: effectiveRole === 'master_pos',
+      masterDeviceId: currentDeviceId,
+      masterDeviceFingerprint: currentHwDevice.deviceFingerprint,
       pairedAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       isOnline: true,
       batteryLevel: 98,
-      cashierName: deviceData.cashierName || currentUser.name || "كاشير مناوب",
+      cashierName: deviceData.cashierName || currentUser.name || finalRoleLabelAr,
       branchName: deviceData.branchName || "الفرع الرئيسي",
+      salesCount: 0,
+      totalSalesAmount: 0,
+      ordersCount: 0,
+      lastActivitySummary: `تم ربط الجهاز كـ (${finalRoleLabelAr}) وتفعيل مشاركة البيانات التلقائية`,
+      lastActivityAt: new Date().toISOString(),
     };
     setDevices(prev => [...prev.filter(d => d.id !== localDevice.id), localDevice]);
+    if (deviceData.registerAsCurrentSubDevice && deviceData.role !== 'master_pos') {
+      setDedicatedDeviceRole(deviceData.role);
+      try { localStorage.setItem('kian_dedicated_device_role', deviceData.role); } catch {}
+    }
     setIsFirstLoginCompletedState(true);
     setIsFirstLoginModalOpen(false);
     try { localStorage.setItem(STORAGE_KEYS.FIRST_LOGIN_COMPLETED, 'true'); } catch {}
-    notify('تم ربط الجهاز بنجاح', localDevice.name, 'success');
+    notify(
+      'تمت إضافة الجهاز وربطه بالاشتراك',
+      `${localDevice.name} (${finalRoleLabelAr}) — مشاركة تلقائية نشطة`,
+      'success'
+    );
     soundEffects.saleSuccess();
-    return { success: true };
+    return { success: true, device: localDevice };
+  };
+
+  const updateSubDeviceRoleAndWork = async (
+    deviceId: string,
+    updates: {
+      name?: string;
+      role?: DeviceRole;
+      roleLabelAr?: string;
+      workDescription?: string;
+      workPermissions?: DeviceWorkPermissions;
+      uniqueDeviceCode?: string;
+      pairingCode?: string;
+    }
+  ): Promise<void> => {
+    const target = devices.find(d => d.id === deviceId);
+    const nextRole: DeviceRole = updates.role || target?.role || 'secondary_pos';
+    const preset = getDefaultWorkPermissionsForRole(nextRole);
+    const nextRoleLabelAr = updates.roleLabelAr || preset.roleLabelAr;
+    const nextWorkDesc = updates.workDescription || preset.workDescription;
+    const nextPermissions = updates.workPermissions || preset;
+
+    setDevices(prev =>
+      prev.map(d => {
+        if (d.id !== deviceId) return d;
+        return {
+          ...d,
+          name: updates.name ? updates.name.trim() : d.name,
+          role: nextRole,
+          roleLabelAr: nextRoleLabelAr,
+          workDescription: nextWorkDesc,
+          workPermissions: nextPermissions,
+          ...(updates.uniqueDeviceCode ? { uniqueDeviceCode: updates.uniqueDeviceCode } : {}),
+          ...(updates.pairingCode ? { pairingCode: updates.pairingCode } : {}),
+          lastSeen: new Date().toISOString(),
+          lastActivitySummary: updates.uniqueDeviceCode
+            ? `تم تحديث الكود الخاص بالجهاز إلى (${updates.uniqueDeviceCode})`
+            : `تم تحديد عمل الجهاز كـ (${nextRoleLabelAr})`,
+          lastActivityAt: new Date().toISOString(),
+        };
+      })
+    );
+
+    try {
+      const res = await fetch('/api/devices/update-sub-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId,
+          name: updates.name,
+          role: nextRole,
+          roleLabelAr: nextRoleLabelAr,
+          workDescription: nextWorkDesc,
+          workPermissions: nextPermissions,
+          uniqueDeviceCode: updates.uniqueDeviceCode,
+          pairingCode: updates.pairingCode,
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.devices) setDevices(json.devices);
+      }
+    } catch {}
+
+    try {
+      broadcastChannelRef.current?.postMessage({
+        type: 'DEVICE_ROLE_UPDATED',
+        payload: {
+          deviceId,
+          name: updates.name,
+          role: nextRole,
+          roleLabelAr: nextRoleLabelAr,
+          workDescription: nextWorkDesc,
+          workPermissions: nextPermissions,
+        },
+      });
+    } catch {}
+
+    notify(
+      'تم تحديث وظيفة وعمل الجهاز بنجاح',
+      `تم تحديد وظيفة الجهاز إلى (${nextRoleLabelAr}) وتحديث صلاحيات المشاركة التلقائية`,
+      'success'
+    );
+    soundEffects.saleSuccess();
+  };
+
+  const simulateSubDeviceSale = async (targetDevice: LinkedDevice): Promise<Sale | null> => {
+    const sampleProd =
+      products.find(p => p.stock > 0 && p.status === 'active') ||
+      products[0] || {
+        id: 'sim-p-1',
+        nameAr: 'طلب سريع من جهاز فرعي',
+        nameEn: 'Sub-Device Quick Item',
+        sku: 'SUB-101',
+        barcode: '100101',
+        categoryId: categories[0]?.id || 'cat_all',
+        price: 25000,
+        wholesalePrice: 22000,
+        costPrice: 15000,
+        stock: 50,
+        minStock: 5,
+        unit: 'قطعة',
+        isFavorite: false,
+        status: 'active' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+    const qty = Math.floor(Math.random() * 2) + 1;
+    const uPrice = sampleProd.price || 15000;
+    const cPrice = sampleProd.costPrice || 10000;
+    const itemTotal = uPrice * qty;
+    const costTotal = cPrice * qty;
+    const invoiceNum = `SUB-${Math.floor(10000 + Math.random() * 90000)}`;
+    const nowIso = new Date().toISOString();
+
+    const simulatedSale: Sale = {
+      id: `sale_sub_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      invoiceNumber: invoiceNum,
+      storeId: settings.storeId || 'store_main',
+      branchId: 'branch_main',
+      items: [
+        {
+          productId: sampleProd.id,
+          productNameAr: sampleProd.nameAr,
+          productNameEn: sampleProd.nameEn || sampleProd.nameAr,
+          barcode: sampleProd.barcode || '100101',
+          quantity: qty,
+          unitPrice: uPrice,
+          costPrice: cPrice,
+          discount: 0,
+          total: itemTotal,
+        },
+      ],
+      subtotal: itemTotal,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: itemTotal,
+      costTotal,
+      profitTotal: itemTotal - costTotal,
+      paidAmount: itemTotal,
+      changeAmount: 0,
+      pointsEarned: 0,
+      pointsRedeemed: 0,
+      pointsDiscountAmount: 0,
+      paymentMethod: 'cash',
+      cashierId: targetDevice.id,
+      cashierName: targetDevice.cashierName || targetDevice.name,
+      sourceDeviceId: targetDevice.id,
+      sourceDeviceName: targetDevice.name,
+      sourceDeviceRole: targetDevice.role,
+      status: 'completed',
+      notes: `مبيعات مشاركة تلقائياً من جهاز (${targetDevice.name} — ${targetDevice.roleLabelAr || targetDevice.role})`,
+      createdAt: nowIso,
+    };
+
+    const updatedSales = [simulatedSale, ...sales];
+    setSalesState(updatedSales);
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(updatedSales));
+
+    setDevices(prev =>
+      prev.map(d => {
+        if (d.id !== targetDevice.id) return d;
+        const nextCount = (d.salesCount || 0) + 1;
+        const nextTotal = (d.totalSalesAmount || 0) + itemTotal;
+        return {
+          ...d,
+          isOnline: true,
+          lastSeen: nowIso,
+          salesCount: nextCount,
+          totalSalesAmount: nextTotal,
+          lastActivitySummary: `فاتورة ${invoiceNum} بقيمة ${itemTotal.toLocaleString()} ${settings.currency.symbol}`,
+          lastActivityAt: nowIso,
+        };
+      })
+    );
+
+    try {
+      broadcastChannelRef.current?.postMessage({
+        type: 'MESH_AUTO_DATA_SYNC',
+        payload: {
+          eventType: 'SALE_CREATED',
+          sourceDeviceId: targetDevice.id,
+          sourceDeviceName: targetDevice.name,
+          sourceDeviceRole: targetDevice.role,
+          sale: simulatedSale,
+          sales: updatedSales,
+          timestamp: nowIso,
+        },
+      });
+    } catch {}
+
+    fetch('/api/devices/mesh-sync/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventType: 'SALE_CREATED',
+        sourceDeviceId: targetDevice.id,
+        sourceDeviceName: targetDevice.name,
+        sourceDeviceRole: targetDevice.role,
+        boundSubscriptionCode: licenseKey || 'TRIAL',
+        sale: simulatedSale,
+        sales: updatedSales,
+      }),
+    }).catch(() => {});
+
+    soundEffects.saleSuccess();
+    notify(
+      `📡 مبيعات جديدة من (${targetDevice.name})`,
+      `وصلت فاتورة ${invoiceNum} بقيمة ${itemTotal.toLocaleString()} ${settings.currency.symbol} تلقائياً إلى الجهاز الرئيسي`,
+      'success'
+    );
+    return simulatedSale;
   };
 
   const disconnectDevice = async (deviceId: string) => {
+    const dev = devices.find(d => d.id === deviceId);
+    if (dev?.role === 'master_pos' || dev?.isMasterDevice) {
+      notify('الجهاز الرئيسي محمي', 'لا يمكن فصل الجهاز الرئيسي المرتبط بكود الاشتراك الأساسي', 'warning');
+      return;
+    }
     try {
       await fetch('/api/devices/disconnect', {
         method: 'POST',
@@ -4935,7 +5448,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     } catch {}
     setDevices(prev => prev.filter(d => d.id !== deviceId));
-    notify('تم فصل الجهاز', 'تم إزالة الجهاز من الشبكة المركزية', 'info');
+    notify('تم فصل الجهاز الفرعي', 'تم إزالة الجهاز من شبكة الاشتراك المركزية', 'info');
+  };
+
+  const regenerateSingleDeviceCode = async (deviceId: string): Promise<string> => {
+    const target = devices.find(d => d.id === deviceId);
+    const role = target?.role || 'secondary_pos';
+    const existingCodes = devices.map(d => d.uniqueDeviceCode || d.pairingCode || '');
+    const newUniqueCode = generateUniqueCodeForSingleDevice(role, existingCodes);
+    const newPin = extractNumericPinFromBoundCode(newUniqueCode);
+    await updateSubDeviceRoleAndWork(deviceId, {
+      uniqueDeviceCode: newUniqueCode,
+      pairingCode: newPin,
+    });
+    return newUniqueCode;
   };
 
   const refreshMasterPin = async (): Promise<string> => {
@@ -4945,7 +5471,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const json = await res.json();
         if (json.newPin) {
           setMasterPairingPin(json.newPin);
-          notify('تم توليد رمز ربط PIN جديد', json.newPin, 'success');
+          notify('تم تحديث كود ربط الأجهزة بالاشتراك', generateSubscriptionBoundDeviceCode(licenseKey || 'TRIAL', currentDeviceId, json.newPin), 'success');
           return json.newPin;
         }
       }
@@ -4956,18 +5482,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addKitchenOrder = (order: Omit<KitchenOrder, 'id' | 'createdAt'>) => {
+    const nowIso = new Date().toISOString();
     const newOrder: KitchenOrder = {
       ...order,
       id: `k-ord-${Date.now().toString(36)}`,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
+      sourceDeviceId: order.sourceDeviceId || currentDeviceId,
+      sourceDeviceName: order.sourceDeviceName || order.sourceDevice || currentDeviceName,
+      sourceDeviceRole: order.sourceDeviceRole || currentDeviceRole,
     };
     setKitchenOrders(prev => [newOrder, ...prev]);
+
+    setDevices(prev =>
+      prev.map(d => {
+        if (d.id === newOrder.sourceDeviceId || (d.role === currentDeviceRole && currentDeviceRole === 'master_pos')) {
+          return {
+            ...d,
+            isOnline: true,
+            lastSeen: nowIso,
+            ordersCount: (d.ordersCount || 0) + 1,
+            lastActivitySummary: `أرسل طلب (${newOrder.tableName || newOrder.orderNumber})`,
+            lastActivityAt: nowIso,
+          };
+        }
+        return d;
+      })
+    );
 
     // Push to server
     fetch('/api/sync/kitchen-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: newOrder }),
+    }).catch(() => {});
+
+    fetch('/api/devices/mesh-sync/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventType: 'ORDER_CREATED',
+        sourceDeviceId: newOrder.sourceDeviceId,
+        sourceDeviceName: newOrder.sourceDeviceName,
+        sourceDeviceRole: newOrder.sourceDeviceRole,
+        order: newOrder,
+      }),
     }).catch(() => {});
 
     soundEffects.beep();
@@ -4995,15 +5553,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (status === 'ready') soundEffects.saleSuccess();
     else soundEffects.buttonClick();
   };
-
-  const [dedicatedDeviceRole, setDedicatedDeviceRole] = useState<DeviceRole | null>(() => {
-    try {
-      const saved = localStorage.getItem('kian_dedicated_device_role');
-      return (saved as DeviceRole) || null;
-    } catch {
-      return null;
-    }
-  });
 
   const [isRestaurantQrModalOpen, setIsRestaurantQrModalOpen] = useState(false);
   const [isCustomerMenuPreviewOpen, setIsCustomerMenuPreviewOpen] = useState(false);
@@ -5497,6 +6046,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (payload) setLiveRemoteCart(payload);
           } else if (type === 'REFRESH_DEVICES') {
             refreshDevices();
+          } else if (type === 'DEVICE_ROLE_UPDATED') {
+            if (payload?.deviceId) {
+              setDevices(prev =>
+                prev.map(d =>
+                  d.id === payload.deviceId
+                    ? {
+                        ...d,
+                        name: payload.name || d.name,
+                        role: payload.role || d.role,
+                        roleLabelAr: payload.roleLabelAr || d.roleLabelAr,
+                        workDescription: payload.workDescription || d.workDescription,
+                        workPermissions: payload.workPermissions || d.workPermissions,
+                      }
+                    : d
+                )
+              );
+              if (payload.deviceId === currentDeviceId && payload.role && payload.role !== 'master_pos') {
+                setDedicatedDeviceRole(payload.role);
+                try {
+                  localStorage.setItem('kian_dedicated_device_role', payload.role);
+                } catch {}
+              }
+            }
+          } else if (type === 'MESH_AUTO_DATA_SYNC') {
+            if (payload?.eventType === 'SALE_CREATED' && payload?.sale) {
+              setSalesState(prev => {
+                if (prev.some(s => s.id === payload.sale.id)) return prev;
+                const next = [payload.sale, ...prev];
+                try {
+                  localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(next));
+                } catch {}
+                return next;
+              });
+              if (payload.sourceDeviceId) {
+                setDevices(prev =>
+                  prev.map(d => {
+                    if (d.id !== payload.sourceDeviceId) return d;
+                    const amt = Number(payload.sale.total) || 0;
+                    return {
+                      ...d,
+                      isOnline: true,
+                      lastSeen: new Date().toISOString(),
+                      salesCount: (d.salesCount || 0) + 1,
+                      totalSalesAmount: (d.totalSalesAmount || 0) + amt,
+                      lastActivitySummary: `فاتورة ${payload.sale.invoiceNumber || ''} بقيمة ${amt.toLocaleString()} ${settings.currency.symbol}`,
+                      lastActivityAt: new Date().toISOString(),
+                    };
+                  })
+                );
+              }
+              if (payload.sourceDeviceId && payload.sourceDeviceId !== currentDeviceId) {
+                soundEffects.saleSuccess();
+                notify(
+                  `📡 مبيعات مشاركة تلقائياً من (${payload.sourceDeviceName || 'جهاز فرعي'})`,
+                  `تم تسجيل فاتورة ${payload.sale.invoiceNumber || ''} بقيمة ${Number(payload.sale.total || 0).toLocaleString()} ${settings.currency.symbol}`,
+                  'success'
+                );
+              }
+            } else if (payload?.eventType === 'ORDER_CREATED' && payload?.order) {
+              setKitchenOrders(prev => (prev.some(o => o.id === payload.order.id) ? prev : [payload.order, ...prev]));
+            }
           }
         };
       }
@@ -5511,17 +6121,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       eventSource.addEventListener('INIT', (e: any) => {
         try {
-          const isZeroed =
-            localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
-            localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
-          if (isZeroed) {
-            fetch('/api/system/reset-zero', { method: 'POST' }).catch(() => {});
-            return;
-          }
           const data = JSON.parse(e.data);
           if (data.devices) setDevices(data.devices);
           if (data.masterPairingPin) setMasterPairingPin(data.masterPairingPin);
           if (data.kitchenOrders) setKitchenOrders(data.kitchenOrders);
+          if (data.sharedStoreState?.sales && Array.isArray(data.sharedStoreState.sales) && data.sharedStoreState.sales.length > 0) {
+            setSalesState(prev => {
+              const existingIds = new Set(prev.map(s => s.id));
+              const incoming = data.sharedStoreState.sales.filter((s: Sale) => s && s.id && !existingIds.has(s.id));
+              return incoming.length > 0 ? [...incoming, ...prev] : prev;
+            });
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('DEVICE_ROLE_UPDATED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.devices && Array.isArray(data.devices)) {
+            setDevices(data.devices);
+          } else if (data.device) {
+            setDevices(prev => prev.map(d => (d.id === data.device.id ? data.device : d)));
+          }
+          if (data.device && data.device.id === currentDeviceId && data.device.role !== 'master_pos') {
+            setDedicatedDeviceRole(data.device.role);
+            try {
+              localStorage.setItem('kian_dedicated_device_role', data.device.role);
+            } catch {}
+            notify(
+              'تم تحديث وظيفة هذا الجهاز من الجهاز الرئيسي',
+              `الوظيفة الحالية: ${data.device.roleLabelAr || data.device.role}`,
+              'info'
+            );
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('MESH_AUTO_DATA_SYNC', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.devices && Array.isArray(data.devices)) {
+            setDevices(data.devices);
+          }
+          if (data.eventType === 'SALE_CREATED' && data.sale) {
+            setSalesState(prev => {
+              if (prev.some(s => s.id === data.sale.id)) return prev;
+              const next = [data.sale, ...prev];
+              try {
+                localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(next));
+              } catch {}
+              return next;
+            });
+            if (data.sourceDeviceId && data.sourceDeviceId !== currentDeviceId) {
+              soundEffects.saleSuccess();
+              notify(
+                `📡 مبيعات مشاركة تلقائياً من (${data.sourceDeviceName || 'جهاز فرعي'})`,
+                `فاتورة ${data.sale.invoiceNumber || ''} بقيمة ${Number(data.sale.total || 0).toLocaleString()} ${settings.currency.symbol}`,
+                'success'
+              );
+            }
+          } else if (data.eventType === 'ORDER_CREATED' && data.order) {
+            setKitchenOrders(prev => (prev.some(o => o.id === data.order.id) ? prev : [data.order, ...prev]));
+          } else if (data.eventType === 'PRODUCTS_UPDATED' && Array.isArray(data.products) && data.sourceDeviceId !== currentDeviceId) {
+            setProductsState(data.products);
+          } else if (data.eventType === 'CATEGORIES_UPDATED' && Array.isArray(data.categories) && data.sourceDeviceId !== currentDeviceId) {
+            setCategoriesState(data.categories);
+          } else if (data.eventType === 'CUSTOMERS_UPDATED' && Array.isArray(data.customers) && data.sourceDeviceId !== currentDeviceId) {
+            setCustomersState(data.customers);
+          }
         } catch {}
       });
 
@@ -5788,16 +6455,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Initial load of devices & fetch interval
   useEffect(() => {
-    const isZeroed =
-      localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
-      localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
-    if (isZeroed) {
-      fetch('/api/system/reset-zero', { method: 'POST' }).then(() => {
-        refreshDevices();
-      }).catch(() => {});
-    } else {
-      refreshDevices();
-    }
+    refreshDevices();
+    fetch('/api/devices/mesh-sync/state')
+      .then(r => r.json())
+      .then(data => {
+        if (data?.sharedState?.sales && Array.isArray(data.sharedState.sales) && data.sharedState.sales.length > 0) {
+          setSalesState(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const incoming = data.sharedState.sales.filter((s: Sale) => s && s.id && !existingIds.has(s.id));
+            return incoming.length > 0 ? [...incoming, ...prev] : prev;
+          });
+        }
+      })
+      .catch(() => {});
     const interval = setInterval(refreshDevices, 8000);
     return () => clearInterval(interval);
   }, []);
@@ -5975,11 +6645,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         devices,
         kitchenOrders,
         masterPairingPin,
+        subscriptionBoundLinkCode,
+        isMasterDevice,
+        currentDeviceId,
+        currentDeviceName,
+        currentDeviceRole,
+        currentDeviceWorkPermissions,
         isPairingModalOpen,
         setIsPairingModalOpen,
         refreshDevices,
         pairDevice,
+        updateSubDeviceRoleAndWork,
+        simulateSubDeviceSale,
         disconnectDevice,
+        unpairDevice: disconnectDevice,
+        regenerateSingleDeviceCode,
         refreshMasterPin,
         addKitchenOrder,
         updateKitchenItemStatus,

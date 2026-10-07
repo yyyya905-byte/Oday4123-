@@ -24,6 +24,7 @@ import { PrintableReceiptModal } from './PrintableReceiptModal';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
 import { isLebaneseCurrency, LEBANESE_QUICK_BANKNOTES, LEBANESE_INCREMENT_BUTTONS } from '../../utils/currencyUtils';
 import { voiceAnnouncer } from '../../services/voiceAnnouncer';
+import { soundEffects } from '../../services/audio';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -119,16 +120,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const changeDueInUsdForLbp = changeDue > 0 ? Number((changeDue / usdRateForLbp).toFixed(2)) : 0;
 
   const handleAddAmount = (val: number) => {
+    soundEffects.playQuantityTick('up');
     setPaidAmount(prev => (Number(prev) || 0) + val);
   };
 
   const handleSetUsdCash = (usdVal: number) => {
+    soundEffects.playGlassPress();
     const lbpVal = Math.round(usdVal * usdRateForLbp);
     setPaidAmount(lbpVal);
     notify('تم احتساب الدولار', `استلام ورقة $${usdVal} = ${lbpVal.toLocaleString()} ل.ل (سعر الصرف: ${usdRateForLbp.toLocaleString()})`, 'info');
   };
 
   const handleSetExact = () => {
+    soundEffects.playGlassPress();
     setPaidAmount(totalAmount);
   };
 
@@ -240,7 +244,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               {/* 1. Cash */}
               <button
                 type="button"
-                onClick={() => setPaymentMethod('cash')}
+                onClick={() => {
+                  soundEffects.playCategorySwitch();
+                  setPaymentMethod('cash');
+                }}
                 data-longpress-title="الدفع نقداً (Cash)"
                 data-longpress-desc="استلام المبلغ ورقياً من العميل كاش، مع حساب الفكة والمبلغ المتبقي للزبون بدقة وتسجيله في صندوق الكاشير."
                 className={`flex flex-col items-center justify-center p-3 min-h-[64px] rounded-2xl border transition-all cursor-pointer active:scale-95 ${
@@ -257,7 +264,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <button
                 type="button"
                 id="btn-payment-method-split"
-                onClick={() => setPaymentMethod('split')}
+                onClick={() => {
+                  soundEffects.playCategorySwitch();
+                  setPaymentMethod('split');
+                }}
                 data-longpress-title="تقسيم الفاتورة (نقد + آجل)"
                 data-longpress-desc="تقسيم قيمة الفاتورة بين دفعة نقدية تُستلم الآن للصندوق والباقي يُقيد ديناً آجلاً على حساب العميل."
                 className={`flex flex-col items-center justify-center p-3 min-h-[64px] rounded-2xl border transition-all cursor-pointer active:scale-95 ${
@@ -274,7 +284,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <button
                 type="button"
                 id="btn-payment-method-credit"
-                onClick={() => setPaymentMethod('credit')}
+                onClick={() => {
+                  soundEffects.playCategorySwitch();
+                  setPaymentMethod('credit');
+                }}
                 data-longpress-title="البيع الآجل والذمم (Credit / Ajal)"
                 data-longpress-desc="تسجيل الفاتورة على حساب العميل في سجل الديون مع إمكانية دفع جزء نقداً وتسجيل الباقي ديناً بذمة العميل."
                 className={`flex flex-col items-center justify-center p-3 min-h-[64px] rounded-2xl border transition-all cursor-pointer active:scale-95 ${
@@ -290,7 +303,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               {/* 4. Card */}
               <button
                 type="button"
-                onClick={() => setPaymentMethod('card')}
+                onClick={() => {
+                  soundEffects.playCategorySwitch();
+                  setPaymentMethod('card');
+                }}
                 data-longpress-title="الدفع بالبطاقة الإلكترونية (Card)"
                 data-longpress-desc="الدفع عبر نقاط البيع المصرفية وبطاقات الدفع الإلكتروني، لا يتطلب إرجاع فكة نقدية."
                 className={`flex flex-col items-center justify-center p-3 min-h-[64px] rounded-2xl border transition-all cursor-pointer active:scale-95 ${
@@ -306,7 +322,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               {/* 5. Transfer */}
               <button
                 type="button"
-                onClick={() => setPaymentMethod('transfer')}
+                onClick={() => {
+                  soundEffects.playCategorySwitch();
+                  setPaymentMethod('transfer');
+                }}
                 data-longpress-title="الحوالة أو الدفع الرقمي (Transfer)"
                 data-longpress-desc="الدفع عبر التحويل البنكي أو المحافظ الإلكترونية المعتمدة مثل الهرم، الفؤاد، سيريتل كاش أو شام كاش."
                 className={`flex flex-col items-center justify-center p-3 min-h-[64px] rounded-2xl border transition-all cursor-pointer active:scale-95 col-span-2 sm:col-span-1 ${
@@ -634,7 +653,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setPaidAmount(val)}
+                          onClick={() => {
+                            soundEffects.playGlassTap();
+                            setPaidAmount(val);
+                          }}
                           data-longpress-title={`فئة ${val.toLocaleString()} ${settings.currency.symbol}`}
                           data-longpress-desc={`تحديد أن العميل سلّم ورقة نقدية من فئة ${val.toLocaleString()} ${settings.currency.symbol} لاحتساب الباقي فوراً.`}
                           className="min-h-[46px] py-2.5 px-2 bg-white dark:bg-slate-900 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-xs font-black font-mono text-slate-800 dark:text-slate-200 rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95 text-center shadow-2xs cursor-pointer flex items-center justify-center"

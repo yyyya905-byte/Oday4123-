@@ -61,7 +61,16 @@ export const DataUsageSummaryWidget: React.FC<DataUsageSummaryWidgetProps> = ({
   useEffect(() => {
     fetchStats();
     const timer = setInterval(fetchStats, 15000);
-    return () => clearInterval(timer);
+    const handleWiped = () => {
+      fetchStats();
+    };
+    window.addEventListener('kian-indexeddb-wiped', handleWiped);
+    window.addEventListener('kian-zero-out-all', handleWiped);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('kian-indexeddb-wiped', handleWiped);
+      window.removeEventListener('kian-zero-out-all', handleWiped);
+    };
   }, [offlineQueueCount]);
 
   const usedBytes = stats?.usageBytes || 0;

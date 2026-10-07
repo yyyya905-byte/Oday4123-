@@ -134,13 +134,13 @@ export function canAccessTab(tab: ActiveTab, role: UserRole): boolean {
 
   // Cashier is restricted to POS, Invoices viewing, Customers, Returns, Devices & About
   if (role === 'cashier') {
-    const allowedForCashier: ActiveTab[] = ['pos', 'invoices', 'customers', 'returns', 'devices', 'about'];
+    const allowedForCashier: ActiveTab[] = ['pos', 'invoices', 'customers', 'returns', 'devices', 'devices_status', 'about'];
     return allowedForCashier.includes(tab);
   }
 
   // Inventory Specialist
   if (role === 'inventory') {
-    const allowedForInventory: ActiveTab[] = ['inventory', 'products', 'trade', 'devices', 'about'];
+    const allowedForInventory: ActiveTab[] = ['inventory', 'products', 'trade', 'devices', 'devices_status', 'about'];
     return allowedForInventory.includes(tab);
   }
 

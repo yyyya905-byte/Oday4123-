@@ -372,7 +372,23 @@ app.post("/api/ai/ocr-receipt", async (req, res) => {
 interface ConnectedDevice {
   id: string;
   name: string;
-  role: 'master_pos' | 'secondary_pos' | 'kitchen_display' | 'customer_display' | 'waiter_mobile' | 'stock_scanner';
+  role: 'master_pos' | 'secondary_pos' | 'waiter_mobile' | 'assistant' | 'stock_scanner' | 'kitchen_display' | 'customer_display' | 'supervisor';
+  roleLabelAr?: string;
+  workDescription?: string;
+  workPermissions?: {
+    allowPosSales: boolean;
+    allowTableOrders: boolean;
+    allowCatalogAndStock: boolean;
+    allowCustomersAndDebts: boolean;
+    allowExpenses: boolean;
+    allowKitchenDisplay: boolean;
+    autoShareDataWithMaster: boolean;
+  };
+  masterDeviceId?: string;
+  masterDeviceFingerprint?: string;
+  boundSubscriptionCode?: string;
+  subscriptionLinkCode?: string;
+  uniqueDeviceCode?: string;
   ipAddress?: string;
   deviceType: 'desktop' | 'tablet' | 'mobile';
   pairingCode: string;
@@ -383,28 +399,78 @@ interface ConnectedDevice {
   cashierName?: string;
   currentScreen?: string;
   branchName?: string;
+  salesCount?: number;
+  totalSalesAmount?: number;
+  ordersCount?: number;
+  lastActivitySummary?: string;
+  lastActivityAt?: string;
 }
 
 // In-memory state store for multi-terminal sync
 let masterPairingPin = "849210";
 const recentPairingPins = new Set<string>(["849210", "123456", "MASTER", "999999", "000000"]);
 
+// Shared store data automatically synced between Master Device and all Sub-Devices
+let masterSharedStoreState: {
+  masterDeviceId: string;
+  masterDeviceName: string;
+  boundSubscriptionCode: string;
+  products: any[];
+  categories: any[];
+  customers: any[];
+  sales: any[];
+  expenses: any[];
+  refunds: any[];
+  debtTransactions: any[];
+  settings: any;
+  updatedAt: string;
+} = {
+  masterDeviceId: "dev-master-1",
+  masterDeviceName: "الجهاز الرئيسي (Master POS)",
+  boundSubscriptionCode: "TRIAL",
+  products: [],
+  categories: [],
+  customers: [],
+  sales: [],
+  expenses: [],
+  refunds: [],
+  debtTransactions: [],
+  settings: null,
+  updatedAt: new Date().toISOString(),
+};
+
 function normalizeDevicePin(pin: any): string {
   if (!pin) return '';
-  return String(pin)
+  const cleaned = String(pin)
     .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
     .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
-    .replace(/[\s\-_]/g, '')
     .trim()
     .toUpperCase();
+  const sixDigitsEnd = cleaned.match(/(\d{6})$/);
+  if (sixDigitsEnd) return sixDigitsEnd[1];
+  return cleaned.replace(/[\s\-_]/g, '');
 }
+
 let connectedDevices: ConnectedDevice[] = [
   {
     id: "dev-master-1",
-    name: "جهاز الكاشير المركزي (Master POS)",
+    name: "الجهاز الرئيسي (Master POS)",
     role: "master_pos",
+    roleLabelAr: "الجهاز الرئيسي (صاحب الاشتراك)",
+    workDescription: "الجهاز الرئيسي المفعل بكود الاشتراك — تحكم كامل وإدارة ومراقبة مبيعات كافة الأجهزة",
+    workPermissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: true,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
     deviceType: "desktop",
     pairingCode: "MASTER",
+    uniqueDeviceCode: "DEV-MST-990101",
+    subscriptionLinkCode: "SUB-MAIN-849210",
     pairedAt: new Date().toISOString(),
     lastSeen: new Date().toISOString(),
     isOnline: true,
@@ -412,32 +478,107 @@ let connectedDevices: ConnectedDevice[] = [
     cashierName: "عدي الزعبي",
     currentScreen: "pos",
     branchName: "الفرع الرئيسي",
+    salesCount: 0,
+    totalSalesAmount: 0,
+    ordersCount: 0,
+    lastActivitySummary: "متصل ومفعل كجهاز رئيسي",
+    lastActivityAt: new Date().toISOString(),
   },
   {
-    id: "dev-kitchen-1",
-    name: "شاشة المطبخ وإعداد الطلبات (KDS 1)",
-    role: "kitchen_display",
-    deviceType: "tablet",
+    id: "dev-cashier-2",
+    name: "جهاز كاشير فرعي 2",
+    role: "secondary_pos",
+    roleLabelAr: "كاشير فرعي (Cashier)",
+    workDescription: "إصدار فواتير المبيعات وتحصيل المدفوعات ومشاركتها تلقائياً مع الجهاز الرئيسي",
+    workPermissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: false,
+      allowCustomersAndDebts: true,
+      allowExpenses: false,
+      allowKitchenDisplay: false,
+      autoShareDataWithMaster: true,
+    },
+    deviceType: "desktop",
+    pairingCode: "849210",
+    uniqueDeviceCode: "DEV-CSH-849210",
+    subscriptionLinkCode: "SUB-MAIN-849210",
+    pairedAt: new Date(Date.now() - 1800000).toISOString(),
+    lastSeen: new Date().toISOString(),
+    isOnline: true,
+    batteryLevel: 96,
+    cashierName: "كاشير الصالة",
+    currentScreen: "pos",
+    branchName: "الفرع الرئيسي",
+    salesCount: 0,
+    totalSalesAmount: 0,
+    ordersCount: 0,
+    lastActivitySummary: "جاهز لإصدار الفواتير ومشاركتها تلقائياً",
+    lastActivityAt: new Date().toISOString(),
+  },
+  {
+    id: "dev-waiter-1",
+    name: "جهاز النادل (طلبات الصالة)",
+    role: "waiter_mobile",
+    roleLabelAr: "نادل / كابتن صالة (Waiter)",
+    workDescription: "استلام طلبات الطاولات والزبائن وإرسالها تلقائياً للجهاز الرئيسي والمطبخ",
+    workPermissions: {
+      allowPosSales: false,
+      allowTableOrders: true,
+      allowCatalogAndStock: false,
+      allowCustomersAndDebts: false,
+      allowExpenses: false,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+    deviceType: "mobile",
     pairingCode: "772109",
+    uniqueDeviceCode: "DEV-WTR-772109",
+    subscriptionLinkCode: "SUB-MAIN-772109",
     pairedAt: new Date(Date.now() - 3600000).toISOString(),
     lastSeen: new Date().toISOString(),
     isOnline: true,
     batteryLevel: 94,
-    currentScreen: "kitchen",
+    cashierName: "نادل الصالة 1",
+    currentScreen: "waiter",
     branchName: "الفرع الرئيسي",
+    salesCount: 0,
+    totalSalesAmount: 0,
+    ordersCount: 2,
+    lastActivitySummary: "إرسال طلب طاولة 4 إلى الكاشير الرئيسي",
+    lastActivityAt: new Date().toISOString(),
   },
   {
-    id: "dev-cfd-1",
-    name: "شاشة العميل التفاعلية (Customer Display)",
-    role: "customer_display",
+    id: "dev-assistant-1",
+    name: "جهاز المساعد (مبيعات ومخزون)",
+    role: "assistant",
+    roleLabelAr: "مساعد كاشير ومبيعات (Assistant)",
+    workDescription: "مساعدة الكاشير في تجهيز السلة، البيع السريع، وفحص الأسعار والمخزون",
+    workPermissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: false,
+      allowKitchenDisplay: false,
+      autoShareDataWithMaster: true,
+    },
     deviceType: "tablet",
     pairingCode: "610334",
+    uniqueDeviceCode: "DEV-AST-610334",
+    subscriptionLinkCode: "SUB-MAIN-610334",
     pairedAt: new Date(Date.now() - 7200000).toISOString(),
     lastSeen: new Date().toISOString(),
     isOnline: true,
     batteryLevel: 88,
-    currentScreen: "customer_facing",
+    cashierName: "مساعد المبيعات",
+    currentScreen: "pos",
     branchName: "الفرع الرئيسي",
+    salesCount: 0,
+    totalSalesAmount: 0,
+    ordersCount: 0,
+    lastActivitySummary: "متصل ويشارك البيانات تلقائياً مع الجهاز الرئيسي",
+    lastActivityAt: new Date().toISOString(),
   }
 ];
 
@@ -519,7 +660,43 @@ function broadcastSseEvent(eventType: string, data: any) {
 
 // Reset all in-memory server demo data (devices, kitchen orders, live cart) after license activation
 app.post("/api/system/reset-zero", (req, res) => {
-  connectedDevices = [];
+  const { masterDeviceId, masterDeviceName, boundSubscriptionCode } = req.body || {};
+  const masterDev: ConnectedDevice = {
+    id: masterDeviceId || "dev-master-1",
+    name: masterDeviceName || "الجهاز الرئيسي (صاحب الاشتراك)",
+    role: "master_pos",
+    roleLabelAr: "الجهاز الرئيسي (صاحب الاشتراك)",
+    workDescription: "الجهاز الرئيسي المفعل بكود الاشتراك — تحكم كامل وإضافة أجهزة ومراقبة المبيعات والبيانات تلقائياً",
+    workPermissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: true,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+    masterDeviceId: masterDeviceId || "dev-master-1",
+    boundSubscriptionCode: boundSubscriptionCode || "ACTIVE",
+    uniqueDeviceCode: `DEV-MST-${masterPairingPin}`,
+    subscriptionLinkCode: `SUB-${(boundSubscriptionCode || "MAIN").slice(-4).toUpperCase()}-${masterPairingPin}`,
+    deviceType: "desktop",
+    pairingCode: masterPairingPin,
+    pairedAt: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+    isOnline: true,
+    batteryLevel: 100,
+    cashierName: "المسؤول الرئيسي",
+    currentScreen: "pos",
+    branchName: "الفرع الرئيسي",
+    salesCount: 0,
+    totalSalesAmount: 0,
+    ordersCount: 0,
+    lastActivitySummary: "تم تفعيل كود الاشتراك وتعيينه كجهاز رئيسي",
+    lastActivityAt: new Date().toISOString(),
+  };
+
+  connectedDevices = [masterDev];
   liveKitchenOrders = [];
   liveCartState = {
     items: [],
@@ -529,6 +706,20 @@ app.post("/api/system/reset-zero", (req, res) => {
     total: 0,
     customerName: "عميل عام",
     pointsEarned: 0,
+    updatedAt: new Date().toISOString(),
+  };
+  masterSharedStoreState = {
+    masterDeviceId: masterDev.id,
+    masterDeviceName: masterDev.name,
+    boundSubscriptionCode: boundSubscriptionCode || "ACTIVE",
+    products: [],
+    categories: [{ id: 'cat_all', nameAr: 'الكل', nameEn: 'All', icon: 'LayoutGrid', color: '#f59e0b', sortOrder: 0 }],
+    customers: [],
+    sales: [],
+    expenses: [],
+    refunds: [],
+    debtTransactions: [],
+    settings: liveMenuCatalog.settings,
     updatedAt: new Date().toISOString(),
   };
   liveMenuCatalog = {
@@ -542,10 +733,10 @@ app.post("/api/system/reset-zero", (req, res) => {
 
   broadcastSseEvent("KITCHEN_ORDERS_UPDATE", []);
   broadcastSseEvent("CART_UPDATE", liveCartState);
-  broadcastSseEvent("DEVICE_DISCONNECTED", { devices: [] });
+  broadcastSseEvent("DEVICE_DISCONNECTED", { devices: connectedDevices });
   broadcastSseEvent("MENU_CATALOG_UPDATED", liveMenuCatalog);
 
-  res.json({ success: true, message: "تم تصفير كافة بيانات الخادم والأجهزة والطلبات بنجاح" });
+  res.json({ success: true, devices: connectedDevices, message: "تم تصفير كافة بيانات الخادم وتعيين الجهاز الرئيسي بنجاح" });
 });
 
 // Server-Sent Events (SSE) stream for instantaneous cross-device synchronization
@@ -565,6 +756,7 @@ app.get("/api/sync/stream", (req, res) => {
     devices: connectedDevices,
     liveCart: liveCartState,
     kitchenOrders: liveKitchenOrders,
+    sharedStoreState: masterSharedStoreState,
     timestamp: new Date().toISOString()
   })}\n\n`);
 
@@ -579,71 +771,377 @@ app.get("/api/devices/list", (_req, res) => {
   const now = Date.now();
   connectedDevices = connectedDevices.map(d => ({
     ...d,
-    isOnline: (now - new Date(d.lastSeen).getTime()) < 300000 // online if seen within 5 min
+    isOnline: d.role === 'master_pos' ? true : (now - new Date(d.lastSeen).getTime()) < 600000 // online if seen within 10 min
   }));
   res.json({
     success: true,
     masterPairingPin,
     devices: connectedDevices,
+    sharedStoreState: masterSharedStoreState,
     totalOnline: connectedDevices.filter(d => d.isOnline).length,
   });
 });
 
-// Pair / Register a new terminal
+// Pair / Register a new terminal bound to Master Device & Subscription
 app.post("/api/devices/pair", (req, res) => {
-  const { name, role, deviceType, pairingCode, cashierName, branchName } = req.body;
-  const cleanCode = normalizeDevicePin(pairingCode);
+  const {
+    id: requestedDeviceId,
+    name,
+    role,
+    roleLabelAr,
+    workDescription,
+    workPermissions,
+    masterDeviceId,
+    masterDeviceFingerprint,
+    boundSubscriptionCode,
+    subscriptionLinkCode,
+    uniqueDeviceCode,
+    deviceType,
+    pairingCode,
+    cashierName,
+    branchName,
+  } = req.body;
+
+  const rawInputCode = String(uniqueDeviceCode || pairingCode || subscriptionLinkCode || '').trim().toUpperCase();
+  const cleanCode = normalizeDevicePin(pairingCode || uniqueDeviceCode || subscriptionLinkCode);
+
+  // Check if there is an existing pre-created sub-device matching this unique device code or pairing code
+  const preCreatedDevice = connectedDevices.find(
+    d =>
+      d.role !== 'master_pos' &&
+      (normalizeDevicePin(d.pairingCode) === cleanCode ||
+        (d.uniqueDeviceCode && d.uniqueDeviceCode.toUpperCase() === rawInputCode) ||
+        (d.uniqueDeviceCode && normalizeDevicePin(d.uniqueDeviceCode) === cleanCode) ||
+        (d.subscriptionLinkCode && d.subscriptionLinkCode.toUpperCase() === rawInputCode))
+  );
 
   const isValidPin =
+    Boolean(preCreatedDevice) ||
     cleanCode === masterPairingPin ||
     recentPairingPins.has(cleanCode) ||
+    recentPairingPins.has(rawInputCode) ||
     cleanCode === "123456" ||
     cleanCode === "849210" ||
     cleanCode === "MASTER" ||
     activeDeviceTransfers.has(cleanCode) ||
     persistentPartnerChannels.has(cleanCode) ||
+    rawInputCode.startsWith('DEV-') ||
+    rawInputCode.startsWith('SUB-') ||
+    rawInputCode.startsWith('KIAN-') ||
     (/^\d{6}$/.test(cleanCode) && cleanCode.length === 6);
 
   if (!cleanCode || !isValidPin) {
     return res.status(400).json({
       success: false,
-      error: "رمز الربط (PIN) غير صحيح. تأكد من الرمز المكون من 6 أرقام المعروض على جهاز الكاشير الرئيسي.",
+      error: "كود ربط الجهاز غير صحيح. تأكد من إدخال الكود المربوط بالجهاز الرئيسي والاشتراك بشكل صحيح.",
     });
   }
 
-  // Add to recognized pins
   recentPairingPins.add(cleanCode);
 
+  const masterDev = connectedDevices.find(d => d.role === 'master_pos');
+  const resolvedMasterId = masterDeviceId || preCreatedDevice?.masterDeviceId || masterDev?.masterDeviceId || masterDev?.id || masterSharedStoreState.masterDeviceId;
+  const resolvedSubCode = boundSubscriptionCode || preCreatedDevice?.boundSubscriptionCode || masterDev?.boundSubscriptionCode || masterSharedStoreState.boundSubscriptionCode || 'ACTIVE';
+  const resolvedRole = role || preCreatedDevice?.role || 'secondary_pos';
+
+  const defaultRoleLabels: Record<string, string> = {
+    master_pos: 'الجهاز الرئيسي (Master POS)',
+    secondary_pos: 'كاشير فرعي (Cashier)',
+    waiter_mobile: 'نادل / كابتن صالة (Waiter)',
+    assistant: 'مساعد كاشير ومبيعات (Assistant)',
+    stock_scanner: 'مساعد مخزون وجرد (Scanner)',
+    kitchen_display: 'شاشة المطبخ (KDS)',
+    customer_display: 'شاشة عرض الزبون (CFD)',
+    supervisor: 'مشرف / محاسب فرعي (Supervisor)',
+  };
+
+  const resolvedWorkPermissions = workPermissions || preCreatedDevice?.workPermissions || {
+    allowPosSales: resolvedRole === 'secondary_pos' || resolvedRole === 'assistant' || resolvedRole === 'supervisor',
+    allowTableOrders: resolvedRole === 'waiter_mobile' || resolvedRole === 'secondary_pos' || resolvedRole === 'assistant',
+    allowCatalogAndStock: resolvedRole === 'stock_scanner' || resolvedRole === 'assistant' || resolvedRole === 'supervisor',
+    allowCustomersAndDebts: resolvedRole === 'secondary_pos' || resolvedRole === 'assistant' || resolvedRole === 'supervisor',
+    allowExpenses: resolvedRole === 'supervisor',
+    allowKitchenDisplay: resolvedRole === 'kitchen_display' || resolvedRole === 'waiter_mobile',
+    autoShareDataWithMaster: true,
+  };
+
+  const resolvedLinkCode =
+    subscriptionLinkCode ||
+    preCreatedDevice?.subscriptionLinkCode ||
+    `SUB-${String(resolvedSubCode).slice(-4).toUpperCase()}-${cleanCode}`;
+
+  const rolePrefixMap: Record<string, string> = {
+    master_pos: 'MST',
+    secondary_pos: 'CSH',
+    assistant: 'AST',
+    supervisor: 'SUP',
+    stock_scanner: 'SCN',
+    customer_display: 'CFD',
+    waiter_mobile: 'WTR',
+    kitchen_display: 'KDS',
+  };
+  const rolePrefix = rolePrefixMap[resolvedRole] || 'DEV';
+  const deviceSixDigitPin =
+    /^\d{6}$/.test(cleanCode) && cleanCode !== masterPairingPin
+      ? cleanCode
+      : Math.floor(100000 + Math.random() * 900000).toString();
+  const resolvedUniqueDeviceCode =
+    uniqueDeviceCode ||
+    preCreatedDevice?.uniqueDeviceCode ||
+    `DEV-${rolePrefix}-${deviceSixDigitPin}`;
+
+  recentPairingPins.add(deviceSixDigitPin);
+  recentPairingPins.add(resolvedUniqueDeviceCode.toUpperCase());
+
   const newDevice: ConnectedDevice = {
-    id: `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-    name: name || `جهاز جديد (${role || 'كاشير فرعي'})`,
-    role: role || 'secondary_pos',
-    deviceType: deviceType || 'tablet',
-    pairingCode: cleanCode,
-    pairedAt: new Date().toISOString(),
+    id: requestedDeviceId || preCreatedDevice?.id || `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: name || preCreatedDevice?.name || `جهاز مرتبط (${defaultRoleLabels[resolvedRole] || 'كاشير فرعي'})`,
+    role: resolvedRole,
+    roleLabelAr: roleLabelAr || preCreatedDevice?.roleLabelAr || defaultRoleLabels[resolvedRole] || 'جهاز تابع',
+    workDescription:
+      workDescription ||
+      preCreatedDevice?.workDescription ||
+      'مرتبط بالجهاز الرئيسي والاشتراك مع مشاركة تلقائية فورية للبيانات والمبيعات',
+    workPermissions: resolvedWorkPermissions,
+    masterDeviceId: resolvedMasterId,
+    masterDeviceFingerprint: masterDeviceFingerprint || preCreatedDevice?.masterDeviceFingerprint || masterDev?.masterDeviceFingerprint,
+    boundSubscriptionCode: resolvedSubCode,
+    subscriptionLinkCode: resolvedLinkCode,
+    uniqueDeviceCode: resolvedUniqueDeviceCode,
+    deviceType: deviceType || preCreatedDevice?.deviceType || 'tablet',
+    pairingCode: deviceSixDigitPin,
+    pairedAt: preCreatedDevice?.pairedAt || new Date().toISOString(),
     lastSeen: new Date().toISOString(),
     isOnline: true,
     batteryLevel: 98,
-    cashierName: cashierName || "كاشير مناوب",
-    branchName: branchName || "الفرع الرئيسي",
+    cashierName: cashierName || preCreatedDevice?.cashierName || defaultRoleLabels[resolvedRole] || "موظف مناوب",
+    branchName: branchName || preCreatedDevice?.branchName || "الفرع الرئيسي",
+    salesCount: preCreatedDevice?.salesCount || 0,
+    totalSalesAmount: preCreatedDevice?.totalSalesAmount || 0,
+    ordersCount: preCreatedDevice?.ordersCount || 0,
+    lastActivitySummary: `تم الربط بالجهاز الرئيسي كـ (${defaultRoleLabels[resolvedRole] || resolvedRole}) وتفعيل مشاركة البيانات تلقائياً`,
+    lastActivityAt: new Date().toISOString(),
   };
 
-  connectedDevices.push(newDevice);
+  const existingIdx = connectedDevices.findIndex(d => d.id === newDevice.id);
+  if (existingIdx !== -1) {
+    connectedDevices[existingIdx] = newDevice;
+  } else {
+    connectedDevices.push(newDevice);
+  }
 
   // Broadcast event to all active terminals via SSE
   broadcastSseEvent('DEVICE_CONNECTED', {
     device: newDevice,
     devices: connectedDevices,
+    sharedStoreState: masterSharedStoreState,
     timestamp: new Date().toISOString(),
   });
 
   res.json({
     success: true,
     device: newDevice,
+    devices: connectedDevices,
     masterPairingPin,
     liveCart: liveCartState,
     kitchenOrders: liveKitchenOrders,
-    message: "تم ربط الجهاز بالنظام المركزي بنجاح",
+    sharedStoreState: masterSharedStoreState,
+    message: "تم ربط الجهاز بالاشتراك والجهاز الرئيسي بنجاح وتفعيل مشاركة البيانات التلقائية",
+  });
+});
+
+// Update a sub-device's role, work description, work permissions, or uniqueDeviceCode from the Master Device
+app.post("/api/devices/update-sub-device", (req, res) => {
+  const { deviceId, name, role, roleLabelAr, workDescription, workPermissions, branchName, cashierName, uniqueDeviceCode, pairingCode } = req.body;
+  const idx = connectedDevices.findIndex(d => d.id === deviceId);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: "الجهاز غير موجود في قائمة الأجهزة المتصلة" });
+  }
+
+  if (uniqueDeviceCode) recentPairingPins.add(String(uniqueDeviceCode).toUpperCase());
+  if (pairingCode) recentPairingPins.add(String(pairingCode).toUpperCase());
+
+  const updated: ConnectedDevice = {
+    ...connectedDevices[idx],
+    ...(name ? { name } : {}),
+    ...(role ? { role } : {}),
+    ...(roleLabelAr ? { roleLabelAr } : {}),
+    ...(workDescription !== undefined ? { workDescription } : {}),
+    ...(workPermissions ? { workPermissions: { ...connectedDevices[idx].workPermissions, ...workPermissions, autoShareDataWithMaster: true } } : {}),
+    ...(branchName ? { branchName } : {}),
+    ...(cashierName ? { cashierName } : {}),
+    ...(uniqueDeviceCode ? { uniqueDeviceCode } : {}),
+    ...(pairingCode ? { pairingCode } : {}),
+    lastSeen: new Date().toISOString(),
+    lastActivitySummary: `تم تحديث وظيفة وصلاحيات عمل الجهاز بواسطة الجهاز الرئيسي`,
+    lastActivityAt: new Date().toISOString(),
+  };
+
+  connectedDevices[idx] = updated;
+
+  broadcastSseEvent('DEVICE_WORK_UPDATED', {
+    device: updated,
+    devices: connectedDevices,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    device: updated,
+    devices: connectedDevices,
+    message: "تم تحديث وظيفة وعمل الجهاز ومزامنتها فوراً",
+  });
+});
+
+// Automatic Real-Time Mesh Data Sharing between Master Device and all Sub-Devices
+app.post("/api/devices/mesh-sync/push", (req, res) => {
+  try {
+    const {
+      sourceDeviceId,
+      sourceDeviceName,
+      sourceDeviceRole,
+      boundSubscriptionCode,
+      eventType, // 'SALE_CREATED' | 'ORDER_CREATED' | 'CATALOG_UPDATED' | 'FULL_SYNC'
+      sale,
+      kitchenOrder,
+      products,
+      categories,
+      customers,
+      sales,
+      expenses,
+      refunds,
+      debtTransactions,
+      settings,
+    } = req.body || {};
+
+    const nowIso = new Date().toISOString();
+
+    if (boundSubscriptionCode) {
+      masterSharedStoreState.boundSubscriptionCode = boundSubscriptionCode;
+    }
+
+    // 1. If a single new Sale was created on any device (Cashier, Assistant, or Master)
+    if (sale && sale.id) {
+      const taggedSale = {
+        ...sale,
+        sourceDeviceId: sale.sourceDeviceId || sourceDeviceId || 'dev-master-1',
+        sourceDeviceName: sale.sourceDeviceName || sourceDeviceName || 'جهاز كاشير',
+        sourceDeviceRole: sale.sourceDeviceRole || sourceDeviceRole || 'secondary_pos',
+      };
+      const exists = masterSharedStoreState.sales.some((s: any) => s.id === taggedSale.id);
+      if (!exists) {
+        masterSharedStoreState.sales = [taggedSale, ...masterSharedStoreState.sales];
+      }
+    }
+
+    // 2. If full sales list provided, merge without losing sub-device sales
+    if (Array.isArray(sales) && sales.length > 0) {
+      const existingIds = new Set(masterSharedStoreState.sales.map((s: any) => s.id));
+      const newOnes = sales.filter((s: any) => s && s.id && !existingIds.has(s.id));
+      if (newOnes.length > 0 || masterSharedStoreState.sales.length === 0) {
+        masterSharedStoreState.sales = [...newOnes, ...masterSharedStoreState.sales];
+      }
+    }
+
+    // 3. If Kitchen Order created (e.g. from Waiter device or Cashier)
+    if (kitchenOrder && kitchenOrder.id) {
+      const taggedOrder = {
+        ...kitchenOrder,
+        sourceDeviceId: kitchenOrder.sourceDeviceId || sourceDeviceId,
+        sourceDevice: kitchenOrder.sourceDevice || sourceDeviceName || 'جهاز النادل',
+        sourceDeviceRole: kitchenOrder.sourceDeviceRole || sourceDeviceRole || 'waiter_mobile',
+      };
+      const existsOrd = liveKitchenOrders.some((o: any) => o.id === taggedOrder.id);
+      if (!existsOrd) {
+        liveKitchenOrders.unshift(taggedOrder);
+      }
+    }
+
+    // 4. Sync catalog & operational records
+    if (Array.isArray(products)) masterSharedStoreState.products = products;
+    if (Array.isArray(categories) && categories.length > 0) masterSharedStoreState.categories = categories;
+    if (Array.isArray(customers)) masterSharedStoreState.customers = customers;
+    if (Array.isArray(expenses)) masterSharedStoreState.expenses = expenses;
+    if (Array.isArray(refunds)) masterSharedStoreState.refunds = refunds;
+    if (Array.isArray(debtTransactions)) masterSharedStoreState.debtTransactions = debtTransactions;
+    if (settings) masterSharedStoreState.settings = settings;
+    masterSharedStoreState.updatedAt = nowIso;
+
+    // 5. Update telemetry & sales statistics on the source device in connectedDevices
+    if (sourceDeviceId) {
+      const devIdx = connectedDevices.findIndex(
+        d => d.id === sourceDeviceId || d.name === sourceDeviceName
+      );
+      if (devIdx !== -1) {
+        const dev = connectedDevices[devIdx];
+        const devSales = masterSharedStoreState.sales.filter(
+          (s: any) => s.sourceDeviceId === dev.id || s.sourceDeviceName === dev.name
+        );
+        const computedSalesCount = devSales.length;
+        const computedSalesTotal = devSales.reduce((acc: number, s: any) => acc + (Number(s.total) || 0), 0);
+        const devOrdersCount = liveKitchenOrders.filter(
+          (o: any) => o.sourceDeviceId === dev.id || o.sourceDevice === dev.name
+        ).length;
+
+        let activitySummary = dev.lastActivitySummary || 'متصل ويشارك البيانات تلقائياً';
+        if (sale) {
+          activitySummary = `أصدر فاتورة ${sale.invoiceNumber} بقيمة ${Number(sale.total || 0).toLocaleString()}`;
+        } else if (kitchenOrder) {
+          activitySummary = `أرسل طلب ${kitchenOrder.orderNumber} (${kitchenOrder.tableName || 'طلب جديد'})`;
+        } else if (eventType === 'CATALOG_UPDATED') {
+          activitySummary = `قام بتحديث بيانات المنتجات والمخزون (${products?.length || 0} صنف)`;
+        }
+
+        connectedDevices[devIdx] = {
+          ...dev,
+          isOnline: true,
+          lastSeen: nowIso,
+          salesCount: Math.max(dev.salesCount || 0, computedSalesCount),
+          totalSalesAmount: Math.max(dev.totalSalesAmount || 0, computedSalesTotal),
+          ordersCount: Math.max(dev.ordersCount || 0, devOrdersCount),
+          lastActivitySummary: activitySummary,
+          lastActivityAt: nowIso,
+        };
+      }
+    }
+
+    // 6. Broadcast automatic sync event to Master Device and all connected Sub-Devices
+    const syncPayload = {
+      eventType: eventType || (sale ? 'SALE_CREATED' : kitchenOrder ? 'ORDER_CREATED' : 'STATE_SYNC'),
+      sourceDeviceId,
+      sourceDeviceName,
+      sourceDeviceRole,
+      sale,
+      kitchenOrder,
+      sharedStoreState: masterSharedStoreState,
+      devices: connectedDevices,
+      kitchenOrders: liveKitchenOrders,
+      timestamp: nowIso,
+    };
+
+    broadcastSseEvent('MESH_AUTO_DATA_SYNC', syncPayload);
+    if (kitchenOrder) {
+      broadcastSseEvent('KITCHEN_ORDERS_UPDATE', liveKitchenOrders);
+    }
+
+    res.json({
+      success: true,
+      devices: connectedDevices,
+      sharedStoreState: masterSharedStoreState,
+      timestamp: nowIso,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/devices/mesh-sync/state", (_req, res) => {
+  res.json({
+    success: true,
+    devices: connectedDevices,
+    sharedStoreState: masterSharedStoreState,
+    kitchenOrders: liveKitchenOrders,
+    masterPairingPin,
   });
 });
 
@@ -1297,6 +1795,58 @@ app.post("/api/license/activate-device", (req, res) => {
 
   activatedLicenseRegistry[cleanKey] = newRecord;
   saveLicenseRegistryToDisk();
+
+  // Set this device as the Master Device (الجهاز الرئيسي صاحب كود الاشتراك)
+  masterSharedStoreState.masterDeviceId = newRecord.deviceId;
+  masterSharedStoreState.masterDeviceName = `${newRecord.customerName || 'متجر كيان'} — الجهاز الرئيسي (${newRecord.deviceName})`;
+  masterSharedStoreState.boundSubscriptionCode = newRecord.code;
+
+  const masterDeviceEntry: ConnectedDevice = {
+    id: newRecord.deviceId,
+    name: `الجهاز الرئيسي (${newRecord.deviceName})`,
+    role: "master_pos",
+    roleLabelAr: "الجهاز الرئيسي (صاحب الاشتراك)",
+    workDescription: `الجهاز الرئيسي المفعل بكود الاشتراك (${newRecord.code}) — تحكم كامل وإضافة أجهزة ومراقبة المبيعات تلقائياً`,
+    workPermissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: true,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+    masterDeviceId: newRecord.deviceId,
+    masterDeviceFingerprint: newRecord.deviceFingerprint,
+    boundSubscriptionCode: newRecord.code,
+    subscriptionLinkCode: `SUB-${newRecord.code.slice(-4).toUpperCase()}-${masterPairingPin}`,
+    deviceType: "desktop",
+    pairingCode: masterPairingPin,
+    pairedAt: nowIso,
+    lastSeen: nowIso,
+    isOnline: true,
+    batteryLevel: 100,
+    cashierName: newRecord.customerName || "المسؤول الرئيسي",
+    currentScreen: "pos",
+    branchName: "الفرع الرئيسي",
+    salesCount: 0,
+    totalSalesAmount: 0,
+    ordersCount: 0,
+    lastActivitySummary: `تم تفعيل كود الاشتراك (${newRecord.code}) وتعيينه كجهاز رئيسي`,
+    lastActivityAt: nowIso,
+  };
+
+  // Replace any previous master_pos entry and keep sub-devices linked to this subscription
+  connectedDevices = [
+    masterDeviceEntry,
+    ...connectedDevices
+      .filter(d => d.role !== "master_pos" && d.id !== newRecord.deviceId)
+      .map(d => ({
+        ...d,
+        masterDeviceId: newRecord.deviceId,
+        boundSubscriptionCode: newRecord.code,
+      })),
+  ];
 
   // Broadcast transfer & revocation so any previous or unauthorized devices immediately lose their subscription!
   broadcastSseEvent("LICENSE_TRANSFERRED_OR_REVOKED", {

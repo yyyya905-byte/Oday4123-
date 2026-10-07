@@ -46,6 +46,7 @@ export const ThemeColorSelector: React.FC<ThemeColorSelectorProps> = ({
     setThemeColor,
     updateQrMenuTheme,
     setIsCustomerMenuPreviewOpen,
+    businessMode,
     theme,
     notify
   } = useApp();
@@ -645,8 +646,9 @@ export const ThemeColorSelector: React.FC<ThemeColorSelectorProps> = ({
       </div>
 
       {/* ==========================================
-          CUSTOMER QR MENU PAGE BRAND COLORS CUSTOMIZER (تخصيص الألوان الأساسية لصفحة منيو الزبون CustomerQrMenuPage)
+          CUSTOMER QR MENU PAGE BRAND COLORS CUSTOMIZER (تخصيص الألوان الأساسية لصفحة منيو الزبون CustomerQrMenuPage - يظهر فقط في قسم المطعم)
          ========================================== */}
+      {businessMode === 'restaurant' && (
       <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
@@ -827,6 +829,7 @@ export const ThemeColorSelector: React.FC<ThemeColorSelectorProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

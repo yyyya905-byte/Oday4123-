@@ -1085,3 +1085,306 @@ export function getLicenseTimeRemaining(expiresAtIso?: string): {
     return { daysRemaining: 0, hoursRemaining: 0, isExpired: false, totalHoursLeft: 0, isLifetime: false };
   }
 }
+
+/**
+ * Generates a Subscription-Bound Device Link Code (كود ربط الجهاز المربوط بنفس الجهاز الرئيسي والاشتراك)
+ * Replaces the old standalone data-sharing code with a unified code bound to the Master Device & Subscription.
+ */
+export function generateSubscriptionBoundDeviceCode(
+  subscriptionCode?: string | null,
+  masterDeviceId?: string | null,
+  pinSeed?: string
+): string {
+  const hw = getDeviceHardwareInfo();
+  const devId = (masterDeviceId || hw.deviceId || 'KIAN-DEV-MAIN').trim().toUpperCase();
+  const devParts = devId.split('-');
+  const deviceTag = (devParts[2] || devParts[devParts.length - 1] || 'MAIN').slice(0, 4);
+
+  const cleanSub = (subscriptionCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const subscriptionTag = cleanSub ? cleanSub.slice(-4) : 'TRIAL';
+
+  const cleanPin =
+    pinSeed && /^\d{6}$/.test(pinSeed.trim())
+      ? pinSeed.trim()
+      : Math.floor(100000 + Math.random() * 900000).toString();
+
+  return `KIAN-${subscriptionTag}-${deviceTag}-${cleanPin}`;
+}
+
+/**
+ * Generates a unique, dedicated code specifically for a single device (كل جهاز له كود خاص فيه)
+ */
+export function generateUniqueCodeForSingleDevice(
+  role: string,
+  seedOrExisting: string | string[] = [],
+  pinSeed?: string
+): string {
+  const rolePrefixMap: Record<string, string> = {
+    master_pos: 'MST',
+    main_cashier: 'MST',
+    secondary_pos: 'CSH',
+    assistant: 'AST',
+    supervisor: 'SUP',
+    stock_scanner: 'SCN',
+    customer_display: 'CFD',
+    waiter_mobile: 'WTR',
+    kitchen_display: 'KDS',
+  };
+  const prefix = rolePrefixMap[role] || 'DEV';
+  const existingCodes = Array.isArray(seedOrExisting) ? seedOrExisting : [];
+  const existingUpper = new Set(existingCodes.map(c => String(c || '').toUpperCase().trim()));
+
+  let deterministicSeedPin = '';
+  if (typeof seedOrExisting === 'string' && seedOrExisting.trim()) {
+    let hash = 0;
+    const str = seedOrExisting.trim();
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    deterministicSeedPin = String(100000 + (hash % 900000));
+  }
+
+  let pinCode =
+    pinSeed && /^\d{6}$/.test(pinSeed.trim())
+      ? pinSeed.trim()
+      : deterministicSeedPin || Math.floor(100000 + Math.random() * 900000).toString();
+
+  let uniqueCode = `DEV-${prefix}-${pinCode}`;
+  let attempts = 0;
+  while ((existingUpper.has(uniqueCode) || existingUpper.has(pinCode)) && attempts < 25) {
+    pinCode = Math.floor(100000 + Math.random() * 900000).toString();
+    uniqueCode = `DEV-${prefix}-${pinCode}`;
+    attempts++;
+  }
+
+  return uniqueCode;
+}
+
+/**
+ * Extracts either the 6-digit numeric PIN or normalizes a Subscription-Bound Device Code (e.g. SUB-S1DF-8A3F-849210 -> 849210)
+ */
+export function extractNumericPinFromBoundCode(input?: string | null): string {
+  if (!input) return '';
+  const normalized = String(input)
+    .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+    .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+    .trim()
+    .toUpperCase();
+
+  // Check if it ends with a 6-digit segment like SUB-S1DF-XXXX-849210
+  const sixDigitMatch = normalized.match(/(\d{6})$/);
+  if (sixDigitMatch) {
+    return sixDigitMatch[1];
+  }
+  const anySixDigits = normalized.replace(/\D/g, '');
+  if (anySixDigits.length === 6) {
+    return anySixDigits;
+  }
+  return normalized.replace(/[\s\-_]/g, '');
+}
+
+export interface RoleWorkPreset {
+  role: 'master_pos' | 'secondary_pos' | 'waiter_mobile' | 'assistant' | 'stock_scanner' | 'kitchen_display' | 'customer_display' | 'supervisor';
+  labelAr: string;
+  labelEn: string;
+  defaultDeviceNameAr: string;
+  defaultDeviceType: 'desktop' | 'tablet' | 'mobile';
+  workDescriptionAr: string;
+  permissions: {
+    allowPosSales: boolean;
+    allowTableOrders: boolean;
+    allowCatalogAndStock: boolean;
+    allowCustomersAndDebts: boolean;
+    allowExpenses: boolean;
+    allowKitchenDisplay: boolean;
+    autoShareDataWithMaster: boolean;
+  };
+}
+
+export const DEVICE_ROLE_WORK_PRESETS: Record<string, RoleWorkPreset> = {
+  secondary_pos: {
+    role: 'secondary_pos',
+    labelAr: 'كاشير فرعي (Cashier)',
+    labelEn: 'Secondary Cashier POS',
+    defaultDeviceNameAr: 'جهاز كاشير فرعي 2',
+    defaultDeviceType: 'desktop',
+    workDescriptionAr: 'إصدار فواتير المبيعات، تحصيل المدفوعات، ومشاركة المبيعات والمخزون تلقائياً مع الجهاز الرئيسي',
+    permissions: {
+      allowPosSales: true,
+      allowTableOrders: false,
+      allowCatalogAndStock: false,
+      allowCustomersAndDebts: true,
+      allowExpenses: false,
+      allowKitchenDisplay: false,
+      autoShareDataWithMaster: true,
+    },
+  },
+  waiter_mobile: {
+    role: 'waiter_mobile',
+    labelAr: 'نادل / كابتن صالة (Waiter)',
+    labelEn: 'Mobile Waiter Pad',
+    defaultDeviceNameAr: 'جهاز النادل (طلبات الطاولات)',
+    defaultDeviceType: 'mobile',
+    workDescriptionAr: 'استلام طلبات الطاولات والزبائن في الصالة وإرسالها فورياً للكاشير الرئيسي والمطبخ',
+    permissions: {
+      allowPosSales: false,
+      allowTableOrders: true,
+      allowCatalogAndStock: false,
+      allowCustomersAndDebts: false,
+      allowExpenses: false,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+  },
+  assistant: {
+    role: 'assistant',
+    labelAr: 'مساعد كاشير ومبيعات (Assistant)',
+    labelEn: 'Sales & POS Assistant',
+    defaultDeviceNameAr: 'جهاز المساعد (مبيعات وتجهيز)',
+    defaultDeviceType: 'tablet',
+    workDescriptionAr: 'مساعدة الكاشير في تجهيز السلة، البيع السريع، فحص الأسعار، وخدمة الزبائن مع مزامنة تلقائية',
+    permissions: {
+      allowPosSales: true,
+      allowTableOrders: false,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: false,
+      allowKitchenDisplay: false,
+      autoShareDataWithMaster: true,
+    },
+  },
+  stock_scanner: {
+    role: 'stock_scanner',
+    labelAr: 'مساعد مخزون وجرد (Stock & Scanner)',
+    labelEn: 'Inventory & Barcode Assistant',
+    defaultDeviceNameAr: 'جهاز جرد المخزون والباركود',
+    defaultDeviceType: 'mobile',
+    workDescriptionAr: 'مسح الباركود، جرد المستودع والرفوف، وتحديث المنتجات والكميات تلقائياً مع الجهاز الرئيسي',
+    permissions: {
+      allowPosSales: false,
+      allowTableOrders: false,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: false,
+      allowExpenses: false,
+      allowKitchenDisplay: false,
+      autoShareDataWithMaster: true,
+    },
+  },
+  kitchen_display: {
+    role: 'kitchen_display',
+    labelAr: 'شاشة المطبخ والتحضير (KDS)',
+    labelEn: 'Kitchen Display (KDS)',
+    defaultDeviceNameAr: 'شاشة المطبخ والتحضير',
+    defaultDeviceType: 'tablet',
+    workDescriptionAr: 'استقبال طلبات الكاشير والنادل ومنيو QR وتحديث حالة تحضير الوجبات لحظياً',
+    permissions: {
+      allowPosSales: false,
+      allowTableOrders: false,
+      allowCatalogAndStock: false,
+      allowCustomersAndDebts: false,
+      allowExpenses: false,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+  },
+  customer_display: {
+    role: 'customer_display',
+    labelAr: 'شاشة عرض الزبون (CFD)',
+    labelEn: 'Customer Display (CFD)',
+    defaultDeviceNameAr: 'شاشة الزبون التفاعلية',
+    defaultDeviceType: 'tablet',
+    workDescriptionAr: 'عرض الفاتورة الحية، الأسعار، والعروض للعميل أمام الكاشير بشكل متزامن',
+    permissions: {
+      allowPosSales: false,
+      allowTableOrders: false,
+      allowCatalogAndStock: false,
+      allowCustomersAndDebts: false,
+      allowExpenses: false,
+      allowKitchenDisplay: false,
+      autoShareDataWithMaster: true,
+    },
+  },
+  supervisor: {
+    role: 'supervisor',
+    labelAr: 'مشرف / محاسب فرعي (Supervisor)',
+    labelEn: 'Supervisor & Accountant',
+    defaultDeviceNameAr: 'جهاز المشرف والمحاسبة',
+    defaultDeviceType: 'desktop',
+    workDescriptionAr: 'متابعة الفواتير، تحصيل الديون، تسجيل المصروفات، ومراقبة المخزون بالتزامن مع الجهاز الرئيسي',
+    permissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: true,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+  },
+  master_pos: {
+    role: 'master_pos',
+    labelAr: 'الجهاز الرئيسي (Master POS)',
+    labelEn: 'Master POS Device',
+    defaultDeviceNameAr: 'الجهاز الرئيسي (صاحب الاشتراك)',
+    defaultDeviceType: 'desktop',
+    workDescriptionAr: 'الجهاز الرئيسي المفعل بكود الاشتراك — تحكم كامل، إضافة أجهزة، والاطلاع الحي على مبيعات وبيانات كافة الأجهزة',
+    permissions: {
+      allowPosSales: true,
+      allowTableOrders: true,
+      allowCatalogAndStock: true,
+      allowCustomersAndDebts: true,
+      allowExpenses: true,
+      allowKitchenDisplay: true,
+      autoShareDataWithMaster: true,
+    },
+  },
+};
+
+export function getDefaultWorkPermissionsForRole(role: string): {
+  roleLabelAr: string;
+  workDescription: string;
+  labelAr: string;
+  workDescriptionAr: string;
+  defaultDeviceNameAr: string;
+  defaultDeviceType: 'desktop' | 'tablet' | 'mobile';
+  allowPosSales: boolean;
+  allowTableOrders: boolean;
+  allowCatalogAndStock: boolean;
+  allowCustomersAndDebts: boolean;
+  allowExpenses: boolean;
+  allowKitchenDisplay: boolean;
+  canProcessSales: boolean;
+  canTakeTableOrders: boolean;
+  canManageInventory: boolean;
+  canViewSalesReports: boolean;
+  canApplyDiscounts: boolean;
+  canManageCustomersAndDebts: boolean;
+  canAccessKitchenOrders: boolean;
+  autoShareDataWithMaster: boolean;
+} {
+  const preset = DEVICE_ROLE_WORK_PRESETS[role] || DEVICE_ROLE_WORK_PRESETS.secondary_pos;
+  const p = preset.permissions;
+  return {
+    roleLabelAr: preset.labelAr,
+    workDescription: preset.workDescriptionAr,
+    labelAr: preset.labelAr,
+    workDescriptionAr: preset.workDescriptionAr,
+    defaultDeviceNameAr: preset.defaultDeviceNameAr,
+    defaultDeviceType: preset.defaultDeviceType,
+    allowPosSales: p.allowPosSales,
+    allowTableOrders: p.allowTableOrders,
+    allowCatalogAndStock: p.allowCatalogAndStock,
+    allowCustomersAndDebts: p.allowCustomersAndDebts,
+    allowExpenses: p.allowExpenses,
+    allowKitchenDisplay: p.allowKitchenDisplay,
+    canProcessSales: p.allowPosSales,
+    canTakeTableOrders: p.allowTableOrders,
+    canManageInventory: p.allowCatalogAndStock,
+    canViewSalesReports: role === 'master_pos' || role === 'supervisor' || role === 'secondary_pos',
+    canApplyDiscounts: role === 'master_pos' || role === 'supervisor' || role === 'secondary_pos',
+    canManageCustomersAndDebts: p.allowCustomersAndDebts,
+    canAccessKitchenOrders: p.allowKitchenDisplay,
+    autoShareDataWithMaster: true,
+  };
+}
+

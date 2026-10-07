@@ -105,7 +105,7 @@ const PAPER_PRESETS: PaperPreset[] = [
 ];
 
 export const PrintSettingsPanel: React.FC = () => {
-  const { settings, updateSettings, products, notify, formatCurrency, language } = useApp();
+  const { settings, updateSettings, products, notify, formatCurrency, language, businessMode } = useApp();
 
   // Local Form State
   const [formData, setFormData] = useState({
@@ -512,7 +512,9 @@ export const PrintSettingsPanel: React.FC = () => {
             <span>مفاتيح وخيارات الطباعة الذكية (Print Automation & Features)</span>
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            التحكم في الأوامر التلقائية عند البيع، بونات المطبخ، قطع الورق، ودرج النقدية
+            {businessMode === 'restaurant'
+              ? 'التحكم في الأوامر التلقائية عند البيع، بونات المطبخ، قطع الورق، ودرج النقدية'
+              : 'التحكم في الأوامر التلقائية عند البيع، قطع الورق، ودرج النقدية'}
           </p>
         </div>
 
@@ -538,26 +540,28 @@ export const PrintSettingsPanel: React.FC = () => {
             </label>
           </div>
 
-          {/* 2. Auto Print Kitchen Ticket */}
-          <div className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-start justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                طباعة بون تحضير المطبخ
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                إصدار تذكرة تشغيل المطبخ للمطاعم والكافيهات
-              </span>
+          {/* 2. Auto Print Kitchen Ticket (Restaurant Only) */}
+          {businessMode === 'restaurant' && (
+            <div className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-start justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                  طباعة بون تحضير المطبخ
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                  إصدار تذكرة تشغيل المطبخ للمطاعم والكافيهات
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={formData.autoPrintKitchenTicket}
+                  onChange={e => setFormData({ ...formData, autoPrintKitchenTicket: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] peer-checked:after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
+              </label>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 mt-0.5">
-              <input
-                type="checkbox"
-                checked={formData.autoPrintKitchenTicket}
-                onChange={e => setFormData({ ...formData, autoPrintKitchenTicket: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] peer-checked:after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
-            </label>
-          </div>
+          )}
 
           {/* 3. Customer & Merchant Double Copies */}
           <div className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-start justify-between gap-3">

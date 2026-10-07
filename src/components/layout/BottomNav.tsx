@@ -9,6 +9,7 @@ import {
   Grid
 } from 'lucide-react';
 import { SectionsNavModal } from '../modals/SectionsNavModal';
+import { soundEffects } from '../../services/audio';
 
 export const BottomNav: React.FC = () => {
   const { activeTab, setActiveTab, t, cart, language } = useApp();
@@ -22,25 +23,37 @@ export const BottomNav: React.FC = () => {
       label: t('navPOS'),
       icon: ReceiptText,
       badge: cartCount > 0 ? cartCount : undefined,
-      onClick: () => setActiveTab('pos')
+      onClick: () => {
+        soundEffects.playCategorySwitch();
+        setActiveTab('pos');
+      }
     },
     {
       id: 'products' as ActiveTab,
       label: t('navProducts'),
       icon: Package,
-      onClick: () => setActiveTab('products')
+      onClick: () => {
+        soundEffects.playCategorySwitch();
+        setActiveTab('products');
+      }
     },
     {
       id: 'invoices' as ActiveTab,
       label: language === 'ar' ? 'الفواتير' : 'Invoices',
       icon: FileSpreadsheet,
-      onClick: () => setActiveTab('invoices')
+      onClick: () => {
+        soundEffects.playCategorySwitch();
+        setActiveTab('invoices');
+      }
     },
     {
       id: 'debts' as ActiveTab,
       label: language === 'ar' ? 'الديون' : 'Debts',
       icon: Coins,
-      onClick: () => setActiveTab('debts')
+      onClick: () => {
+        soundEffects.playCategorySwitch();
+        setActiveTab('debts');
+      }
     }
   ];
 
@@ -81,7 +94,10 @@ export const BottomNav: React.FC = () => {
         <button
           id="mobile-tab-sections"
           type="button"
-          onClick={() => setIsSectionsModalOpen(true)}
+          onClick={() => {
+            soundEffects.playGlassPress();
+            setIsSectionsModalOpen(true);
+          }}
           className="flex-1 flex flex-col items-center justify-center h-full min-h-[40px] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer active:scale-95 transition-all"
         >
           <div className="relative flex items-center justify-center">

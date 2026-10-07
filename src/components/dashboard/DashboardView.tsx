@@ -84,6 +84,7 @@ export const DashboardView: React.FC = () => {
     deleteCustomerReview,
     setIsRestaurantQrModalOpen,
     setIsCustomerMenuPreviewOpen,
+    businessMode,
     notify
   } = useApp();
 
@@ -1754,8 +1755,9 @@ export const DashboardView: React.FC = () => {
 
       {/* ==========================================
           CUSTOMER QR MENU EXPERIENCE RATINGS SUMMARY IN MANAGER DASHBOARD
-          (ملخص تقييمات تجربة العملاء عبر صفحة الـ QR Menu في لوحة تحكم المدير)
+          (ملخص تقييمات تجربة العملاء عبر صفحة الـ QR Menu في لوحة تحكم المدير - يظهر فقط في قسم المطعم)
          ========================================== */}
+      {businessMode === 'restaurant' && (
       <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
@@ -1970,6 +1972,7 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

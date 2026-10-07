@@ -19,6 +19,7 @@ import {
   Info,
   Sparkles,
   Radio,
+  Activity,
   Coins,
   Search,
   Grid
@@ -49,6 +50,7 @@ export const SectionsNavModal: React.FC<SectionsNavModalProps> = ({ isOpen, onCl
     products,
     devices,
     deliveryVehicles,
+    businessMode,
     currentUser
   } = useApp();
 
@@ -60,7 +62,10 @@ export const SectionsNavModal: React.FC<SectionsNavModalProps> = ({ isOpen, onCl
   const cartItemsCount = cart.reduce((acc, it) => acc + it.quantity, 0);
   const lowStockCount = products.filter(p => p.stock <= p.minStock && p.status === 'active').length;
   const vehiclesOnRoute = deliveryVehicles.filter(v => v.status === 'on_route').length;
-  const onlineDevicesCount = devices.filter(d => d.isOnline).length;
+  const visibleDevices = devices.filter(d =>
+    businessMode === 'restaurant' ? true : d.role !== 'kitchen_display' && d.role !== 'waiter_mobile'
+  );
+  const onlineDevicesCount = visibleDevices.filter(d => d.isOnline).length;
 
   const categories: SectionCategory[] = [
     {
@@ -164,10 +169,23 @@ export const SectionsNavModal: React.FC<SectionsNavModalProps> = ({ isOpen, onCl
         },
         {
           id: 'devices',
-          name: language === 'ar' ? 'مركز ربط الأجهزة' : 'Device Linking Hub',
-          desc: language === 'ar' ? 'مزامنة شاشات المطبخ، شاشات العرض للعملاء، ونقاط البيع الإضافية' : 'Sync kitchen KDS displays, customer screens, and mobile waiters',
+          name: language === 'ar' ? 'مركز ربط الأجهزة وأكوادها' : 'Device Linking Hub',
+          desc: language === 'ar'
+            ? (businessMode === 'restaurant'
+                ? 'إعطاء كل جهاز كود خاص ومزامنة الكاشير والنادل وشاشة المطبخ'
+                : 'إعطاء كل جهاز كود خاص ومزامنة نقاط البيع والمساعدين وشاشات العرض')
+            : 'Assign unique codes to each device and sync with master terminal',
           icon: Radio,
           badge: onlineDevicesCount > 0 ? onlineDevicesCount : undefined
+        },
+        {
+          id: 'devices_status',
+          name: language === 'ar' ? 'صفحة حالة الأجهزة المرتبطة' : 'Linked Devices Status Page',
+          desc: language === 'ar'
+            ? 'مراقبة حالة الاتصال، الكود الخاص بكل جهاز، البطارية، والنشاط اللحظي للأجهزة المرتبطة بالجهاز الرئيسي'
+            : 'Live status, unique device code, battery, and real-time activity of all linked devices',
+          icon: Activity,
+          badge: visibleDevices.length > 0 ? visibleDevices.length : undefined
         },
         {
           id: 'settings',

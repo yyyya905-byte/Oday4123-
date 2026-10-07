@@ -43,6 +43,8 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
     isPowerSavingActive,
     togglePowerSaving,
     setIsDataTransferModalOpen,
+    setIsPairingModalOpen,
+    setActiveTab,
     setIsButtonCustomizerModalOpen,
     openStorageCleanupModal,
     openShiftModal,
@@ -230,21 +232,30 @@ export const ToolsHubModal: React.FC<ToolsHubModalProps> = ({
               </div>
             </button>
 
-            {/* 5. Cross-Device Data Transfer */}
+            {/* 5. Add Sub-Device & Assign Role (Master Device) */}
             <button
               type="button"
-              onClick={() => handleToolAction(() => setIsDataTransferModalOpen(true))}
-              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] border border-slate-200/70 dark:border-white/[0.07] transition-all text-start cursor-pointer group active:scale-[0.98]"
+              onClick={() => handleToolAction(() => {
+                setActiveTab('devices');
+                setIsPairingModalOpen(true);
+              })}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-50/75 dark:bg-amber-950/20 hover:bg-amber-100/80 dark:hover:bg-amber-950/35 border border-amber-300/70 dark:border-amber-800/60 transition-all text-start cursor-pointer group active:scale-[0.98]"
             >
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/12 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                 <ArrowLeftRight className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                  {language === 'ar' ? 'نقل البيانات بين الأجهزة' : 'Device Data Transfer'}
+                  {language === 'ar' ? 'إضافة جهاز وتحديد وظيفته وعمله' : 'Add Sub-Device & Role'}
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
-                  {language === 'ar' ? 'مزامنة وتصدير البيانات عبر كود الربط أو QR' : 'Sync store data across devices via QR'}
+                  {language === 'ar'
+                    ? businessMode === 'restaurant'
+                      ? 'إضافة كاشير أو نادل أو شاشة مطبخ بكود خاص ومشاركة البيانات تلقائياً'
+                      : 'إضافة كاشير أو مساعد أو جرد بكود خاص ومشاركة البيانات تلقائياً'
+                    : businessMode === 'restaurant'
+                    ? 'Link cashier, waiter, or kitchen with unique code'
+                    : 'Link cashier, assistant, or scanner with unique code'}
                 </p>
               </div>
             </button>

@@ -124,6 +124,19 @@ export interface PurgeExecutionResult {
   messageAr: string;
 }
 
+export interface IndexedDbCleanWipeSummary {
+  dbName: string;
+  productsCount: number;
+  categoriesCount: number;
+  customersCount: number;
+  salesCount: number;
+  offlineQueueCount: number;
+  deviceTransfersCount: number;
+  totalRecordsCount: number;
+  estimatedSizeBytes: number;
+  objectStoreNames: string[];
+}
+
 class IndexedDbService {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<IDBDatabase> | null = null;
@@ -224,26 +237,26 @@ class IndexedDbService {
     settings?: StoreSettings;
   }): Promise<void> {
     try {
-      const db = await this.getDB();
+      await this.getDB();
 
-      // Batch write products
-      if (data.products && data.products.length > 0) {
-        await this.bulkPut('products', data.products);
+      // Replace products store (clears old records if array is empty)
+      if (data.products !== undefined) {
+        await this.replaceStoreItems('products', data.products);
       }
 
-      // Batch write categories
-      if (data.categories && data.categories.length > 0) {
-        await this.bulkPut('categories', data.categories);
+      // Replace categories store
+      if (data.categories !== undefined) {
+        await this.replaceStoreItems('categories', data.categories);
       }
 
-      // Batch write customers
-      if (data.customers && data.customers.length > 0) {
-        await this.bulkPut('customers', data.customers);
+      // Replace customers store
+      if (data.customers !== undefined) {
+        await this.replaceStoreItems('customers', data.customers);
       }
 
-      // Batch write sales
-      if (data.sales && data.sales.length > 0) {
-        await this.bulkPut('sales', data.sales);
+      // Replace sales store
+      if (data.sales !== undefined) {
+        await this.replaceStoreItems('sales', data.sales);
       }
 
       // Write settings
@@ -258,6 +271,153 @@ class IndexedDbService {
       });
     } catch (err) {
       console.warn('Error caching data to IndexedDB:', err);
+    }
+  }
+
+  /**
+   * Returns a detailed summary of all records currently stored in IndexedDB before performing a clean wipe
+   */
+  async getCleanWipeSummary(): Promise<IndexedDbCleanWipeSummary> {
+    const storeList = [
+      'products',
+      'categories',
+      'customers',
+      'sales',
+      'offline_queue',
+      'device_transfers',
+      'settings',
+      'app_meta',
+    ];
+    try {
+      const [products, categories, customers, sales, queue, transfers] = await Promise.all([
+        this.getAll<Product>('products'),
+        this.getAll<Category>('categories'),
+        this.getAll<Customer>('customers'),
+        this.getAll<Sale>('sales'),
+        this.getAll<OfflineQueueItem>('offline_queue'),
+        this.getAll<DeviceTransferPackage>('device_transfers'),
+      ]);
+
+      const totalRecordsCount =
+        products.length +
+        categories.length +
+        customers.length +
+        sales.length +
+        queue.length +
+        transfers.length;
+
+      const rawJson = JSON.stringify({ products, categories, customers, sales, queue, transfers });
+      const estimatedSizeBytes = Math.max(4096, rawJson.length * 2);
+
+      return {
+        dbName: DB_NAME,
+        productsCount: products.length,
+        categoriesCount: categories.length,
+        customersCount: customers.length,
+        salesCount: sales.length,
+        offlineQueueCount: queue.length,
+        deviceTransfersCount: transfers.length,
+        totalRecordsCount,
+        estimatedSizeBytes,
+        objectStoreNames: storeList,
+      };
+    } catch {
+      return {
+        dbName: DB_NAME,
+        productsCount: 0,
+        categoriesCount: 0,
+        customersCount: 0,
+        salesCount: 0,
+        offlineQueueCount: 0,
+        deviceTransfersCount: 0,
+        totalRecordsCount: 0,
+        estimatedSizeBytes: 0,
+        objectStoreNames: storeList,
+      };
+    }
+  }
+
+  /**
+   * Completely wipes ALL object stores in IndexedDB (`KianCashier_OfflineDB`) upon activating a new monthly/annual subscription code,
+   * ensuring a 100% clean start for the subscriber.
+   */
+  async clearAllDataForNewSubscription(
+    freshSettings?: StoreSettings,
+    baseCategories?: Category[]
+  ): Promise<{
+    success: boolean;
+    clearedStores: string[];
+    totalClearedRecords: number;
+    wipedAt: string;
+  }> {
+    const wipedAt = new Date().toISOString();
+    const allStores = [
+      'products',
+      'categories',
+      'customers',
+      'sales',
+      'settings',
+      'offline_queue',
+      'device_transfers',
+      'app_meta',
+    ];
+
+    try {
+      const summaryBefore = await this.getCleanWipeSummary();
+      const db = await this.getDB();
+      const dynamicStores = Array.from(db.objectStoreNames);
+      const existingStores = dynamicStores.length > 0
+        ? dynamicStores
+        : allStores.filter(name => db.objectStoreNames.contains(name));
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(existingStores, 'readwrite');
+        for (const storeName of existingStores) {
+          tx.objectStore(storeName).clear();
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+
+      if (baseCategories && baseCategories.length > 0) {
+        await this.bulkPut('categories', baseCategories);
+      }
+
+      if (freshSettings) {
+        await this.putOne('settings', { id: 'current_store_settings', ...freshSettings });
+      }
+
+      await this.putOne('app_meta', {
+        key: 'last_subscription_clean_wipe',
+        value: wipedAt,
+      });
+      await this.putOne('app_meta', {
+        key: 'last_cache_timestamp',
+        value: wipedAt,
+      });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('kian-indexeddb-wiped', {
+            detail: { wipedAt, clearedStores: existingStores, totalClearedRecords: summaryBefore.totalRecordsCount },
+          })
+        );
+      }
+
+      return {
+        success: true,
+        clearedStores: existingStores,
+        totalClearedRecords: summaryBefore.totalRecordsCount,
+        wipedAt,
+      };
+    } catch (err) {
+      console.warn('Error clearing IndexedDB for new subscription:', err);
+      return {
+        success: false,
+        clearedStores: allStores,
+        totalClearedRecords: 0,
+        wipedAt,
+      };
     }
   }
 
@@ -963,6 +1123,20 @@ class IndexedDbService {
   }
 
   // --- Generic Helpers ---
+
+  private async replaceStoreItems<T>(storeName: string, items: T[]): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      store.clear();
+
+      items.forEach((item) => store.put(item));
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
 
   private async bulkPut<T>(storeName: string, items: T[]): Promise<void> {
     const db = await this.getDB();

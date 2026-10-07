@@ -54,6 +54,7 @@ export const ProductsView: React.FC = () => {
     t,
     language,
     settings,
+    businessMode,
     notify
   } = useApp();
 
@@ -1281,12 +1282,16 @@ export const ProductsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Product Image & Customer QR Menu Target Device Routing */}
+              {/* Product Image & Customer QR Menu Target Device Routing (QR Menu routing only in restaurant mode) */}
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                     <ImageIcon className="w-4 h-4 text-amber-500" />
-                    <span>صورة المنتج وتوجيه طلبات منيو الزبون (QR)</span>
+                    <span>
+                      {businessMode === 'restaurant'
+                        ? 'صورة المنتج وتوجيه طلبات منيو الزبون (QR)'
+                        : 'صورة المنتج التوضيحية'}
+                    </span>
                   </span>
                 </div>
 
@@ -1342,61 +1347,65 @@ export const ProductsView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Quick food & drink image presets */}
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-                  {PRESET_FOOD_IMAGES.map(preset => (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() => setImage(preset.url)}
-                      className={`shrink-0 w-12 h-12 rounded-xl overflow-hidden border-2 cursor-pointer ${
-                        image === preset.url ? 'border-amber-500' : 'border-transparent'
-                      }`}
-                      title={preset.label}
-                    >
-                      <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-
-                {/* Target Device Routing & Description */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center gap-1">
-                      <Monitor className="w-3.5 h-3.5 text-blue-500" />
-                      <span>الجهاز الموجه له الطلب (يظهر وين):</span>
-                    </label>
-                    <select
-                      value={targetDeviceRole}
-                      onChange={e => {
-                        const r = e.target.value as DeviceRole | 'all';
-                        setTargetDeviceRole(r);
-                        const opt = TARGET_DEVICE_OPTIONS.find(o => o.role === r);
-                        if (opt) setTargetStationName(opt.labelAr);
-                      }}
-                      className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold"
-                    >
-                      {TARGET_DEVICE_OPTIONS.map(opt => (
-                        <option key={opt.role} value={opt.role}>
-                          {opt.labelAr}
-                        </option>
+                {/* Quick food & drink image presets & QR Menu routing — Strictly Restaurant Only */}
+                {businessMode === 'restaurant' && (
+                  <>
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+                      {PRESET_FOOD_IMAGES.map(preset => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => setImage(preset.url)}
+                          className={`shrink-0 w-12 h-12 rounded-xl overflow-hidden border-2 cursor-pointer ${
+                            image === preset.url ? 'border-amber-500' : 'border-transparent'
+                          }`}
+                          title={preset.label}
+                        >
+                          <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
+                        </button>
                       ))}
-                    </select>
-                  </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
-                      وصف المنتج في صفحة الزبون:
-                    </label>
-                    <input
-                      type="text"
-                      value={descriptionAr}
-                      onChange={e => setDescriptionAr(e.target.value)}
-                      placeholder="مثال: مع البطاطا والصوص الخاص..."
-                      className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold"
-                    />
-                  </div>
-                </div>
+                    {/* Target Device Routing & Description */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center gap-1">
+                          <Monitor className="w-3.5 h-3.5 text-blue-500" />
+                          <span>الجهاز الموجه له الطلب (يظهر وين):</span>
+                        </label>
+                        <select
+                          value={targetDeviceRole}
+                          onChange={e => {
+                            const r = e.target.value as DeviceRole | 'all';
+                            setTargetDeviceRole(r);
+                            const opt = TARGET_DEVICE_OPTIONS.find(o => o.role === r);
+                            if (opt) setTargetStationName(opt.labelAr);
+                          }}
+                          className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold"
+                        >
+                          {TARGET_DEVICE_OPTIONS.map(opt => (
+                            <option key={opt.role} value={opt.role}>
+                              {opt.labelAr}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                          وصف المنتج في صفحة الزبون:
+                        </label>
+                        <input
+                          type="text"
+                          value={descriptionAr}
+                          onChange={e => setDescriptionAr(e.target.value)}
+                          placeholder="مثال: مع البطاطا والصوص الخاص..."
+                          className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Submit Buttons */}

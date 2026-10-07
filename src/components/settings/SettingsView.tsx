@@ -167,6 +167,7 @@ export const SettingsView: React.FC = () => {
     activeThemeColor,
     activePrimaryHex,
     setThemeColor,
+    businessMode,
     openStorageCleanupModal
   } = useApp();
 
@@ -1247,7 +1248,9 @@ export const SettingsView: React.FC = () => {
                 >
                   <option value="80mm">طابعة حرارية عريضة (80mm - كاشير قياسي)</option>
                   <option value="58mm">طابعة حرارية مدمجة صغيرة (58mm - فواتير مصغرة)</option>
-                  <option value="76mm">طابعة حرارية وسط (76mm - مطابخ وطلبات)</option>
+                  {businessMode === 'restaurant' && (
+                    <option value="76mm">طابعة حرارية وسط (76mm - مطابخ وطلبات)</option>
+                  )}
                   <option value="a4">صفحة كاملة (A4 - فواتير رسمية وجملة)</option>
                   <option value="label_50x30">ملصق باركود ورفوف (50×30 مم)</option>
                   <option value="label_40x25">ملصق أسعار صغير (40×25 مم)</option>
@@ -1909,7 +1912,7 @@ export const SettingsView: React.FC = () => {
                         : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                     }`}
                   >
-                    مقسم مع المطبخ
+                    {businessMode === 'restaurant' ? 'مقسم مع المطبخ' : 'مقسم قياسي'}
                   </button>
                   <button
                     type="button"

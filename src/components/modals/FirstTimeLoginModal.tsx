@@ -185,7 +185,7 @@ export const FirstTimeLoginModal: React.FC<FirstTimeLoginModalProps> = ({ isOpen
                 <span>الدخول السريع كمسؤول النظام (PIN: 1234)</span>
               </button>
 
-              {/* Option 4: Link as Secondary Screen / Cashier Companion */}
+              {/* Option 4: Link as Secondary Screen / Cashier / Waiter / Assistant Companion */}
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
@@ -193,7 +193,7 @@ export const FirstTimeLoginModal: React.FC<FirstTimeLoginModalProps> = ({ isOpen
                   className="w-full p-3 rounded-2xl border border-dashed border-indigo-300 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/30 hover:bg-indigo-100/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   <KeyRound className="w-4 h-4 text-indigo-500" />
-                  <span>هل هذه شاشة ثانية أو تابلت فرعي؟ اربطها بكود PIN الكاشير الرئيسي</span>
+                  <span>هل هذا جهاز فرعي (كاشير / نادل / مساعد)؟ اربطه بالكود المربوط بالجهاز الرئيسي والاشتراك</span>
                 </button>
               </div>
             </div>

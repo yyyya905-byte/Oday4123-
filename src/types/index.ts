@@ -179,6 +179,9 @@ export interface Sale {
   status: 'completed' | 'refunded' | 'partially_refunded' | 'voided';
   notes?: string;
   createdAt: string;
+  sourceDeviceId?: string;
+  sourceDeviceName?: string;
+  sourceDeviceRole?: DeviceRole;
 }
 
 export interface RefundItem {
@@ -682,15 +685,45 @@ export interface Branch {
 export type DeviceRole = 
   | 'master_pos'
   | 'secondary_pos'
+  | 'waiter_mobile'
+  | 'assistant'
+  | 'stock_scanner'
   | 'kitchen_display'
   | 'customer_display'
-  | 'waiter_mobile'
-  | 'stock_scanner';
+  | 'supervisor';
+
+export interface DeviceWorkPermissions {
+  roleLabelAr?: string;
+  workDescription?: string;
+  allowPosSales?: boolean; // إصدار الفواتير والبيع المباشر
+  allowTableOrders?: boolean; // استلام طلبات الطاولات وإرسالها (نادل)
+  allowCatalogAndStock?: boolean; // إدارة المنتجات والجرد والباركود
+  allowCustomersAndDebts?: boolean; // إدارة الزبائن والديون
+  allowExpenses?: boolean; // تسجيل المصروفات
+  allowKitchenDisplay?: boolean; // شاشة المطبخ وتجهيز الطلبات
+  canProcessSales?: boolean;
+  canTakeTableOrders?: boolean;
+  canManageInventory?: boolean;
+  canViewSalesReports?: boolean;
+  canApplyDiscounts?: boolean;
+  canManageCustomersAndDebts?: boolean;
+  canAccessKitchenOrders?: boolean;
+  autoShareDataWithMaster: boolean; // مشاركة المبيعات والبيانات تلقائياً مع الجهاز الرئيسي وبقية الأجهزة
+}
 
 export interface LinkedDevice {
   id: string;
   name: string;
   role: DeviceRole;
+  roleLabelAr?: string;
+  workDescription?: string;
+  workPermissions?: DeviceWorkPermissions;
+  isMasterDevice?: boolean;
+  masterDeviceId?: string;
+  masterDeviceFingerprint?: string;
+  boundSubscriptionCode?: string;
+  subscriptionLinkCode?: string;
+  uniqueDeviceCode?: string; // الكود الخاص بهذا الجهاز تحديداً
   ipAddress?: string;
   browser?: string;
   deviceType: 'desktop' | 'tablet' | 'mobile';
@@ -702,6 +735,11 @@ export interface LinkedDevice {
   cashierName?: string;
   currentScreen?: string;
   branchName?: string;
+  salesCount?: number;
+  totalSalesAmount?: number;
+  ordersCount?: number;
+  lastActivitySummary?: string;
+  lastActivityAt?: string;
 }
 
 export interface KitchenOrderItem {
@@ -724,6 +762,9 @@ export interface KitchenOrder {
   orderNumber: string;
   saleId?: string;
   sourceDevice: string;
+  sourceDeviceId?: string;
+  sourceDeviceName?: string;
+  sourceDeviceRole?: DeviceRole;
   isCustomerQrOrder?: boolean;
   customerName?: string;
   customerPhone?: string;
@@ -872,6 +913,7 @@ export type ActiveTab =
   | 'reports'
   | 'staff'
   | 'devices'
+  | 'devices_status'
   | 'settings'
   | 'about';
 

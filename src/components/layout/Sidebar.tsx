@@ -18,6 +18,7 @@ import {
   Info,
   Sparkles,
   Radio,
+  Activity,
   Coins,
   Cloud
 } from 'lucide-react';
@@ -44,13 +45,17 @@ export const Sidebar: React.FC = () => {
     deliveryVehicles,
     settings,
     currentUser,
+    businessMode,
     language
   } = useApp();
 
   const lowStockCount = products.filter(p => p.stock <= p.minStock && p.status === 'active').length;
   const vehiclesOnRoute = deliveryVehicles.filter(v => v.status === 'on_route').length;
   const cartItemsCount = cart.reduce((acc, it) => acc + it.quantity, 0);
-  const onlineDevicesCount = devices.filter(d => d.isOnline).length;
+  const visibleDevices = devices.filter(d =>
+    businessMode === 'restaurant' ? true : d.role !== 'kitchen_display' && d.role !== 'waiter_mobile'
+  );
+  const onlineDevicesCount = visibleDevices.filter(d => d.isOnline).length;
   const isGoogleDriveConnected = Boolean(settings.googleDriveConnected);
 
   const navSections: NavSection[] = [
@@ -152,9 +157,16 @@ export const Sidebar: React.FC = () => {
         {
           id: 'devices',
           labelKey: 'navDevices',
-          customLabel: language === 'ar' ? 'مركز الأجهزة' : 'Devices Hub',
+          customLabel: language === 'ar' ? 'مركز الأجهزة والأكواد' : 'Devices Hub',
           icon: Radio,
           badge: onlineDevicesCount > 0 ? onlineDevicesCount : undefined
+        },
+        {
+          id: 'devices_status',
+          labelKey: 'navDevices',
+          customLabel: language === 'ar' ? 'حالة الأجهزة المرتبطة' : 'Devices Status',
+          icon: Activity,
+          badge: visibleDevices.length > 0 ? visibleDevices.length : undefined
         },
         {
           id: 'settings',

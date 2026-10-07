@@ -199,6 +199,7 @@ export const ButtonLayoutModal: React.FC = () => {
     applyButtonLayoutPreset,
     isButtonCustomizerModalOpen,
     setIsButtonCustomizerModalOpen,
+    businessMode,
     language
   } = useApp();
 
@@ -612,18 +613,20 @@ export const ButtonLayoutModal: React.FC = () => {
                 <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
                   تنسيق زر إنهاء الدفع والمحاسبة (Checkout Action Bar)
                 </h4>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => updateButtonLayout({ posPayButtonAlignment: 'split' })}
-                    className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                      layout.posPayButtonAlignment === 'split'
-                        ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
-                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    دفع + مطبخ متجاورين
-                  </button>
+                <div className={`grid ${businessMode === 'restaurant' ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                  {businessMode === 'restaurant' && (
+                    <button
+                      type="button"
+                      onClick={() => updateButtonLayout({ posPayButtonAlignment: 'split' })}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        layout.posPayButtonAlignment === 'split'
+                          ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      دفع + مطبخ متجاورين
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => updateButtonLayout({ posPayButtonAlignment: 'full' })}

@@ -18,13 +18,16 @@ import {
   RefreshCw,
   Sparkles,
   CheckCheck,
-  DollarSign
+  DollarSign,
+  Plus,
+  Crown
 } from 'lucide-react';
 import { ExchangeBulletinModal } from '../currency/ExchangeBulletinModal';
 import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
 import { ToolsHubModal } from '../modals/ToolsHubModal';
 import { getRoleInfo } from '../../utils/permissions';
 import { GoogleIcon } from '../common/GoogleIcon';
+import { soundEffects } from '../../services/audio';
 
 export const Header: React.FC = () => {
   const {
@@ -47,6 +50,8 @@ export const Header: React.FC = () => {
     businessMode,
     setIsModeModalOpen,
     devices,
+    isMasterDevice,
+    setIsPairingModalOpen,
     offlineQueueCount,
     isSyncingOffline,
     syncOfflineQueueNow,
@@ -66,7 +71,9 @@ export const Header: React.FC = () => {
   const improvementsCount = notifications.filter(
     n => n.category === 'feature' || n.category === 'improvement' || n.category === 'system_update' || n.isPermanent
   ).length;
-  const onlineDevicesCount = devices.filter(d => d.isOnline).length;
+  const onlineDevicesCount = devices.filter(
+    d => d.isOnline && (businessMode === 'restaurant' || (d.role !== 'kitchen_display' && d.role !== 'waiter_mobile'))
+  ).length;
   const roleInfo = getRoleInfo(currentUser.role);
   const bulletin = settings.exchangeBulletin;
 
@@ -96,7 +103,10 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <button
           type="button"
-          onClick={() => setActiveTab('pos')}
+          onClick={() => {
+            soundEffects.playGlassTap();
+            setActiveTab('pos');
+          }}
           className="flex items-center gap-2.5 cursor-pointer group btn-tactile text-start"
           id="header-brand-logo"
           title={language === 'ar' ? 'نقطة البيع الرئيسية (POS)' : 'Main POS'}
@@ -113,7 +123,10 @@ export const Header: React.FC = () => {
           <button
             id="btn-header-operating-mode"
             type="button"
-            onClick={() => setIsModeModalOpen(true)}
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setIsModeModalOpen(true);
+            }}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer btn-tactile whitespace-nowrap ${modeBadge.color}`}
             title={language === 'ar' ? 'تبديل وضع التشغيل (تجزئة / جملة / مطاعم)' : 'Switch Operating Mode'}
           >
@@ -129,7 +142,10 @@ export const Header: React.FC = () => {
           <button
             id="btn-open-global-search"
             type="button"
-            onClick={() => setIsGlobalSearchOpen(true)}
+            onClick={() => {
+              soundEffects.playGlassTap();
+              setIsGlobalSearchOpen(true);
+            }}
             className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-white/[0.06] hover:bg-slate-200/90 dark:hover:bg-white/[0.1] rounded-xl border border-white/60 dark:border-white/[0.08] transition-all text-start cursor-pointer backdrop-blur-md"
           >
             <div className="flex items-center gap-2 truncate">
@@ -150,7 +166,10 @@ export const Header: React.FC = () => {
           <button
             id="btn-open-currency-calculator"
             type="button"
-            onClick={() => setIsBulletinModalOpen(true)}
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setIsBulletinModalOpen(true);
+            }}
             className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-200/60 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] border border-white/60 dark:border-white/[0.08] text-xs font-bold text-slate-700 dark:text-slate-200 transition-all cursor-pointer btn-tactile whitespace-nowrap"
             title={language === 'ar' ? 'نشرة أسعار الصرف وحاسبة العملات' : 'Exchange Rates & Calculator'}
           >
@@ -159,12 +178,42 @@ export const Header: React.FC = () => {
           </button>
         )}
 
+        {/* Master Device "إضافة جهاز" Quick Action Button */}
+        {isMasterDevice && (
+          <button
+            id="btn-header-master-add-device"
+            type="button"
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setIsPairingModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-l from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black transition-all active:scale-95 cursor-pointer shadow-xs whitespace-nowrap btn-tactile"
+            title={
+              businessMode === 'restaurant'
+                ? 'إضافة جهاز جديد (كاشير / نادل / شاشة مطبخ / مساعد) وتحديد عمله ومشاركة البيانات تلقائياً مع الجهاز الرئيسي'
+                : 'إضافة جهاز جديد (كاشير / مساعد / مشرف) وتحديد عمله ومشاركة البيانات تلقائياً مع الجهاز الرئيسي'
+            }
+          >
+            <Crown className="w-3.5 h-3.5 shrink-0" />
+            <Plus className="w-3.5 h-3.5 -ms-1 shrink-0 stroke-[2.5]" />
+            <span>{language === 'ar' ? 'إضافة جهاز' : 'Add Device'}</span>
+            {onlineDevicesCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-slate-950/20 text-slate-950 text-[10px] font-mono font-black">
+                {onlineDevicesCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {/* THE SINGLE UNIFIED TOOLS BUTTON (الأدوات) */}
         {headerVisibility.toolsHub !== false && (
           <button
             id="btn-header-tools-hub"
             type="button"
-            onClick={() => setIsToolsHubModalOpen(true)}
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setIsToolsHubModalOpen(true);
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 hover:opacity-90 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-xs whitespace-nowrap btn-tactile"
             title={language === 'ar' ? 'فتح قائمة الأدوات والميزات الذكية' : 'Open Tools & Utilities'}
           >
