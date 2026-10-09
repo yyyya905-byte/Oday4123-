@@ -758,9 +758,9 @@ export const POSView: React.FC = () => {
   };
 
   return (
-    <div className="pos-split-layout flex-1 flex flex-col lg:flex-row h-full overflow-hidden bg-transparent max-w-full w-full">
+    <div className="pos-split-layout flex-1 flex flex-col lg:flex-row h-full min-h-0 overflow-hidden bg-transparent max-w-full w-full">
       {/* LEFT / CENTER: Products Catalog & Categories */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden p-2 sm:p-3 md:p-4 space-y-2 sm:space-y-2.5 min-w-0 max-w-full">
+      <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden p-2 sm:p-3 md:p-4 space-y-2 sm:space-y-2.5 min-w-0 max-w-full">
         
         {/* MODE-SPECIALIZED HEADER BANNER (Only for Restaurant & Wholesale) */}
         {businessMode === 'restaurant' && (
@@ -999,22 +999,39 @@ export const POSView: React.FC = () => {
         </div>
 
         {/* Products Display Area - Mode Tailored */}
-        <div className="flex-1 overflow-y-auto pr-1 pb-28 lg:pb-4 max-w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 pb-32 lg:pb-10 max-w-full overscroll-contain">
           {filteredProducts.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-center p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-slate-400">
               <ShoppingBag className="w-12 h-12 text-slate-300 dark:text-slate-700 mb-2" />
               <p className="text-sm font-bold text-slate-600 dark:text-slate-300">{t('noProductsFound')}</p>
-              <button
-                onClick={() => setActiveTab('products')}
-                className="mt-3 text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 min-h-[36px] px-3 py-1.5 rounded-xl border border-amber-300/60 dark:border-amber-700/60"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{t('addProduct')}</span>
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                {(selectedCategory !== 'cat_all' || showFavoritesOnly || searchQuery) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory('cat_all');
+                      setShowFavoritesOnly(false);
+                      setSearchQuery('');
+                    }}
+                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 min-h-[36px] px-3 py-1.5 rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 cursor-pointer"
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span>عرض جميع المنتجات ({products.length})</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('products')}
+                  className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 min-h-[36px] px-3 py-1.5 rounded-xl border border-amber-300/60 dark:border-amber-700/60 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{t('addProduct')}</span>
+                </button>
+              </div>
             </div>
           ) : businessMode === 'restaurant' ? (
             /* 1. RESTAURANT & CAFE MODE: Visual Food Photo Cards Grid */
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3.5 pb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3.5 pb-12">
               {filteredProducts.map(product => {
                 const inCart = cart.find(it => it.productId === product.id);
                 const isOutOfStock = product.stock <= 0;

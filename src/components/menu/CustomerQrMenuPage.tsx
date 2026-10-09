@@ -398,12 +398,19 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   onClosePreview,
 }) => {
   const appCtx = useAppOptional();
+  const menuScrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Standalone local storage fallback when rendered outside AppProvider
   const [localProducts, setLocalProducts] = useState<Product[]>(() => {
     try {
-      const saved = localStorage.getItem('kian_pos_products_v1');
-      return saved ? JSON.parse(saved) : initialProducts;
+      const saved =
+        localStorage.getItem('kian_pos_products') ||
+        localStorage.getItem('kian_pos_products_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return initialProducts;
     } catch {
       return initialProducts;
     }
@@ -411,8 +418,14 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
 
   const [localCategories] = useState<Category[]>(() => {
     try {
-      const saved = localStorage.getItem('kian_pos_categories_v1');
-      return saved ? JSON.parse(saved) : initialCategories;
+      const saved =
+        localStorage.getItem('kian_pos_categories') ||
+        localStorage.getItem('kian_pos_categories_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return initialCategories;
     } catch {
       return initialCategories;
     }
@@ -420,15 +433,19 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
 
   const [localSettings, setLocalSettings] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem('kian_pos_settings_v1');
+      const saved =
+        localStorage.getItem('kian_pos_settings') ||
+        localStorage.getItem('kian_pos_settings_v1');
       return saved ? JSON.parse(saved) : initialSettings;
     } catch {
       return initialSettings;
     }
   });
 
-  const contextProducts = appCtx?.products || localProducts;
-  const contextCategories = appCtx?.categories || localCategories;
+  const contextProducts =
+    appCtx?.products && appCtx.products.length > 0 ? appCtx.products : localProducts;
+  const contextCategories =
+    appCtx?.categories && appCtx.categories.length > 1 ? appCtx.categories : localCategories;
   const contextSettings = appCtx?.settings || localSettings;
   const contextDevices = appCtx?.devices || [];
   const contextKitchenOrders = appCtx?.kitchenOrders || [];
@@ -446,6 +463,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     setLocalProducts(prev => {
       const updated = prev.map(p => (p.id === id ? { ...p, ...updates } : p));
       try {
+        localStorage.setItem('kian_pos_products', JSON.stringify(updated));
         localStorage.setItem('kian_pos_products_v1', JSON.stringify(updated));
       } catch {}
       return updated;
@@ -576,7 +594,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     };
   }, []);
 
-  // Combined Inventory Catalog (links remote catalog with local inventory records)
+  // Combined Inventory Catalog (links remote catalog with local inventory records so all products are available)
   const combinedInventoryCatalog = useMemo(() => {
     const map = new Map<string, Product>();
     initialProducts.forEach(p => map.set(p.id, p));
@@ -585,9 +603,20 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
     return Array.from(map.values());
   }, [contextProducts, remoteProducts]);
 
-  // Active Menu Products enriched with Inventory-linked Images
+  // Active Menu Products enriched with Inventory-linked Images (shows all products cleanly)
   const activeProducts = useMemo(() => {
-    const baseList = contextProducts.length > 0 ? contextProducts : remoteProducts;
+    const mergedMap = new Map<string, Product>();
+    if (contextProducts.length > 0) {
+      contextProducts.forEach(p => mergedMap.set(p.id, p));
+    }
+    if (remoteProducts.length > 0) {
+      remoteProducts.forEach(p => mergedMap.set(p.id, { ...(mergedMap.get(p.id) || {}), ...p }));
+    }
+    if (mergedMap.size === 0) {
+      combinedInventoryCatalog.forEach(p => mergedMap.set(p.id, p));
+    }
+
+    const baseList = Array.from(mergedMap.values());
     return baseList
       .filter(p => p.availableInQrMenu !== false)
       .map(p => {
@@ -603,11 +632,11 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   }, [contextProducts, remoteProducts, combinedInventoryCatalog]);
 
   const activeCategories = useMemo(() => {
-    return contextCategories.length > 1
-      ? contextCategories
-      : remoteCategories.length > 0
-      ? remoteCategories
-      : contextCategories;
+    const map = new Map<string, Category>();
+    initialCategories.forEach(c => map.set(c.id, c));
+    remoteCategories.forEach(c => map.set(c.id, c));
+    contextCategories.forEach(c => map.set(c.id, c));
+    return Array.from(map.values());
   }, [contextCategories, remoteCategories]);
 
   const activeSettings = useMemo(() => {
@@ -628,7 +657,10 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   }, [contextDevices, remoteDevices]);
 
   const allOrders = useMemo(() => {
-    return contextKitchenOrders.length > 0 ? contextKitchenOrders : remoteOrders;
+    const map = new Map<string, KitchenOrder>();
+    remoteOrders.forEach(o => map.set(o.id, o));
+    contextKitchenOrders.forEach(o => map.set(o.id, { ...(map.get(o.id) || {}), ...o }));
+    return Array.from(map.values());
   }, [contextKitchenOrders, remoteOrders]);
 
   // Customer UI State
@@ -640,7 +672,70 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   const [guestCount, setGuestCount] = useState<number>(2);
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [deliveryAddress, setDeliveryAddress] = useState<string>('');
   const [orderNotes, setOrderNotes] = useState<string>('');
+  const [tableCallNotice, setTableCallNotice] = useState<string | null>(null);
+  const [isSendingTableCall, setIsSendingTableCall] = useState(false);
+
+  const handleCustomerTableServiceCall = async (
+    requestType: 'call_waiter' | 'request_bill' | 'water_napkins'
+  ) => {
+    if (isSendingTableCall) return;
+    setIsSendingTableCall(true);
+    soundEffects.playClick();
+
+    const targetTable = tableName || 'الطاولة 1';
+    const labelMap = {
+      call_waiter: 'تم إرسال نداء استدعاء النادل فوراً إلى جهاز النادل وشاشة الكاشير! 🔔',
+      request_bill: 'تم إرسال طلب الفاتورة والحساب إلى الكاشير وجهاز النادل! 🧾',
+      water_napkins: 'تم إرسال طلب مياه ومناديل إضافية إلى النادل! 💧',
+    };
+
+    try {
+      if (appCtx?.submitTableServiceRequest) {
+        await appCtx.submitTableServiceRequest({
+          tableName: targetTable,
+          requestType,
+          customerName: customerName.trim() || undefined,
+        });
+      } else {
+        const res = await fetch('/api/menu/table-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableName: targetTable,
+            requestType,
+            customerName: customerName.trim() || undefined,
+          }),
+        });
+        const data = res.ok ? await res.json() : null;
+        try {
+          const bc = new BroadcastChannel('kian_pos_devices_mesh');
+          bc.postMessage({
+            type: 'TABLE_SERVICE_REQUEST',
+            payload: {
+              request: data?.request || {
+                id: `tbl-req-${Date.now()}`,
+                tableName: targetTable,
+                requestType,
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+              },
+            },
+          });
+          bc.close();
+        } catch {}
+      }
+      soundEffects.saleSuccess();
+      setTableCallNotice(labelMap[requestType]);
+      setTimeout(() => setTableCallNotice(null), 5000);
+    } catch {
+      setTableCallNotice(labelMap[requestType]);
+      setTimeout(() => setTableCallNotice(null), 5000);
+    } finally {
+      setIsSendingTableCall(false);
+    }
+  };
 
   // Customer Cart State
   const [customerCart, setCustomerCart] = useState<
@@ -921,9 +1016,15 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
           diningType,
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
+          deliveryAddress: diningType === 'delivery' ? deliveryAddress.trim() : undefined,
           guestCount,
           notes: orderNotes.trim(),
-          items: formattedItems,
+          routedToCashier: true,
+          routedToWaiter: true,
+          items: formattedItems.map(it => ({
+            ...it,
+            productName: it.nameAr,
+          })),
           totalAmount: totalCartPrice,
         }),
       });
@@ -935,32 +1036,69 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       }
 
       if (!createdOrder) {
-        // Offline / local fallback
+        // Offline / local fallback with daily sequential queue number starting from 1 each day
+        let nextQ = 1;
+        if (appCtx?.getNextRestaurantQueueNumber) {
+          nextQ = appCtx.getNextRestaurantQueueNumber();
+        } else {
+          try {
+            const d = new Date();
+            const todayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const savedDate = localStorage.getItem('kian_pos_daily_queue_date_v2');
+            const savedCounter = parseInt(localStorage.getItem('kian_pos_daily_queue_counter_v2') || '0', 10);
+            if (savedDate === todayKey && !isNaN(savedCounter) && savedCounter >= 0) {
+              nextQ = savedCounter + 1;
+            } else {
+              nextQ = 1;
+            }
+            localStorage.setItem('kian_pos_daily_queue_date_v2', todayKey);
+            localStorage.setItem('kian_pos_daily_queue_counter_v2', String(nextQ));
+          } catch {}
+        }
+        const qFormatted = String(nextQ).padStart(3, '0');
         createdOrder = {
           id: `qr-ord-${Date.now().toString(36)}`,
-          orderNumber: `QR-${Math.floor(200 + Math.random() * 799)}`,
+          orderNumber: `Q-${qFormatted}`,
+          queueNumber: nextQ,
           sourceDevice: `منيو QR الذكي (${resolvedTable})`,
           isCustomerQrOrder: true,
+          routedToCashier: true,
+          routedToWaiter: true,
+          waiterConfirmed: false,
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
+          deliveryAddress: diningType === 'delivery' ? deliveryAddress.trim() : undefined,
           diningType,
           tableName: resolvedTable,
           guestCount,
-          items: formattedItems,
+          items: formattedItems.map(it => ({
+            ...it,
+            productName: it.nameAr,
+          })),
           totalAmount: totalCartPrice,
           notes: orderNotes.trim(),
           status: 'new',
           createdAt: new Date().toISOString(),
         };
-        if (appCtx?.addKitchenOrder) {
-          appCtx.addKitchenOrder(createdOrder);
-        } else {
-          try {
-            const saved = localStorage.getItem('kian_pos_kitchen_orders_v1');
-            const parsed = saved ? JSON.parse(saved) : [];
-            localStorage.setItem('kian_pos_kitchen_orders_v1', JSON.stringify([createdOrder, ...parsed]));
-          } catch {}
-        }
+      }
+
+      // Always sync to local storage & AppContext so Cashier, Waiter, and Kitchen see it immediately
+      try {
+        const saved = localStorage.getItem('kian_pos_kitchen_orders_v1');
+        const parsed = saved ? JSON.parse(saved) : [];
+        const withoutDup = Array.isArray(parsed)
+          ? parsed.filter((o: any) => o.id !== createdOrder!.id && o.orderNumber !== createdOrder!.orderNumber)
+          : [];
+        localStorage.setItem('kian_pos_kitchen_orders_v1', JSON.stringify([createdOrder, ...withoutDup]));
+      } catch {}
+
+      if (appCtx?.addKitchenOrder) {
+        // Trigger local notification if not already added via SSE
+        appCtx.notify?.(
+          `📱 طلب زبون جديد (${createdOrder.tableName}) — وصل للكاشير والنادل`,
+          `رقم الطلب: ${createdOrder.orderNumber} • الإجمالي: ${formatMoney(totalCartPrice)}`,
+          'warning'
+        );
       }
 
       // Broadcast via BroadcastChannel for instant local tabs
@@ -1087,12 +1225,14 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
 
   return (
     <div
+      ref={menuScrollContainerRef}
       dir="rtl"
       style={{
         backgroundColor: activeTheme.backgroundColor,
         color: isDarkPage ? '#f8fafc' : '#0f172a',
+        WebkitOverflowScrolling: 'touch',
       }}
-      className="min-h-screen w-full flex flex-col font-sans select-none overflow-x-hidden transition-colors duration-300"
+      className="h-screen h-[100dvh] max-h-screen w-full overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth font-sans transition-colors duration-300"
     >
       {/* Top Preview / Manager Control Bar (ONLY shown when manager previews from POS — completely hidden in standalone customer mode) */}
       {!isStandalone && (
@@ -1461,6 +1601,65 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
         </div>
       </header>
 
+      {/* Quick Table Service Bar for Customer (Call Waiter / Request Bill / Water) */}
+      {diningType === 'dine_in' && (
+        <div className="max-w-5xl w-full mx-auto px-4 pt-3">
+          <div
+            style={{ backgroundColor: activeTheme.cardBackgroundColor }}
+            className="rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+              <span className="text-xs font-black">
+                خدمات ({tableName}) الفورية — تصل للكاشير وجهاز النادل مباشرة:
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => handleCustomerTableServiceCall('call_waiter')}
+                className="px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500 text-amber-800 dark:text-amber-300 hover:text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-amber-500/30"
+              >
+                <span>🔔</span>
+                <span>استدعاء النادل</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleCustomerTableServiceCall('request_bill')}
+                className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-600 text-rose-700 dark:text-rose-300 hover:text-white font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-rose-500/30"
+              >
+                <span>🧾</span>
+                <span>طلب الفاتورة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleCustomerTableServiceCall('water_napkins')}
+                className="px-3 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-600 text-sky-700 dark:text-sky-300 hover:text-white font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-sky-500/30"
+              >
+                <span>💧</span>
+                <span>مياه ومناديل</span>
+              </button>
+            </div>
+          </div>
+
+          {tableCallNotice && (
+            <div className="mt-2 p-3 rounded-2xl bg-emerald-600 text-white text-xs font-black flex items-center justify-between shadow-md animate-in fade-in">
+              <span>{tableCallNotice}</span>
+              <button
+                type="button"
+                onClick={() => setTableCallNotice(null)}
+                className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]"
+              >
+                إغلاق
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Live Customer Order Status Tracker + Rate Experience Button */}
       {myLiveOrders.length > 0 && (
         <div className="max-w-5xl w-full mx-auto px-4 pt-4">
@@ -1468,11 +1667,22 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
             <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
+                <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-amber-400 font-black font-mono text-xs sm:text-sm shadow-xs">
+                  رقم الطابور #{String(myLiveOrders[0].queueNumber || Number((myLiveOrders[0].orderNumber.match(/\d+/) || [1])[0])).padStart(3, '0')}
+                </span>
                 <h3 className="text-xs sm:text-sm font-black text-emerald-900 dark:text-emerald-200">
                   متابعة حالة طلبك المباشرة ({myLiveOrders[0].orderNumber} - {myLiveOrders[0].tableName})
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-[11px] font-black">
+                  ✓ وصل للكاشير وجهاز النادل
+                </span>
+                {myLiveOrders[0].waiterConfirmed && (
+                  <span className="px-2.5 py-1 rounded-xl bg-emerald-600 text-white text-[11px] font-black">
+                    ✓ تم التأكيد بواسطة ({myLiveOrders[0].waiterConfirmedBy || 'الكابتن'})
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -1506,7 +1716,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     ? '✅ طلبك جاهز للتقديم!'
                     : myLiveOrders[0].status === 'in_progress'
                     ? '🔥 جاري تحضير طلبك الآن'
-                    : '📨 تم استلام الطلب في القسم المختص'}
+                    : '📨 تم استلام الطلب لدى الكاشير والنادل والمطبخ'}
                 </span>
               </div>
             </div>
@@ -1739,7 +1949,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       )}
 
       {/* Main Menu Products List / Grid */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-5 pb-32">
+      <main className="max-w-5xl w-full mx-auto px-4 py-5 pb-48">
         {isLoadingCatalog && activeProducts.length === 0 ? (
           <div className="py-20 text-center space-y-3">
             <RefreshCw
@@ -1763,8 +1973,40 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
           </div>
         ) : (
           <div className="space-y-8">
+            {/* Summary bar & quick scroll helper */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-black/5 dark:bg-white/5 border border-slate-200/60 dark:border-slate-800 text-xs font-bold">
+              <span>
+                يتم عرض <strong>{filteredProducts.length}</strong> صنف من أصل{' '}
+                <strong>{activeProducts.length}</strong> في قائمة الطعام والمنيو
+              </span>
+              <div className="flex items-center gap-2">
+                {selectedCategory !== 'cat_all' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategory('cat_all')}
+                    style={{
+                      backgroundColor: activeTheme.primaryColor,
+                      color: activeTheme.buttonTextColor,
+                    }}
+                    className="px-3 py-1 rounded-xl text-[11px] font-black cursor-pointer"
+                  >
+                    عرض جميع الأصناف ({activeProducts.length})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    menuScrollContainerRef.current?.scrollBy({ top: 480, behavior: 'smooth' });
+                  }}
+                  className="px-3 py-1 rounded-xl bg-slate-900 text-white dark:bg-slate-800 text-[11px] font-black cursor-pointer"
+                >
+                  النزول لبقية الأصناف ⬇
+                </button>
+              </div>
+            </div>
+
             {groupedMenuSections.map(section => (
-              <section key={section.id} className="space-y-3.5">
+              <section key={section.id} id={`menu-sec-${section.id}`} className="space-y-3.5">
                 {/* Organized Section Header */}
                 <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
                   <div className="flex items-center gap-2.5">
@@ -2237,6 +2479,21 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                     />
                   </div>
                 </div>
+
+                {diningType === 'delivery' && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                      عنوان التوصيل بالتفصيل
+                    </label>
+                    <input
+                      type="text"
+                      value={deliveryAddress}
+                      onChange={e => setDeliveryAddress(e.target.value)}
+                      placeholder="الحي، الشارع، البناء، أقرب نقطة دالة..."
+                      className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Order Items List with Inventory Photos beside Name & Price */}
@@ -2340,7 +2597,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                 ) : (
                   <>
                     <CheckCircle2 className="w-5 h-5" />
-                    <span>إرسال الطلب الآن للقسم المختص</span>
+                    <span>إرسال الطلب الآن للكاشير والنادل والمطبخ</span>
                   </>
                 )}
               </button>

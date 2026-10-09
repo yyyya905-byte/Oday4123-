@@ -22,7 +22,8 @@ import {
   Activity,
   Coins,
   Search,
-  Grid
+  Grid,
+  UtensilsCrossed
 } from 'lucide-react';
 
 interface SectionsNavModalProps {
@@ -80,6 +81,19 @@ export const SectionsNavModal: React.FC<SectionsNavModalProps> = ({ isOpen, onCl
           icon: ReceiptText,
           badge: cartItemsCount > 0 ? cartItemsCount : undefined
         },
+        ...(businessMode === 'restaurant'
+          ? [
+              {
+                id: 'restaurant' as ActiveTab,
+                name: language === 'ar' ? 'مركز عمليات المطعم والصالة' : 'Restaurant & Dining Hub',
+                desc:
+                  language === 'ar'
+                    ? 'خريطة الطاولات، استقبال طلبات الزبائن (QR) للكاشير والنادل، وشاشة المطبخ الحية'
+                    : 'Interactive floor plan, Customer QR orders to Cashier & Waiter, and live KDS',
+                icon: UtensilsCrossed
+              }
+            ]
+          : []),
         {
           id: 'invoices',
           name: language === 'ar' ? 'سجل الفواتير والمبيعات' : 'Sales Invoices & Receipts',

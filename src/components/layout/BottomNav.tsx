@@ -6,7 +6,8 @@ import {
   Package,
   FileSpreadsheet,
   Coins,
-  Grid
+  Grid,
+  UtensilsCrossed
 } from 'lucide-react';
 import { SectionsNavModal } from '../modals/SectionsNavModal';
 import { soundEffects } from '../../services/audio';
@@ -19,11 +20,17 @@ export const BottomNav: React.FC = () => {
     cart,
     language,
     isMasterDevice,
-    currentDeviceAllowedPages
+    currentDeviceAllowedPages,
+    businessMode,
+    kitchenOrders,
+    tableServiceRequests
   } = useApp();
   const [isSectionsModalOpen, setIsSectionsModalOpen] = useState(false);
 
   const cartCount = cart.reduce((acc, it) => acc + it.quantity, 0);
+  const restaurantAlerts =
+    kitchenOrders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length +
+    tableServiceRequests.filter(r => r.status !== 'completed').length;
 
   const allNavButtons = [
     {
@@ -36,6 +43,20 @@ export const BottomNav: React.FC = () => {
         setActiveTab('pos');
       }
     },
+    ...(businessMode === 'restaurant'
+      ? [
+          {
+            id: 'restaurant' as ActiveTab,
+            label: language === 'ar' ? 'المطعم' : 'Restaurant',
+            icon: UtensilsCrossed,
+            badge: restaurantAlerts > 0 ? restaurantAlerts : undefined,
+            onClick: () => {
+              soundEffects.playCategorySwitch();
+              setActiveTab('restaurant');
+            }
+          }
+        ]
+      : []),
     {
       id: 'products' as ActiveTab,
       label: t('navProducts'),

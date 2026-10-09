@@ -35,6 +35,7 @@ import { PrintPaperSize, ReceiptTemplateStyle, ReceiptFontFamily, StoreSettings 
 import { generateBarcodeSvg } from '../../utils/barcodeUtils';
 import { soundEffects } from '../../services/audio';
 import { StoreLogoUploader } from './StoreLogoUploader';
+import { ReceiptLayoutDragDropEditor } from './ReceiptLayoutDragDropEditor';
 import QRCode from 'qrcode';
 
 interface ReceiptCustomizerPanelProps {
@@ -239,7 +240,10 @@ export const ReceiptCustomizerPanel: React.FC<ReceiptCustomizerPanelProps> = ({ 
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Top Banner / Actions Bar */}
+      {/* Interactive Drag-and-Drop Receipt Layout Editor (Arrange, Hide & Resize Logo, Headers, Tax, Footer) */}
+      <ReceiptLayoutDragDropEditor />
+
+      {/* Top Banner / Actions Bar for Detailed Field & Margin Settings */}
       <div className="material-panel p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 text-slate-950 flex items-center justify-center font-black shadow-md shadow-amber-500/20">

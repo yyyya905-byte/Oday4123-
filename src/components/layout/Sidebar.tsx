@@ -23,7 +23,8 @@ import {
   Cloud,
   Crown,
   Monitor,
-  User
+  User,
+  UtensilsCrossed
 } from 'lucide-react';
 
 interface NavSection {
@@ -54,12 +55,17 @@ export const Sidebar: React.FC = () => {
     currentDeviceAllowedPages,
     currentDeviceName,
     currentSubDeviceUserName,
-    exitSubDeviceMode
+    exitSubDeviceMode,
+    kitchenOrders,
+    tableServiceRequests
   } = useApp();
 
   const lowStockCount = products.filter(p => p.stock <= p.minStock && p.status === 'active').length;
   const vehiclesOnRoute = deliveryVehicles.filter(v => v.status === 'on_route').length;
   const cartItemsCount = cart.reduce((acc, it) => acc + it.quantity, 0);
+  const activeRestaurantAlertsCount =
+    kitchenOrders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length +
+    tableServiceRequests.filter(r => r.status !== 'completed').length;
   const visibleDevices = devices.filter(d =>
     businessMode === 'restaurant' ? true : d.role !== 'kitchen_display' && d.role !== 'waiter_mobile'
   );
@@ -76,6 +82,17 @@ export const Sidebar: React.FC = () => {
           icon: ReceiptText,
           badge: cartItemsCount > 0 ? cartItemsCount : undefined
         },
+        ...(businessMode === 'restaurant'
+          ? [
+              {
+                id: 'restaurant' as ActiveTab,
+                labelKey: 'navRestaurant',
+                customLabel: language === 'ar' ? 'مركز المطعم والصالة' : 'Restaurant Hub',
+                icon: UtensilsCrossed,
+                badge: activeRestaurantAlertsCount > 0 ? activeRestaurantAlertsCount : undefined
+              }
+            ]
+          : []),
         {
           id: 'dashboard',
           labelKey: 'navDashboard',

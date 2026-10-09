@@ -47,7 +47,9 @@ import {
   TradeType,
   PaymentMethod,
   QrMenuThemeConfig,
-  CustomerFeedbackReview
+  CustomerFeedbackReview,
+  TableServiceRequest,
+  RestaurantTableInfo,
 } from '../types';
 import {
   applyThemeColor,
@@ -107,7 +109,12 @@ import {
   sendWhatsAppDebtMessage,
   checkAndSendPeriodicDebtReminders
 } from '../services/debtCollectionService';
-import { indexedDbService } from '../services/indexedDbService';
+import {
+  indexedDbService,
+  downloadJsonBackup,
+  IndexedDbBackupSnapshot,
+  AutoBackupTriggerType,
+} from '../services/indexedDbService';
 import { googleAuthService } from '../services/googleAuthService';
 import { canAccessTab, hasActionPermission, getRoleInfo } from '../utils/permissions';
 
@@ -597,13 +604,36 @@ interface AppContextType {
   exportDataJson: () => string;
   importDataJson: (jsonString: string) => boolean;
   resetToDemoData: () => void;
+  triggerIndexedDbBackupDownload: (options?: {
+    triggerType?: AutoBackupTriggerType;
+    downloadToDevice?: boolean;
+    notes?: string;
+  }) => Promise<IndexedDbBackupSnapshot | null>;
+  restoreFromIndexedDbBackup: (
+    jsonOrSnapshot: string | any,
+    mode?: 'replace' | 'merge'
+  ) => Promise<boolean>;
 
-  // Restaurant & Cafe Customer QR Menu & Device Routing
+  // Restaurant & Cafe Customer QR Menu & Device Routing & Queue Numbering
   isRestaurantQrModalOpen: boolean;
   setIsRestaurantQrModalOpen: (open: boolean) => void;
   isCustomerMenuPreviewOpen: boolean;
   setIsCustomerMenuPreviewOpen: (open: boolean) => void;
+  restaurantQueueCounter: number;
+  nextRestaurantQueueNumber: number;
+  getNextRestaurantQueueNumber: () => number;
+  resetRestaurantQueueCounter: (startFrom?: number) => void;
+  updateSaleQueueStatus: (saleId: string, queueStatus: 'waiting' | 'preparing' | 'ready' | 'served') => void;
+  announceQueueNumber: (queueNumber: number, label?: string) => void;
   loadKitchenOrderToCart: (order: KitchenOrder) => void;
+  confirmKitchenOrder: (orderId: string, confirmedBy?: string, status?: KitchenOrder['status']) => void;
+  updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
+  transferKitchenOrderTable: (orderId: string, newTableName: string) => void;
+  tableServiceRequests: TableServiceRequest[];
+  submitTableServiceRequest: (req: Omit<TableServiceRequest, 'id' | 'createdAt' | 'status'>) => Promise<TableServiceRequest>;
+  acknowledgeTableServiceRequest: (requestId: string, status?: TableServiceRequest['status']) => void;
+  restaurantTables: RestaurantTableInfo[];
+  updateRestaurantTables: (tables: RestaurantTableInfo[]) => void;
   updateQrMenuTheme: (themeUpdates: Partial<QrMenuThemeConfig>) => void;
   customerReviews: CustomerFeedbackReview[];
   addCustomerReview: (review: Omit<CustomerFeedbackReview, 'id' | 'createdAt'>) => CustomerFeedbackReview;
@@ -723,6 +753,131 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedTable, setSelectedTable] = useState<string>('طاولة 1');
   const [guestCount, setGuestCount] = useState<number>(2);
   const [kitchenNote, setKitchenNote] = useState<string>('');
+  const [pendingCartQueueNumber, setPendingCartQueueNumber] = useState<number | null>(null);
+  const [pendingCartQueueOrderId, setPendingCartQueueOrderId] = useState<string | null>(null);
+
+  const getLocalTodayDateKey = (d: Date = new Date()): string => {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const DAILY_QUEUE_DATE_KEY = 'kian_pos_daily_queue_date_v2';
+  const DAILY_QUEUE_COUNTER_KEY = 'kian_pos_daily_queue_counter_v2';
+
+  const [restaurantQueueCounter, setRestaurantQueueCounter] = useState<number>(() => {
+    try {
+      const todayKey = getLocalTodayDateKey();
+      const savedDate = localStorage.getItem(DAILY_QUEUE_DATE_KEY);
+      const savedCounter = localStorage.getItem(DAILY_QUEUE_COUNTER_KEY);
+      if (savedDate === todayKey && savedCounter !== null) {
+        const parsed = parseInt(savedCounter, 10);
+        if (!isNaN(parsed) && parsed >= 0) return parsed;
+      }
+      // New day or first initialization: always start counter at 0 so the first invoice of the day is #1 (#001)
+      localStorage.setItem(DAILY_QUEUE_DATE_KEY, todayKey);
+      localStorage.setItem(DAILY_QUEUE_COUNTER_KEY, '0');
+      localStorage.setItem('kian_pos_restaurant_queue_date_v1', todayKey);
+      localStorage.setItem('kian_pos_restaurant_queue_counter_v1', '0');
+      return 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  // Automatically check if a new day has started (e.g. after midnight) and reset counter to 0 so new day starts at #1
+  useEffect(() => {
+    const checkDailyReset = () => {
+      try {
+        const todayKey = getLocalTodayDateKey();
+        const savedDate = localStorage.getItem(DAILY_QUEUE_DATE_KEY);
+        if (savedDate !== todayKey) {
+          localStorage.setItem(DAILY_QUEUE_DATE_KEY, todayKey);
+          localStorage.setItem(DAILY_QUEUE_COUNTER_KEY, '0');
+          localStorage.setItem('kian_pos_restaurant_queue_date_v1', todayKey);
+          localStorage.setItem('kian_pos_restaurant_queue_counter_v1', '0');
+          setRestaurantQueueCounter(0);
+          setPendingCartQueueNumber(null);
+          setPendingCartQueueOrderId(null);
+        }
+      } catch {}
+    };
+    checkDailyReset();
+    const interval = setInterval(checkDailyReset, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const nextRestaurantQueueNumber = pendingCartQueueNumber || (restaurantQueueCounter + 1);
+
+  const getNextRestaurantQueueNumber = (): number => {
+    const todayKey = getLocalTodayDateKey();
+    let currentBase = restaurantQueueCounter;
+    try {
+      const savedDate = localStorage.getItem(DAILY_QUEUE_DATE_KEY);
+      if (savedDate !== todayKey) {
+        currentBase = 0;
+      } else {
+        const savedCounter = parseInt(localStorage.getItem(DAILY_QUEUE_COUNTER_KEY) || '0', 10);
+        if (!isNaN(savedCounter) && savedCounter > currentBase) {
+          currentBase = savedCounter;
+        }
+      }
+    } catch {}
+
+    const nextVal = currentBase + 1;
+    setRestaurantQueueCounter(nextVal);
+    try {
+      localStorage.setItem(DAILY_QUEUE_DATE_KEY, todayKey);
+      localStorage.setItem(DAILY_QUEUE_COUNTER_KEY, String(nextVal));
+      localStorage.setItem('kian_pos_restaurant_queue_date_v1', todayKey);
+      localStorage.setItem('kian_pos_restaurant_queue_counter_v1', String(nextVal));
+    } catch {}
+    return nextVal;
+  };
+
+  const resetRestaurantQueueCounter = (startFrom: number = 0) => {
+    const cleanVal = Math.max(0, Math.floor(Number(startFrom) || 0));
+    setRestaurantQueueCounter(cleanVal);
+    setPendingCartQueueNumber(null);
+    setPendingCartQueueOrderId(null);
+    try {
+      const todayKey = getLocalTodayDateKey();
+      localStorage.setItem(DAILY_QUEUE_DATE_KEY, todayKey);
+      localStorage.setItem(DAILY_QUEUE_COUNTER_KEY, String(cleanVal));
+      localStorage.setItem('kian_pos_restaurant_queue_date_v1', todayKey);
+      localStorage.setItem('kian_pos_restaurant_queue_counter_v1', String(cleanVal));
+    } catch {}
+    fetch('/api/restaurant/reset-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ startFrom: cleanVal }),
+    }).catch(() => {});
+    soundEffects.playSuccess();
+    notify(
+      'تم تصفير عداد طابور الفواتير',
+      `سيبدأ ترقيم الفواتير والطلبات القادمة في قسم المطعم من رقم الطابور #${String(cleanVal + 1).padStart(3, '0')}`,
+      'success'
+    );
+  };
+
+  const announceQueueNumber = (queueNumber: number, label?: string) => {
+    const formattedQ = `#${String(queueNumber).padStart(3, '0')}`;
+    soundEffects.saleSuccess();
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(
+          `نداء رقم الطابور ${queueNumber}، الفاتورة رقم ${queueNumber} ${label ? `، ${label}` : ''} جاهزة للاستلام`
+        );
+        utterance.lang = 'ar-SA';
+        utterance.rate = 0.95;
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch {}
+    notify(
+      `🔔 نداء طابور الفواتير: رقم ${formattedQ}`,
+      `تم نداء صاحب الفاتورة المرقمة (${formattedQ})${label ? ` — ${label}` : ''} لاستلام الطلب`,
+      'info'
+    );
+  };
 
   const setBusinessMode = (mode: BusinessMode, remember: boolean = false) => {
     setBusinessModeState(mode);
@@ -2796,6 +2951,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setOrderDiscount({ value: 0, type: 'fixed' });
     setPointsToRedeem(0);
     setKitchenNote('');
+    setPendingCartQueueNumber(null);
+    setPendingCartQueueOrderId(null);
   };
 
   // 10. Sales & Invoices
@@ -2882,8 +3039,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       computedTradeType = 'mixed';
     }
 
+    const isRestaurantSale = businessMode === 'restaurant' || Boolean(pendingCartQueueNumber) || Boolean(pendingCartQueueOrderId);
+    const assignedQueueNumber = pendingCartQueueNumber || getNextRestaurantQueueNumber();
+
     const invoicePrefix = computedTradeType === 'wholesale' ? 'WHS' : 'INV';
-    const invoiceNum = `${invoicePrefix}-${new Date().getFullYear()}-${String(sales.length + 1024).padStart(6, '0')}`;
+    const todayCompact = getLocalTodayDateKey().replace(/-/g, '');
+    const invoiceNum = isRestaurantSale
+      ? `Q-${String(assignedQueueNumber).padStart(3, '0')}-${invoicePrefix}-${todayCompact.slice(2)}`
+      : `Q-${String(assignedQueueNumber).padStart(3, '0')}-${invoicePrefix}-${todayCompact.slice(2)}`;
 
     const hwDev = getDeviceHardwareInfo();
     const activeRole: DeviceRole = dedicatedDeviceRole || 'master_pos';
@@ -2911,10 +3074,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customerName: selectedCustomer?.name,
       customerCode: selectedCustomer?.customerCode,
       customerPhone: selectedCustomer?.phone,
-      businessMode,
-      diningType: businessMode === 'restaurant' ? restaurantDiningType : undefined,
-      tableName: businessMode === 'restaurant' && restaurantDiningType === 'dine_in' ? selectedTable : undefined,
-      guestCount: businessMode === 'restaurant' && restaurantDiningType === 'dine_in' ? guestCount : undefined,
+      businessMode: isRestaurantSale ? 'restaurant' : businessMode,
+      diningType: isRestaurantSale ? restaurantDiningType : undefined,
+      tableName: isRestaurantSale && restaurantDiningType === 'dine_in' ? selectedTable : undefined,
+      guestCount: isRestaurantSale && restaurantDiningType === 'dine_in' ? guestCount : undefined,
+      queueNumber: assignedQueueNumber,
+      queueStatus: isRestaurantSale ? 'preparing' : undefined,
+      kitchenOrderId: pendingCartQueueOrderId || undefined,
       tradeType: computedTradeType,
       items: cart.map(it => ({
         productId: it.productId,
@@ -3032,6 +3198,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedSales = [newSale, ...sales];
     setSalesState(updatedSales);
     localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(updatedSales));
+
+    // 3.1 Synchronize Restaurant Queue & Kitchen Order for this numbered invoice
+    if (isRestaurantSale && assignedQueueNumber) {
+      if (pendingCartQueueOrderId) {
+        setKitchenOrders(prev =>
+          prev.map(ord =>
+            ord.id === pendingCartQueueOrderId
+              ? {
+                  ...ord,
+                  saleId: newSale.id,
+                  invoiceNumber: invoiceNum,
+                  queueNumber: assignedQueueNumber,
+                  waiterConfirmed: true,
+                }
+              : ord
+          )
+        );
+      } else {
+        const autoKitchenOrder: KitchenOrder = {
+          id: `k-ord-${Date.now().toString(36)}`,
+          orderNumber: `Q-${String(assignedQueueNumber).padStart(3, '0')}`,
+          queueNumber: assignedQueueNumber,
+          saleId: newSale.id,
+          invoiceNumber: invoiceNum,
+          sourceDevice: resolvedSourceDeviceName,
+          sourceDeviceId: resolvedSourceDeviceId,
+          sourceDeviceName: resolvedSourceDeviceName,
+          sourceDeviceRole: activeRole,
+          customerName: selectedCustomer?.name,
+          customerPhone: selectedCustomer?.phone,
+          diningType: restaurantDiningType,
+          tableName:
+            restaurantDiningType === 'dine_in'
+              ? selectedTable
+              : restaurantDiningType === 'takeaway'
+              ? 'طلب سفري'
+              : 'طلب توصيل',
+          guestCount: restaurantDiningType === 'dine_in' ? guestCount : 1,
+          items: cart.map((it, idx) => ({
+            id: `ki-${Date.now()}-${idx}`,
+            productId: it.productId,
+            nameAr: it.product.nameAr,
+            nameEn: it.product.nameEn || it.product.nameAr,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            image: it.product.image,
+            notes: it.kitchenNotes || '',
+            status: 'pending' as const,
+            targetDeviceRole: it.product.targetDeviceRole || 'kitchen_display',
+            targetDeviceId: it.product.targetDeviceId || '',
+            targetDeviceName: it.product.targetStationName || 'المطبخ والكاشير',
+          })),
+          totalAmount: grandTotal,
+          status: 'in_progress',
+          createdAt: newSale.createdAt,
+          estimatedMinutes: 10,
+          notes: saleData.notes || kitchenNote || '',
+        };
+        setKitchenOrders(prev => [autoKitchenOrder, ...prev]);
+        fetch('/api/sync/kitchen-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order: autoKitchenOrder }),
+        }).catch(() => {});
+      }
+    }
 
     setDevices(prev =>
       prev.map(d => {
@@ -4105,11 +4337,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify('تم توثيق تحويل البضاعة بين المستودعات', `أمر تحويل رقم ${transferNumber}`, 'success');
   };
 
-  // 16. Full Database Backup & Restore
-  const exportDatabaseJson = (): string => {
-    const data = {
-      version: '2.6',
-      exportDate: new Date().toISOString(),
+  // --- Cash Drawer & Shifts State + Promotions State (declared before backup & reset functions) ---
+  const [shifts, setShiftsState] = useState<CashShift[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CASH_SHIFTS);
+      return saved ? JSON.parse(saved) : initialShifts;
+    } catch {
+      return initialShifts;
+    }
+  });
+
+  const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
+    try {
+      if (
+        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
+        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true'
+      ) {
+        return localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID) || null;
+      }
+      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID);
+      if (saved) return saved;
+      const openShift = initialShifts.find(s => s.status === 'open');
+      return openShift ? openShift.id : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [promotions, setPromotionsState] = useState<PromotionDeal[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.PROMOTIONS);
+      return saved ? JSON.parse(saved) : initialPromotions;
+    } catch {
+      return initialPromotions;
+    }
+  });
+
+  // 16. Full Database & IndexedDB Auto-Backup & Restore
+  const getFullAppStateForBackup = useCallback(
+    () => ({
       settings,
       products,
       categories,
@@ -4125,51 +4391,227 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       wholesaleWarehouses,
       deliveryVehicles,
       vehicleManifests,
+      shifts,
+      promotions,
+    }),
+    [
+      settings,
+      products,
+      categories,
+      customers,
+      suppliers,
+      debtTransactions,
+      sales,
+      refunds,
+      inventoryLogs,
+      expenses,
+      auditLogs,
+      users,
+      wholesaleWarehouses,
+      deliveryVehicles,
+      vehicleManifests,
+      shifts,
+      promotions,
+    ]
+  );
+
+  const triggerIndexedDbBackupDownload = async (options?: {
+    triggerType?: AutoBackupTriggerType;
+    downloadToDevice?: boolean;
+    notes?: string;
+  }): Promise<IndexedDbBackupSnapshot | null> => {
+    try {
+      const fullState = getFullAppStateForBackup();
+      // First ensure IndexedDB stores are up to date with latest in-memory state
+      await indexedDbService.cacheAllData({
+        products: fullState.products,
+        categories: fullState.categories,
+        customers: fullState.customers,
+        sales: fullState.sales,
+        settings: fullState.settings,
+      });
+
+      const shouldDownload = options?.downloadToDevice !== false;
+      const { snapshot, downloadedFileName } = await indexedDbService.createAutoBackupSnapshot(
+        fullState,
+        {
+          triggerType: options?.triggerType || 'manual_download',
+          downloadToDevice: shouldDownload,
+          notes: options?.notes,
+        }
+      );
+
+      if (shouldDownload) {
+        soundEffects.playSuccess();
+        notify(
+          'تم تحميل ملف النسخة الاحتياطية (JSON) بنجاح',
+          `تم تصدير بيانات IndexedDB (${snapshot.summary.totalRecordsCount} سجل) إلى الملف (${downloadedFileName})`,
+          'success'
+        );
+        logAudit(
+          'تصدير وتحميل نسخة احتياطية محلية (IndexedDB JSON)',
+          `معرف النسخة: ${snapshot.backupId} | إجمالي السجلات: ${snapshot.summary.totalRecordsCount}`,
+          'medium'
+        );
+      }
+      return snapshot;
+    } catch (err) {
+      console.error('Error creating IndexedDB backup:', err);
+      notify('خطأ في النسخ الاحتياطي', 'تعذر إنشاء ملف النسخة الاحتياطية من IndexedDB', 'error');
+      return null;
+    }
+  };
+
+  const restoreFromIndexedDbBackup = async (
+    jsonOrSnapshot: string | any,
+    mode: 'replace' | 'merge' = 'replace'
+  ): Promise<boolean> => {
+    try {
+      const config = indexedDbService.getAutoBackupConfig();
+      if (config.safetyBackupBeforeRestore) {
+        await indexedDbService
+          .createAutoBackupSnapshot(getFullAppStateForBackup(), {
+            triggerType: 'pre_restore_safety',
+            downloadToDevice: false,
+            notes: 'نسخة أمان تلقائية محفوظة قبل تنفيذ استعادة البيانات',
+          })
+          .catch(() => {});
+      }
+
+      const result = await indexedDbService.restoreFullIndexedDbFromBackup(jsonOrSnapshot, mode);
+      if (!result.success) {
+        notify('فشل استعادة البيانات', result.error || 'الملف المحدد غير صالح', 'error');
+        return false;
+      }
+
+      const d = result.restoredData;
+      if (d.settings) {
+        setSettingsState(d.settings);
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(d.settings));
+      }
+      setProductsState(d.products);
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(d.products));
+
+      if (d.categories && d.categories.length > 0) {
+        setCategoriesState(d.categories);
+        localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(d.categories));
+      }
+
+      setCustomersState(d.customers);
+      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(d.customers));
+
+      setSalesState(d.sales);
+      localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(d.sales));
+
+      if (d.suppliers) {
+        setSuppliersState(d.suppliers);
+        localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(d.suppliers));
+      }
+      if (d.debtTransactions) {
+        setDebtTransactionsState(d.debtTransactions);
+        localStorage.setItem(STORAGE_KEYS.DEBT_TRANSACTIONS, JSON.stringify(d.debtTransactions));
+      }
+      if (d.refunds) {
+        setRefundsState(d.refunds);
+        localStorage.setItem(STORAGE_KEYS.REFUNDS, JSON.stringify(d.refunds));
+      }
+      if (d.inventoryLogs) {
+        setInventoryLogsState(d.inventoryLogs);
+        localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(d.inventoryLogs));
+      }
+      if (d.expenses) {
+        setExpensesState(d.expenses);
+        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(d.expenses));
+      }
+      if (d.auditLogs) {
+        setAuditLogsState(d.auditLogs);
+        localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(d.auditLogs));
+      }
+      if (d.users && d.users.length > 0) {
+        setUsersState(d.users);
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(d.users));
+      }
+      if (d.wholesaleWarehouses) {
+        setWholesaleWarehousesState(d.wholesaleWarehouses);
+        localStorage.setItem(
+          STORAGE_KEYS.WHOLESALE_WAREHOUSES,
+          JSON.stringify(d.wholesaleWarehouses)
+        );
+      }
+      if (d.deliveryVehicles) {
+        setDeliveryVehiclesState(d.deliveryVehicles);
+        localStorage.setItem(STORAGE_KEYS.DELIVERY_VEHICLES, JSON.stringify(d.deliveryVehicles));
+      }
+      if (d.vehicleManifests) {
+        setVehicleManifestsState(d.vehicleManifests);
+        localStorage.setItem(STORAGE_KEYS.VEHICLE_MANIFESTS, JSON.stringify(d.vehicleManifests));
+      }
+      if (d.shifts) {
+        setShiftsState(d.shifts);
+        localStorage.setItem(STORAGE_KEYS.CASH_SHIFTS, JSON.stringify(d.shifts));
+      }
+      if (d.promotions) {
+        setPromotionsState(d.promotions);
+        localStorage.setItem(STORAGE_KEYS.PROMOTIONS, JSON.stringify(d.promotions));
+      }
+
+      await refreshOfflineQueueCount();
+      soundEffects.playSuccess();
+      notify(
+        'تمت استعادة بيانات IndexedDB والنظام بنجاح',
+        `تم تحديث ${d.products.length} صنف، ${d.sales.length} فاتورة، و ${d.customers.length} عميل (${
+          mode === 'merge' ? 'دمج ذكي' : 'استبدال كامل'
+        })`,
+        'success'
+      );
+      logAudit(
+        'استعادة قاعدة بيانات IndexedDB من نسخة احتياطية',
+        `الوضع: ${mode === 'merge' ? 'دمج ذكي' : 'استبدال كامل'} | المنتجات: ${d.products.length} | الفواتير: ${d.sales.length}`,
+        'high'
+      );
+      return true;
+    } catch (err) {
+      console.error('Restore error:', err);
+      notify('فشل استعادة البيانات', 'حدث خطأ أثناء معالجة ملف النسخة الاحتياطية', 'error');
+      return false;
+    }
+  };
+
+  const exportDatabaseJson = (): string => {
+    const fullState = getFullAppStateForBackup();
+    const data = {
+      app: 'Kian Cashier (كيان كاشير)',
+      engine: 'IndexedDB_AutoBackup_Engine',
+      version: '3.0',
+      exportDate: new Date().toISOString(),
+      ...fullState,
+      indexedDbStores: {
+        products: fullState.products,
+        categories: fullState.categories,
+        customers: fullState.customers,
+        sales: fullState.sales,
+        settings: fullState.settings,
+      },
     };
-    return JSON.stringify(data, null, 2);
+    const jsonStr = JSON.stringify(data, null, 2);
+    // Automatically trigger browser download & save in IndexedDB Auto-Backup history
+    triggerIndexedDbBackupDownload({
+      triggerType: 'manual_download',
+      downloadToDevice: true,
+    }).catch(() => {});
+    return jsonStr;
   };
 
   const importDatabaseJson = (jsonString: string): boolean => {
     try {
-      const data = JSON.parse(jsonString);
-      if (data.products && Array.isArray(data.products)) {
-        if (data.settings) setSettingsState(data.settings);
-        if (data.products) setProductsState(data.products);
-        if (data.categories) setCategoriesState(data.categories);
-        if (data.customers) setCustomersState(data.customers);
-        if (data.suppliers) setSuppliersState(data.suppliers);
-        if (data.debtTransactions) setDebtTransactionsState(data.debtTransactions);
-        if (data.sales) setSalesState(data.sales);
-        if (data.refunds) setRefundsState(data.refunds);
-        if (data.inventoryLogs) setInventoryLogsState(data.inventoryLogs);
-        if (data.expenses) setExpensesState(data.expenses);
-        if (data.auditLogs) setAuditLogsState(data.auditLogs);
-        if (data.users) setUsersState(data.users);
-        if (data.wholesaleWarehouses) setWholesaleWarehousesState(data.wholesaleWarehouses);
-        if (data.deliveryVehicles) setDeliveryVehiclesState(data.deliveryVehicles);
-        if (data.vehicleManifests) setVehicleManifestsState(data.vehicleManifests);
-
-        // Save all to localStorage
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(data.settings || settings));
-        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products));
-        localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(data.categories || categories));
-        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(data.customers || customers));
-        if (data.suppliers) localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(data.suppliers));
-        if (data.debtTransactions) localStorage.setItem(STORAGE_KEYS.DEBT_TRANSACTIONS, JSON.stringify(data.debtTransactions));
-        localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(data.sales || sales));
-        localStorage.setItem(STORAGE_KEYS.REFUNDS, JSON.stringify(data.refunds || refunds));
-        localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(data.inventoryLogs || inventoryLogs));
-        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(data.expenses || expenses));
-        localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs || auditLogs));
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users || users));
-        if (data.wholesaleWarehouses) localStorage.setItem(STORAGE_KEYS.WHOLESALE_WAREHOUSES, JSON.stringify(data.wholesaleWarehouses));
-        if (data.deliveryVehicles) localStorage.setItem(STORAGE_KEYS.DELIVERY_VEHICLES, JSON.stringify(data.deliveryVehicles));
-        if (data.vehicleManifests) localStorage.setItem(STORAGE_KEYS.VEHICLE_MANIFESTS, JSON.stringify(data.vehicleManifests));
-
-        notify('تم استيراد قاعدة البيانات بنجاح', '', 'success');
-        return true;
+      const preview = indexedDbService.inspectBackupJsonForRestore(jsonString);
+      if (!preview.valid || !preview.rawSnapshot) {
+        notify('فشل استيراد الملف', preview.error || 'تأكد من صحة ملف JSON', 'error');
+        return false;
       }
-      return false;
+      // Perform full IndexedDB & React state restore asynchronously
+      restoreFromIndexedDbBackup(preview.rawSnapshot, 'replace').catch(() => {});
+      return true;
     } catch {
       notify('فشل استيراد الملف', 'تأكد من صحة ملف JSON', 'error');
       return false;
@@ -4561,6 +5003,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearTimeout(timer);
   }, [products, categories, customers, sales, settings]);
 
+  // 2b. Periodic Auto-Backup Scheduler for IndexedDB -> Local JSON Snapshot & Optional Auto-Download
+  useEffect(() => {
+    let isMounted = true;
+
+    // Ensure at least one initial Auto-Backup snapshot is created in IndexedDB history on first load
+    const ensureInitialSnapshot = setTimeout(async () => {
+      if (!isMounted) return;
+      try {
+        const config = indexedDbService.getAutoBackupConfig();
+        if (!config.enabled) return;
+        const history = await indexedDbService.getSavedAutoBackupHistory();
+        if (history.length === 0) {
+          await indexedDbService.createAutoBackupSnapshot(getFullAppStateForBackup(), {
+            triggerType: 'scheduled_auto',
+            downloadToDevice: false,
+            notes: 'نسخة احتياطية ذاتية أولية لقاعدة بيانات IndexedDB',
+          });
+        }
+      } catch {}
+    }, 3500);
+
+    const checkInterval = setInterval(async () => {
+      if (!isMounted) return;
+      try {
+        const config = indexedDbService.getAutoBackupConfig();
+        if (!config.enabled) return;
+        const intervalMs = Math.max(5, config.intervalMinutes || 30) * 60 * 1000;
+        const lastAtMs = config.lastAutoBackupAt ? new Date(config.lastAutoBackupAt).getTime() : 0;
+        if (Date.now() - lastAtMs >= intervalMs) {
+          const { snapshot, downloadedFileName } = await indexedDbService.createAutoBackupSnapshot(
+            getFullAppStateForBackup(),
+            {
+              triggerType: 'scheduled_auto',
+              downloadToDevice: Boolean(config.autoDownloadToDevice),
+              notes: `نسخ احتياطي ذاتي دوري (كل ${config.intervalMinutes} دقيقة)`,
+            }
+          );
+          if (config.autoDownloadToDevice && downloadedFileName) {
+            notify(
+              'تم النسخ الاحتياطي الذاتي وتحميل ملف JSON تلقائياً',
+              `تم حفظ وتحميل الملف (${downloadedFileName}) لبيانات IndexedDB (${snapshot.summary.totalRecordsCount} سجل)`,
+              'info'
+            );
+          }
+        }
+      } catch {}
+    }, 30000);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(ensureInitialSnapshot);
+      clearInterval(checkInterval);
+    };
+  }, [getFullAppStateForBackup]);
+
   // 3. Online/Offline network event listeners with auto-sync
   useEffect(() => {
     const handleOnline = () => {
@@ -4586,32 +5083,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSyncingWithPartner, setIsSyncingWithPartner] = useState(false);
 
   // --- Cash Drawer & Shifts Engine ---
-  const [shifts, setShiftsState] = useState<CashShift[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CASH_SHIFTS);
-      return saved ? JSON.parse(saved) : initialShifts;
-    } catch {
-      return initialShifts;
-    }
-  });
-
-  const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
-    try {
-      if (
-        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
-        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true'
-      ) {
-        return localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID) || null;
-      }
-      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFT_ID);
-      if (saved) return saved;
-      const openShift = initialShifts.find(s => s.status === 'open');
-      return openShift ? openShift.id : null;
-    } catch {
-      return null;
-    }
-  });
-
   const activeShift = shifts.find(s => s.id === activeShiftId && s.status === 'open') || null;
 
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
@@ -4739,19 +5210,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try { soundEffects.playSuccess(); } catch {}
     notify('تم إغلاق الوردية وجرد الصندوق بنجاح', `الوردية #${closedShift.shiftNumber} مغلقة | النقد الفعلي: ${actualCash.toLocaleString()} ${settings.currency.symbol} (${discrepancyReason})`, 'success');
     logAudit('إغلاق وردية كاشير وجرد الصندوق', `الوردية #${closedShift.shiftNumber} | المتوقع: ${expected} | الفعلي: ${actualCash} | الفارق: ${diff}`, 'high');
+
+    // Auto-Backup IndexedDB on shift close if enabled
+    try {
+      const bkpCfg = indexedDbService.getAutoBackupConfig();
+      if (bkpCfg.enabled && bkpCfg.backupOnShiftClose) {
+        indexedDbService
+          .createAutoBackupSnapshot(getFullAppStateForBackup(), {
+            triggerType: 'shift_close',
+            downloadToDevice: Boolean(bkpCfg.autoDownloadToDevice),
+            notes: `نسخ احتياطي تلقائي عند إغلاق الوردية #${closedShift.shiftNumber}`,
+          })
+          .catch(() => {});
+      }
+    } catch {}
+
     return closedShift;
   };
 
   // --- Smart Promotions & Combo Deals Engine ---
-  const [promotions, setPromotionsState] = useState<PromotionDeal[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PROMOTIONS);
-      return saved ? JSON.parse(saved) : initialPromotions;
-    } catch {
-      return initialPromotions;
-    }
-  });
-
   const [isPromotionsModalOpen, setIsPromotionsModalOpen] = useState(false);
   const openPromotionsModal = () => setIsPromotionsModalOpen(true);
 
@@ -4972,49 +5449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearTimeout(startupTimer);
   }, []);
 
-  const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>(() => {
-    try {
-      if (
-        localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
-        localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true'
-      ) {
-        return [];
-      }
-    } catch {}
-    return [
-      {
-        id: "k-ord-101",
-        orderNumber: "ORD-101",
-        sourceDevice: "جهاز الكاشير المركزي",
-        diningType: "dine_in",
-        tableName: "طاولة 4",
-        guestCount: 3,
-        status: "in_progress",
-        createdAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
-        estimatedMinutes: 12,
-        notes: "بدون ملح زائد، تجهيز سريع",
-        items: [
-          { id: "ki-1", productId: "p1", nameAr: "برغر لحم دبل كلاسيك", nameEn: "Double Beef Burger", quantity: 2, unitPrice: 28000, notes: "بدون مخلل", status: "cooking" },
-          { id: "ki-2", productId: "p4", nameAr: "بطاطا مقلية عائلية", nameEn: "Family Fries", quantity: 1, unitPrice: 12000, status: "ready" },
-          { id: "ki-3", productId: "p5", nameAr: "عصير برتقال طبيعي", nameEn: "Fresh Orange Juice", quantity: 2, unitPrice: 10000, status: "ready" }
-        ]
-      },
-      {
-        id: "k-ord-102",
-        orderNumber: "ORD-102",
-        sourceDevice: "هاتف النادل (سامسونج S23)",
-        diningType: "takeaway",
-        status: "pending",
-        createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-        estimatedMinutes: 8,
-        notes: "تغليف سفري محكم",
-        items: [
-          { id: "ki-4", productId: "p2", nameAr: "بيتزا بيبروني وسط", nameEn: "Pepperoni Pizza Medium", quantity: 1, unitPrice: 35000, status: "pending" },
-          { id: "ki-5", productId: "p6", nameAr: "مشروب غازي كولا", nameEn: "Cola Can", quantity: 2, unitPrice: 5000, status: "pending" }
-        ]
-      }
-    ];
-  });
+  const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>([]);
 
   const [dedicatedDeviceRole, setDedicatedDeviceRole] = useState<DeviceRole | null>(() => {
     try {
@@ -5681,8 +6116,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addKitchenOrder = (order: Omit<KitchenOrder, 'id' | 'createdAt'>) => {
     const nowIso = new Date().toISOString();
+    const resolvedQueueNum = order.queueNumber || getNextRestaurantQueueNumber();
+    if (order.queueNumber && order.queueNumber > restaurantQueueCounter) {
+      setRestaurantQueueCounter(order.queueNumber);
+      try {
+        localStorage.setItem('kian_pos_restaurant_queue_counter_v1', String(order.queueNumber));
+      } catch {}
+    }
     const newOrder: KitchenOrder = {
       ...order,
+      queueNumber: resolvedQueueNum,
+      orderNumber: order.orderNumber || `Q-${String(resolvedQueueNum).padStart(3, '0')}`,
       id: `k-ord-${Date.now().toString(36)}`,
       createdAt: nowIso,
       sourceDeviceId: order.sourceDeviceId || currentDeviceId,
@@ -5754,6 +6198,269 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isRestaurantQrModalOpen, setIsRestaurantQrModalOpen] = useState(false);
   const [isCustomerMenuPreviewOpen, setIsCustomerMenuPreviewOpen] = useState(false);
+
+  // Restaurant Tables Floor Plan State
+  const [restaurantTables, setRestaurantTablesState] = useState<RestaurantTableInfo[]>(() => {
+    const defaultTables: RestaurantTableInfo[] = [
+      { id: 'tbl-1', name: 'الطاولة 1', zone: 'الصالة الرئيسية', capacity: 4, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-2', name: 'الطاولة 2', zone: 'الصالة الرئيسية', capacity: 4, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-3', name: 'الطاولة 3', zone: 'الصالة الرئيسية', capacity: 2, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-4', name: 'الطاولة 4', zone: 'الصالة الرئيسية', capacity: 6, status: 'available', waiterName: 'سامر الكابتن' },
+      { id: 'tbl-5', name: 'الطاولة 5', zone: 'الصالة الرئيسية', capacity: 4, status: 'available', waiterName: 'سامر الكابتن' },
+      { id: 'tbl-6', name: 'الطاولة 6', zone: 'الصالة الرئيسية', capacity: 4, status: 'available', waiterName: 'سامر الكابتن' },
+      { id: 'tbl-7', name: 'الطاولة 7', zone: 'الصالة الرئيسية', capacity: 6, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-8', name: 'الطاولة 8', zone: 'الصالة الرئيسية', capacity: 2, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-vip-1', name: 'VIP 1 (رئيسي)', zone: 'صالة العائلات وكبار الزوار (VIP)', capacity: 8, status: 'available', waiterName: 'سامر الكابتن' },
+      { id: 'tbl-vip-2', name: 'VIP 2 (عائلي)', zone: 'صالة العائلات وكبار الزوار (VIP)', capacity: 10, status: 'available', waiterName: 'سامر الكابتن' },
+      { id: 'tbl-vip-3', name: 'VIP 3 (جلسة هادئة)', zone: 'صالة العائلات وكبار الزوار (VIP)', capacity: 6, status: 'reserved', reservedBy: 'د. مازن العلي', reservedPhone: '0944556677', reservedTime: '20:30', reservedGuests: 5, waiterName: 'سامر الكابتن' },
+      { id: 'tbl-vip-4', name: 'ركن العائلات VIP', zone: 'صالة العائلات وكبار الزوار (VIP)', capacity: 8, status: 'available', waiterName: 'سامر الكابتن' },
+      { id: 'tbl-ter-1', name: 'تراس خارجي 1', zone: 'الشرفة والحديقة الخارجية', capacity: 4, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-ter-2', name: 'تراس خارجي 2', zone: 'الشرفة والحديقة الخارجية', capacity: 4, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-ter-3', name: 'شرفة 1', zone: 'الشرفة والحديقة الخارجية', capacity: 4, status: 'available', waiterName: 'أحمد النادل' },
+      { id: 'tbl-ter-4', name: 'حديقة خارجية', zone: 'الشرفة والحديقة الخارجية', capacity: 6, status: 'available', waiterName: 'سامر الكابتن' },
+    ];
+    try {
+      const saved = localStorage.getItem('kian_pos_restaurant_tables_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return defaultTables;
+  });
+
+  const updateRestaurantTables = (tables: RestaurantTableInfo[]) => {
+    setRestaurantTablesState(tables);
+    try {
+      localStorage.setItem('kian_pos_restaurant_tables_v1', JSON.stringify(tables));
+    } catch {}
+  };
+
+  // Table Service Requests (Call Waiter / Request Bill / Water & Napkins)
+  const [tableServiceRequests, setTableServiceRequests] = useState<TableServiceRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('kian_pos_table_requests_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('kian_pos_table_requests_v1', JSON.stringify(tableServiceRequests));
+    } catch {}
+  }, [tableServiceRequests]);
+
+  const submitTableServiceRequest = async (
+    reqData: Omit<TableServiceRequest, 'id' | 'createdAt' | 'status'>
+  ): Promise<TableServiceRequest> => {
+    const fallbackReq: TableServiceRequest = {
+      ...reqData,
+      id: `tbl-req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const res = await fetch('/api/menu/table-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqData),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.request) {
+          setTableServiceRequests(prev => [data.request, ...prev.filter(r => r.id !== data.request.id)]);
+          try {
+            broadcastChannelRef.current?.postMessage({
+              type: 'TABLE_SERVICE_REQUEST',
+              payload: { request: data.request },
+            });
+          } catch {}
+          return data.request;
+        }
+      }
+    } catch {}
+
+    setTableServiceRequests(prev => [fallbackReq, ...prev]);
+    try {
+      broadcastChannelRef.current?.postMessage({
+        type: 'TABLE_SERVICE_REQUEST',
+        payload: { request: fallbackReq },
+      });
+    } catch {}
+    return fallbackReq;
+  };
+
+  const acknowledgeTableServiceRequest = (
+    requestId: string,
+    status: TableServiceRequest['status'] = 'completed'
+  ) => {
+    const actor = currentSubDeviceUserName || currentUser?.name || 'الكابتن';
+    setTableServiceRequests(prev =>
+      prev.map(r => (r.id === requestId ? { ...r, status, acknowledgedBy: actor } : r))
+    );
+    fetch('/api/menu/acknowledge-table-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId, acknowledgedBy: actor, status }),
+    }).catch(() => {});
+    try {
+      broadcastChannelRef.current?.postMessage({
+        type: 'TABLE_SERVICE_REQUEST_UPDATED',
+        payload: { requestId, status, acknowledgedBy: actor },
+      });
+    } catch {}
+    soundEffects.playSuccess();
+  };
+
+  const confirmKitchenOrder = (
+    orderId: string,
+    confirmedBy?: string,
+    status?: KitchenOrder['status']
+  ) => {
+    const actor = confirmedBy || currentSubDeviceUserName || currentUser?.name || 'الكابتن / النادل';
+    const nowIso = new Date().toISOString();
+    setKitchenOrders(prev =>
+      prev.map(ord => {
+        if (ord.id !== orderId && ord.orderNumber !== orderId) return ord;
+        const nextStatus = status || (ord.status === 'new' || ord.status === 'pending' ? 'in_progress' : ord.status);
+        const nextItems = ord.items.map(it => {
+          if (nextStatus === 'ready' && (it.status === 'pending' || it.status === 'cooking')) {
+            return { ...it, status: 'ready' as const };
+          }
+          if (nextStatus === 'completed') {
+            return { ...it, status: 'served' as const };
+          }
+          return it;
+        });
+        return {
+          ...ord,
+          waiterConfirmed: true,
+          waiterConfirmedBy: actor,
+          waiterConfirmedAt: nowIso,
+          status: nextStatus,
+          items: nextItems,
+        };
+      })
+    );
+
+    fetch('/api/menu/confirm-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, confirmedBy: actor, status }),
+    }).catch(() => {});
+
+    soundEffects.saleSuccess();
+    notify(
+      'تم تأكيد وتحديث حالة الطلب',
+      `تم التأكيد بواسطة (${actor}) وإشعار الكاشير والنادل والمطبخ`,
+      'success'
+    );
+  };
+
+  const updateKitchenOrderStatus = (orderId: string, status: KitchenOrder['status']) => {
+    confirmKitchenOrder(orderId, currentSubDeviceUserName || currentUser?.name || 'الكاشير', status);
+    const targetOrd = kitchenOrders.find(o => o.id === orderId || o.orderNumber === orderId);
+    if (targetOrd) {
+      const mappedQueueStatus: Sale['queueStatus'] =
+        status === 'ready'
+          ? 'ready'
+          : status === 'completed'
+          ? 'served'
+          : 'preparing';
+      setSalesState(prev => {
+        const nextSales = prev.map(s => {
+          if (
+            s.id === targetOrd.saleId ||
+            s.kitchenOrderId === targetOrd.id ||
+            (targetOrd.queueNumber && s.queueNumber === targetOrd.queueNumber)
+          ) {
+            return { ...s, queueStatus: mappedQueueStatus };
+          }
+          return s;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(nextSales));
+        } catch {}
+        return nextSales;
+      });
+    }
+  };
+
+  const updateSaleQueueStatus = (
+    saleId: string,
+    queueStatus: 'waiting' | 'preparing' | 'ready' | 'served'
+  ) => {
+    let targetQueueNum: number | undefined;
+    let targetKitchenOrderId: string | undefined;
+
+    setSalesState(prev => {
+      const nextSales = prev.map(s => {
+        if (s.id === saleId) {
+          targetQueueNum = s.queueNumber;
+          targetKitchenOrderId = s.kitchenOrderId;
+          return { ...s, queueStatus };
+        }
+        return s;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(nextSales));
+      } catch {}
+      return nextSales;
+    });
+
+    const mappedKitchenStatus: KitchenOrder['status'] =
+      queueStatus === 'ready'
+        ? 'ready'
+        : queueStatus === 'served'
+        ? 'completed'
+        : queueStatus === 'waiting'
+        ? 'pending'
+        : 'in_progress';
+
+    setKitchenOrders(prev =>
+      prev.map(ord => {
+        if (
+          ord.saleId === saleId ||
+          (targetKitchenOrderId && ord.id === targetKitchenOrderId) ||
+          (targetQueueNum && ord.queueNumber === targetQueueNum)
+        ) {
+          return {
+            ...ord,
+            status: mappedKitchenStatus,
+            items: ord.items.map(it => ({
+              ...it,
+              status:
+                queueStatus === 'ready'
+                  ? 'ready'
+                  : queueStatus === 'served'
+                  ? 'served'
+                  : it.status,
+            })),
+          };
+        }
+        return ord;
+      })
+    );
+
+    if (queueStatus === 'ready') {
+      soundEffects.saleSuccess();
+    } else {
+      soundEffects.buttonClick();
+    }
+  };
+
+  const transferKitchenOrderTable = (orderId: string, newTableName: string) => {
+    setKitchenOrders(prev =>
+      prev.map(ord => (ord.id === orderId ? { ...ord, tableName: newTableName } : ord))
+    );
+    soundEffects.playSuccess();
+    notify('تم نقل الطلب للطاولة الجديدة', `تم نقل الطلب إلى (${newTableName}) بنجاح`, 'success');
+  };
 
   // Customer QR Menu Experience Reviews
   const [customerReviews, setCustomerReviewsState] = useState<CustomerFeedbackReview[]>(() => {
@@ -5886,6 +6593,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (order.tableName) setSelectedTable(order.tableName);
     if (order.guestCount) setGuestCount(order.guestCount);
     if (order.notes) setKitchenNote(order.notes);
+    if (order.queueNumber) setPendingCartQueueNumber(order.queueNumber);
+    setPendingCartQueueOrderId(order.id);
 
     const newCartItems: CartItem[] = [];
     order.items.forEach(item => {
@@ -6148,22 +6857,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const exists = prev.some(o => o.id === payload.order.id);
                 return exists ? prev : [payload.order, ...prev];
               });
-              const myRole = dedicatedDeviceRole || 'master_pos';
-              const routedItems = (payload.order.items || []).filter((it: any) => {
-                if (!it.targetDeviceRole || it.targetDeviceRole === 'all') return true;
-                if (it.targetDeviceRole === myRole) return true;
-                if (myRole === 'master_pos') return true;
-                return false;
+              const itemsSummary = (payload.order.items || [])
+                .map((i: any) => `${i.quantity}× ${i.nameAr}`)
+                .join('، ');
+              soundEffects.saleSuccess();
+              notify(
+                `📱 طلب زبون جديد وصلك الآن (${payload.order.tableName || payload.order.orderNumber})`,
+                `وصل للكاشير وجهاز النادل: ${itemsSummary}`,
+                'success'
+              );
+            }
+          } else if (type === 'TABLE_SERVICE_REQUEST') {
+            if (payload?.request) {
+              setTableServiceRequests(prev => {
+                const exists = prev.some(r => r.id === payload.request.id);
+                return exists ? prev : [payload.request, ...prev];
               });
-              if (routedItems.length > 0) {
-                soundEffects.saleSuccess();
-                const itemsSummary = routedItems.map((i: any) => `${i.quantity}× ${i.nameAr}`).join('، ');
-                notify(
-                  `📱 طلب QR جديد (${payload.order.tableName || payload.order.orderNumber})`,
-                  `الأصناف الموجهة: ${itemsSummary}`,
-                  'success'
-                );
-              }
+              soundEffects.saleSuccess();
+              notify(
+                `🔔 طلب خدمة من (${payload.request.tableName})`,
+                `${payload.request.labelAr}${payload.request.notes ? ` — ${payload.request.notes}` : ''}`,
+                'warning'
+              );
+            }
+          } else if (type === 'TABLE_SERVICE_REQUEST_UPDATED') {
+            if (payload?.requestId) {
+              setTableServiceRequests(prev =>
+                prev.map(r =>
+                  r.id === payload.requestId
+                    ? { ...r, status: payload.status || 'completed', acknowledgedBy: payload.acknowledgedBy }
+                    : r
+                )
+              );
             }
           } else if (type === 'MENU_PRODUCT_UPDATED') {
             if (payload?.productId && payload?.updates) {
@@ -6482,22 +7207,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const exists = prev.some(o => o.id === data.order.id);
               return exists ? prev : [data.order, ...prev];
             });
-            const myRole = dedicatedDeviceRole || 'master_pos';
-            const routedItems = (data.order.items || []).filter((it: any) => {
-              if (!it.targetDeviceRole || it.targetDeviceRole === 'all') return true;
-              if (it.targetDeviceRole === myRole) return true;
-              if (myRole === 'master_pos') return true;
-              return false;
+            const itemsSummary = (data.order.items || [])
+              .map((i: any) => `${i.quantity}× ${i.nameAr}`)
+              .join('، ');
+            soundEffects.saleSuccess();
+            notify(
+              `📱 طلب زبون عبر QR (${data.order.tableName || data.order.orderNumber})`,
+              `وصل للكاشير وجهاز النادل: ${itemsSummary}`,
+              'success'
+            );
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('TABLE_SERVICE_REQUEST', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.request) {
+            setTableServiceRequests(prev => {
+              const exists = prev.some(r => r.id === data.request.id);
+              return exists ? prev : [data.request, ...prev];
             });
-            if (routedItems.length > 0) {
-              soundEffects.saleSuccess();
-              const itemsSummary = routedItems.map((i: any) => `${i.quantity}× ${i.nameAr}`).join('، ');
-              notify(
-                `📱 طلب زبون عبر QR (${data.order.tableName || data.order.orderNumber})`,
-                `الأصناف الموجهة لهذا الجهاز: ${itemsSummary}`,
-                'success'
-              );
-            }
+            soundEffects.saleSuccess();
+            notify(
+              `🔔 نداء طاولة وارد (${data.request.tableName})`,
+              `${data.request.labelAr}${data.request.notes ? ` — ${data.request.notes}` : ''}`,
+              'warning'
+            );
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('TABLE_SERVICE_REQUEST_UPDATED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (Array.isArray(data?.requests)) {
+            setTableServiceRequests(data.requests);
           }
         } catch {}
       });
@@ -6947,6 +7692,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exportDataJson: exportDatabaseJson,
         importDataJson: importDatabaseJson,
         resetToDemoData: resetToDefaultData,
+        triggerIndexedDbBackupDownload,
+        restoreFromIndexedDbBackup,
         // Shifts & Promotions
         shifts,
         activeShift,
@@ -6969,7 +7716,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsRestaurantQrModalOpen,
         isCustomerMenuPreviewOpen,
         setIsCustomerMenuPreviewOpen,
+        restaurantQueueCounter,
+        nextRestaurantQueueNumber,
+        getNextRestaurantQueueNumber,
+        resetRestaurantQueueCounter,
+        updateSaleQueueStatus,
+        announceQueueNumber,
         loadKitchenOrderToCart,
+        confirmKitchenOrder,
+        updateKitchenOrderStatus,
+        transferKitchenOrderTable,
+        tableServiceRequests,
+        submitTableServiceRequest,
+        acknowledgeTableServiceRequest,
+        restaurantTables,
+        updateRestaurantTables,
         updateQrMenuTheme,
         customerReviews,
         addCustomerReview,

@@ -162,6 +162,9 @@ export interface Sale {
   diningType?: DiningType;
   tableName?: string;
   guestCount?: number;
+  queueNumber?: number;
+  queueStatus?: 'waiting' | 'preparing' | 'ready' | 'served';
+  kitchenOrderId?: string;
   tradeType?: 'retail' | 'wholesale' | 'mixed'; // Sale classification
   items: SaleItem[];
   subtotal: number;
@@ -415,6 +418,32 @@ export type ReceiptTemplateStyle = 'standard' | 'modern' | 'compact' | 'formal_t
 export type ReceiptDividerStyle = 'dashed' | 'solid' | 'double' | 'dotted';
 export type ReceiptFontFamily = 'cairo' | 'tajawal' | 'sans' | 'mono' | 'default';
 
+export type ReceiptSectionId =
+  | 'logo'
+  | 'header'
+  | 'queue_badge'
+  | 'meta_info'
+  | 'items_table'
+  | 'totals'
+  | 'tax'
+  | 'footer';
+
+export type ReceiptSectionSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+export type ReceiptSectionAlignment = 'left' | 'center' | 'right';
+
+export interface ReceiptSectionBlock {
+  id: ReceiptSectionId;
+  visible: boolean;
+  size: ReceiptSectionSize;
+  scalePercent?: number; // 65 to 160 (default 100)
+  heightPx?: number; // Custom height in px (e.g. logo height 28-140px)
+  paddingY?: number; // Vertical padding in px (0-24px)
+  alignment?: ReceiptSectionAlignment;
+  showDividerBelow?: boolean;
+  boxed?: boolean;
+  customTitle?: string;
+}
+
 export interface SavedSyncPartner {
   deviceId?: string;
   deviceName: string;
@@ -638,7 +667,16 @@ export interface StoreSettings {
   receiptShowCustomerNotes?: boolean; // Toggle visibility for Customer Notes
   receiptShowFooterMessage?: boolean; // Toggle visibility for Footer Message
   receiptSampleCustomerNote?: string; // Sample customer note for live preview
-  receiptLogoSize?: 'sm' | 'md' | 'lg'; // Logo sizing in receipt
+  receiptLogoSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'; // Logo sizing in receipt
+  receiptLogoHeightPx?: number; // Exact pixel height for logo (28-140px)
+  receiptLogoAlignment?: ReceiptSectionAlignment;
+  receiptHeaderSize?: ReceiptSectionSize;
+  receiptHeaderAlignment?: ReceiptSectionAlignment;
+  receiptTaxSectionSize?: ReceiptSectionSize;
+  receiptTaxAlignment?: ReceiptSectionAlignment;
+  receiptFooterSize?: ReceiptSectionSize;
+  receiptFooterAlignment?: ReceiptSectionAlignment;
+  receiptLayoutBlocks?: ReceiptSectionBlock[]; // Ordered, hideable, resizable receipt sections
   receiptShowItemSku?: boolean;
   receiptShowItemUnit?: boolean;
   receiptShowSubtotal?: boolean;
@@ -750,6 +788,7 @@ export interface KitchenOrderItem {
   productId: string;
   nameAr: string;
   nameEn: string;
+  productName?: string;
   quantity: number;
   unitPrice: number;
   image?: string;
@@ -763,14 +802,24 @@ export interface KitchenOrderItem {
 export interface KitchenOrder {
   id: string;
   orderNumber: string;
+  queueNumber?: number;
   saleId?: string;
+  invoiceNumber?: string;
   sourceDevice: string;
   sourceDeviceId?: string;
   sourceDeviceName?: string;
   sourceDeviceRole?: DeviceRole;
   isCustomerQrOrder?: boolean;
+  routedToCashier?: boolean;
+  routedToWaiter?: boolean;
+  waiterConfirmed?: boolean;
+  waiterConfirmedBy?: string;
+  waiterConfirmedAt?: string;
   customerName?: string;
   customerPhone?: string;
+  deliveryAddress?: string;
+  deliveryDriverName?: string;
+  deliveryFee?: number;
   diningType: DiningType;
   tableName?: string;
   guestCount?: number;
@@ -779,6 +828,33 @@ export interface KitchenOrder {
   status: 'new' | 'pending' | 'in_progress' | 'ready' | 'completed' | 'cancelled';
   createdAt: string;
   estimatedMinutes?: number;
+  notes?: string;
+}
+
+export interface TableServiceRequest {
+  id: string;
+  tableName: string;
+  requestType: 'call_waiter' | 'request_bill' | 'water_napkins' | 'clean_table';
+  labelAr?: string;
+  customerName?: string;
+  paymentPreference?: 'cash' | 'card';
+  notes?: string;
+  status: 'pending' | 'acknowledged' | 'completed';
+  acknowledgedBy?: string;
+  createdAt: string;
+}
+
+export interface RestaurantTableInfo {
+  id: string;
+  name: string;
+  zone: string;
+  capacity: number;
+  status: 'available' | 'occupied' | 'reserved' | 'bill_requested' | 'cleaning';
+  reservedBy?: string;
+  reservedPhone?: string;
+  reservedTime?: string;
+  reservedGuests?: number;
+  waiterName?: string;
   notes?: string;
 }
 
@@ -904,6 +980,7 @@ export interface InvoiceInstallmentPlan {
 export type ActiveTab = 
   | 'dashboard'
   | 'pos'
+  | 'restaurant'
   | 'trade'
   | 'debts'
   | 'ai'

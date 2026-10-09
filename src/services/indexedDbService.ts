@@ -137,6 +137,112 @@ export interface IndexedDbCleanWipeSummary {
   objectStoreNames: string[];
 }
 
+export type AutoBackupTriggerType =
+  | 'manual_download'
+  | 'scheduled_auto'
+  | 'shift_close'
+  | 'pre_restore_safety'
+  | 'data_mutation';
+
+export interface IndexedDbAutoBackupConfig {
+  enabled: boolean;
+  intervalMinutes: 5 | 15 | 30 | 60 | 360 | 1440;
+  autoDownloadToDevice: boolean;
+  backupOnShiftClose: boolean;
+  safetyBackupBeforeRestore: boolean;
+  maxHistoryCount: number;
+  lastAutoBackupAt: string | null;
+  lastDownloadedAt: string | null;
+}
+
+export interface IndexedDbBackupSnapshot {
+  backupId: string;
+  app: string;
+  engine: string;
+  dbName: string;
+  dbVersion: number;
+  version: string;
+  exportDate: string;
+  triggerType: AutoBackupTriggerType;
+  triggerLabelAr: string;
+  storeName: string;
+  checksum: string;
+  notes?: string;
+  summary: {
+    productsCount: number;
+    categoriesCount: number;
+    customersCount: number;
+    salesCount: number;
+    offlineQueueCount: number;
+    deviceTransfersCount: number;
+    suppliersCount: number;
+    debtTransactionsCount: number;
+    refundsCount: number;
+    inventoryLogsCount: number;
+    expensesCount: number;
+    usersCount: number;
+    totalRecordsCount: number;
+    estimatedSizeBytes: number;
+  };
+  indexedDbStores: {
+    products: Product[];
+    categories: Category[];
+    customers: Customer[];
+    sales: Sale[];
+    settings: StoreSettings | null;
+    offline_queue: OfflineQueueItem[];
+    device_transfers: DeviceTransferPackage[];
+    app_meta: Array<{ key: string; value: any }>;
+  };
+  // Top-level compatibility fields for AppContext hydration
+  settings?: StoreSettings | null;
+  products: Product[];
+  categories: Category[];
+  customers: Customer[];
+  sales: Sale[];
+  suppliers?: any[];
+  debtTransactions?: DebtTransaction[];
+  refunds?: Refund[];
+  inventoryLogs?: any[];
+  expenses?: Expense[];
+  auditLogs?: any[];
+  users?: any[];
+  wholesaleWarehouses?: any[];
+  deliveryVehicles?: any[];
+  vehicleManifests?: VehicleLoadingManifest[];
+  shifts?: any[];
+  promotions?: any[];
+}
+
+export interface IndexedDbParsedRestorePreview {
+  valid: boolean;
+  error?: string;
+  backupId: string;
+  app: string;
+  version: string;
+  exportDate: string;
+  storeName: string;
+  checksum: string;
+  triggerLabelAr: string;
+  fileSizeBytes: number;
+  counts: {
+    productsCount: number;
+    categoriesCount: number;
+    customersCount: number;
+    salesCount: number;
+    offlineQueueCount: number;
+    deviceTransfersCount: number;
+    suppliersCount: number;
+    debtTransactionsCount: number;
+    refundsCount: number;
+    inventoryLogsCount: number;
+    expensesCount: number;
+    usersCount: number;
+    totalRecordsCount: number;
+  };
+  rawSnapshot: any;
+}
+
 class IndexedDbService {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<IDBDatabase> | null = null;
@@ -271,6 +377,741 @@ class IndexedDbService {
       });
     } catch (err) {
       console.warn('Error caching data to IndexedDB:', err);
+    }
+  }
+
+  /**
+   * Read or initialize Auto-Backup configuration from localStorage / IndexedDB
+   */
+  getAutoBackupConfig(): IndexedDbAutoBackupConfig {
+    const defaultConfig: IndexedDbAutoBackupConfig = {
+      enabled: true,
+      intervalMinutes: 30,
+      autoDownloadToDevice: false,
+      backupOnShiftClose: true,
+      safetyBackupBeforeRestore: true,
+      maxHistoryCount: 10,
+      lastAutoBackupAt: null,
+      lastDownloadedAt: null,
+    };
+    try {
+      const saved = localStorage.getItem('kian_indexeddb_autobackup_config');
+      if (saved) {
+        return { ...defaultConfig, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return defaultConfig;
+  }
+
+  /**
+   * Save Auto-Backup configuration to localStorage & IndexedDB app_meta
+   */
+  async saveAutoBackupConfig(partial: Partial<IndexedDbAutoBackupConfig>): Promise<IndexedDbAutoBackupConfig> {
+    const current = this.getAutoBackupConfig();
+    const updated: IndexedDbAutoBackupConfig = { ...current, ...partial };
+    try {
+      localStorage.setItem('kian_indexeddb_autobackup_config', JSON.stringify(updated));
+      await this.putOne('app_meta', {
+        key: 'auto_backup_config',
+        value: updated,
+      });
+    } catch (err) {
+      console.warn('Failed to persist auto-backup config:', err);
+    }
+    return updated;
+  }
+
+  /**
+   * Compute a fast deterministic checksum for verifying JSON backup integrity
+   */
+  private computeBackupChecksum(payloadStr: string): string {
+    let hash = 2166136261;
+    for (let i = 0; i < payloadStr.length; i++) {
+      hash ^= payloadStr.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `KIAN-SHA-${(hash >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
+  }
+
+  /**
+   * Build a complete snapshot reading directly from all IndexedDB object stores
+   * and merging extended POS collections so nothing is ever lost.
+   */
+  async exportFullIndexedDbSnapshot(
+    extendedState?: {
+      products?: Product[];
+      categories?: Category[];
+      customers?: Customer[];
+      sales?: Sale[];
+      settings?: StoreSettings;
+      suppliers?: any[];
+      debtTransactions?: DebtTransaction[];
+      refunds?: Refund[];
+      inventoryLogs?: any[];
+      expenses?: Expense[];
+      auditLogs?: any[];
+      users?: any[];
+      wholesaleWarehouses?: any[];
+      deliveryVehicles?: any[];
+      vehicleManifests?: VehicleLoadingManifest[];
+      shifts?: any[];
+      promotions?: any[];
+    },
+    triggerType: AutoBackupTriggerType = 'manual_download',
+    notes?: string
+  ): Promise<IndexedDbBackupSnapshot> {
+    await this.getDB();
+
+    const [
+      idbProducts,
+      idbCategories,
+      idbCustomers,
+      idbSales,
+      idbSettingsRecord,
+      idbQueue,
+      idbTransfers,
+      idbMetaAll,
+    ] = await Promise.all([
+      this.getAll<Product>('products').catch(() => []),
+      this.getAll<Category>('categories').catch(() => []),
+      this.getAll<Customer>('customers').catch(() => []),
+      this.getAll<Sale>('sales').catch(() => []),
+      this.getOne<any>('settings', 'current_store_settings').catch(() => null),
+      this.getAll<OfflineQueueItem>('offline_queue').catch(() => []),
+      this.getAll<DeviceTransferPackage>('device_transfers').catch(() => []),
+      this.getAll<any>('app_meta').catch(() => []),
+    ]);
+
+    let cleanIdbSettings: StoreSettings | null = null;
+    if (idbSettingsRecord) {
+      const { id, ...rest } = idbSettingsRecord;
+      cleanIdbSettings = rest as StoreSettings;
+    }
+
+    const finalProducts =
+      idbProducts.length > 0 ? idbProducts : extendedState?.products || [];
+    const finalCategories =
+      idbCategories.length > 0 ? idbCategories : extendedState?.categories || [];
+    const finalCustomers =
+      idbCustomers.length > 0 ? idbCustomers : extendedState?.customers || [];
+    const finalSales =
+      idbSales.length > 0 ? idbSales : extendedState?.sales || [];
+    const finalSettings =
+      extendedState?.settings || cleanIdbSettings || null;
+
+    const suppliers = extendedState?.suppliers || [];
+    const debtTransactions = extendedState?.debtTransactions || [];
+    const refunds = extendedState?.refunds || [];
+    const inventoryLogs = extendedState?.inventoryLogs || [];
+    const expenses = extendedState?.expenses || [];
+    const auditLogs = extendedState?.auditLogs || [];
+    const users = extendedState?.users || [];
+    const wholesaleWarehouses = extendedState?.wholesaleWarehouses || [];
+    const deliveryVehicles = extendedState?.deliveryVehicles || [];
+    const vehicleManifests = extendedState?.vehicleManifests || [];
+    const shifts = extendedState?.shifts || [];
+    const promotions = extendedState?.promotions || [];
+
+    // Filter out bulky auto_backup_history from app_meta inside the snapshot to prevent recursive growth
+    const filteredAppMeta = (idbMetaAll || []).filter(
+      (m: any) => m && m.key !== 'auto_backup_history'
+    );
+
+    const triggerLabels: Record<AutoBackupTriggerType, string> = {
+      manual_download: 'نسخ احتياطي وتحميل بطلب المستخدم',
+      scheduled_auto: 'نسخ احتياطي ذاتي دوري تلقائي (Auto-Backup)',
+      shift_close: 'نسخ احتياطي تلقائي عند إغلاق الوردية',
+      pre_restore_safety: 'نسخة أمان تلقائية قبل استعادة بيانات جديدة',
+      data_mutation: 'نسخ احتياطي تلقائي بعد تحديث العمليات',
+    };
+
+    const totalRecordsCount =
+      finalProducts.length +
+      finalCategories.length +
+      finalCustomers.length +
+      finalSales.length +
+      idbQueue.length +
+      idbTransfers.length +
+      suppliers.length +
+      debtTransactions.length +
+      refunds.length +
+      inventoryLogs.length +
+      expenses.length;
+
+    const coreChecksumSeed = JSON.stringify({
+      p: finalProducts.length,
+      c: finalCategories.length,
+      cu: finalCustomers.length,
+      s: finalSales.length,
+      q: idbQueue.length,
+      t: Date.now(),
+    });
+    const checksum = this.computeBackupChecksum(coreChecksumSeed);
+    const exportDate = new Date().toISOString();
+    const backupId = `IDB_BKP_${Date.now()}_${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const storeName =
+      finalSettings?.storeNameAr || finalSettings?.storeNameEn || 'متجر كيان كاشير';
+
+    const snapshot: IndexedDbBackupSnapshot = {
+      backupId,
+      app: 'Kian Cashier (كيان كاشير)',
+      engine: 'IndexedDB_AutoBackup_Engine',
+      dbName: DB_NAME,
+      dbVersion: DB_VERSION,
+      version: '3.0',
+      exportDate,
+      triggerType,
+      triggerLabelAr: triggerLabels[triggerType] || 'نسخ احتياطي',
+      storeName,
+      checksum,
+      notes,
+      summary: {
+        productsCount: finalProducts.length,
+        categoriesCount: finalCategories.length,
+        customersCount: finalCustomers.length,
+        salesCount: finalSales.length,
+        offlineQueueCount: idbQueue.length,
+        deviceTransfersCount: idbTransfers.length,
+        suppliersCount: suppliers.length,
+        debtTransactionsCount: debtTransactions.length,
+        refundsCount: refunds.length,
+        inventoryLogsCount: inventoryLogs.length,
+        expensesCount: expenses.length,
+        usersCount: users.length,
+        totalRecordsCount,
+        estimatedSizeBytes: 0,
+      },
+      indexedDbStores: {
+        products: finalProducts,
+        categories: finalCategories,
+        customers: finalCustomers,
+        sales: finalSales,
+        settings: finalSettings,
+        offline_queue: idbQueue,
+        device_transfers: idbTransfers,
+        app_meta: filteredAppMeta,
+      },
+      settings: finalSettings,
+      products: finalProducts,
+      categories: finalCategories,
+      customers: finalCustomers,
+      sales: finalSales,
+      suppliers,
+      debtTransactions,
+      refunds,
+      inventoryLogs,
+      expenses,
+      auditLogs,
+      users,
+      wholesaleWarehouses,
+      deliveryVehicles,
+      vehicleManifests,
+      shifts,
+      promotions,
+    };
+
+    const estimatedSizeBytes = Math.max(2048, JSON.stringify(snapshot).length);
+    snapshot.summary.estimatedSizeBytes = estimatedSizeBytes;
+
+    return snapshot;
+  }
+
+  /**
+   * Creates an IndexedDB Auto-Backup snapshot, stores it in the rolling history inside IndexedDB,
+   * and optionally downloads the JSON file directly to the user's device.
+   */
+  async createAutoBackupSnapshot(
+    extendedState?: Parameters<IndexedDbService['exportFullIndexedDbSnapshot']>[0],
+    options?: {
+      triggerType?: AutoBackupTriggerType;
+      downloadToDevice?: boolean;
+      customFileNamePrefix?: string;
+      notes?: string;
+    }
+  ): Promise<{
+    snapshot: IndexedDbBackupSnapshot;
+    downloadedFileName: string | null;
+  }> {
+    const triggerType = options?.triggerType || 'manual_download';
+    const snapshot = await this.exportFullIndexedDbSnapshot(
+      extendedState,
+      triggerType,
+      options?.notes
+    );
+
+    // Save snapshot into IndexedDB rolling history (`app_meta` -> `auto_backup_history`)
+    try {
+      const config = this.getAutoBackupConfig();
+      const maxCount = Math.max(3, Math.min(25, config.maxHistoryCount || 10));
+      const existingHistoryRecord = await this.getOne<{
+        key: string;
+        value: IndexedDbBackupSnapshot[];
+      }>('app_meta', 'auto_backup_history');
+      const existingList = Array.isArray(existingHistoryRecord?.value)
+        ? existingHistoryRecord!.value
+        : [];
+
+      const updatedHistory = [snapshot, ...existingList].slice(0, maxCount);
+      await this.putOne('app_meta', {
+        key: 'auto_backup_history',
+        value: updatedHistory,
+      });
+
+      const nowIso = snapshot.exportDate;
+      await this.saveAutoBackupConfig({
+        lastAutoBackupAt: nowIso,
+        ...(options?.downloadToDevice ? { lastDownloadedAt: nowIso } : {}),
+      });
+    } catch (err) {
+      console.warn('Failed to store snapshot in IndexedDB history:', err);
+    }
+
+    let downloadedFileName: string | null = null;
+    if (options?.downloadToDevice) {
+      downloadedFileName = downloadJsonBackup(
+        snapshot,
+        options.customFileNamePrefix || 'Kian_IndexedDB_Backup'
+      );
+    }
+
+    return { snapshot, downloadedFileName };
+  }
+
+  /**
+   * Retrieve all saved Auto-Backup snapshots from IndexedDB
+   */
+  async getSavedAutoBackupHistory(): Promise<IndexedDbBackupSnapshot[]> {
+    try {
+      const record = await this.getOne<{ key: string; value: IndexedDbBackupSnapshot[] }>(
+        'app_meta',
+        'auto_backup_history'
+      );
+      if (record && Array.isArray(record.value)) {
+        return record.value;
+      }
+    } catch (err) {
+      console.warn('Error reading auto_backup_history from IndexedDB:', err);
+    }
+    return [];
+  }
+
+  /**
+   * Delete a specific snapshot from the IndexedDB Auto-Backup history
+   */
+  async deleteAutoBackupFromHistory(backupId: string): Promise<IndexedDbBackupSnapshot[]> {
+    try {
+      const list = await this.getSavedAutoBackupHistory();
+      const filtered = list.filter(item => item.backupId !== backupId);
+      await this.putOne('app_meta', {
+        key: 'auto_backup_history',
+        value: filtered,
+      });
+      return filtered;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Parse and validate a JSON backup string before restoring, returning full preview counts
+   */
+  inspectBackupJsonForRestore(jsonString: string): IndexedDbParsedRestorePreview {
+    try {
+      const rawSize = new Blob([jsonString]).size;
+      const parsed = JSON.parse(jsonString);
+      if (!parsed || typeof parsed !== 'object') {
+        return {
+          valid: false,
+          error: 'ملف JSON غير صالح أو فارغ.',
+          backupId: '',
+          app: '',
+          version: '',
+          exportDate: '',
+          storeName: '',
+          checksum: '',
+          triggerLabelAr: '',
+          fileSizeBytes: rawSize,
+          counts: {
+            productsCount: 0,
+            categoriesCount: 0,
+            customersCount: 0,
+            salesCount: 0,
+            offlineQueueCount: 0,
+            deviceTransfersCount: 0,
+            suppliersCount: 0,
+            debtTransactionsCount: 0,
+            refundsCount: 0,
+            inventoryLogsCount: 0,
+            expensesCount: 0,
+            usersCount: 0,
+            totalRecordsCount: 0,
+          },
+          rawSnapshot: null,
+        };
+      }
+
+      // Support both IndexedDbBackupSnapshot format, GoogleDrive snapshot format, and DeviceTransferPackage format
+      const idbStores = parsed.indexedDbStores || {};
+      const dataNode = parsed.data || parsed;
+
+      const products: Product[] = Array.isArray(idbStores.products)
+        ? idbStores.products
+        : Array.isArray(dataNode.products)
+        ? dataNode.products
+        : [];
+      const categories: Category[] = Array.isArray(idbStores.categories)
+        ? idbStores.categories
+        : Array.isArray(dataNode.categories)
+        ? dataNode.categories
+        : [];
+      const customers: Customer[] = Array.isArray(idbStores.customers)
+        ? idbStores.customers
+        : Array.isArray(dataNode.customers)
+        ? dataNode.customers
+        : [];
+      const sales: Sale[] = Array.isArray(idbStores.sales)
+        ? idbStores.sales
+        : Array.isArray(dataNode.sales)
+        ? dataNode.sales
+        : [];
+      const offlineQueue: OfflineQueueItem[] = Array.isArray(idbStores.offline_queue)
+        ? idbStores.offline_queue
+        : [];
+      const deviceTransfers: DeviceTransferPackage[] = Array.isArray(idbStores.device_transfers)
+        ? idbStores.device_transfers
+        : [];
+      const suppliers: any[] = Array.isArray(dataNode.suppliers) ? dataNode.suppliers : [];
+      const debtTransactions: any[] = Array.isArray(dataNode.debtTransactions)
+        ? dataNode.debtTransactions
+        : [];
+      const refunds: any[] = Array.isArray(dataNode.refunds) ? dataNode.refunds : [];
+      const inventoryLogs: any[] = Array.isArray(dataNode.inventoryLogs)
+        ? dataNode.inventoryLogs
+        : Array.isArray(dataNode.stockMovements)
+        ? dataNode.stockMovements
+        : [];
+      const expenses: any[] = Array.isArray(dataNode.expenses) ? dataNode.expenses : [];
+      const users: any[] = Array.isArray(dataNode.users) ? dataNode.users : [];
+      const settingsObj = idbStores.settings || dataNode.settings || null;
+
+      const hasValidCollections =
+        Array.isArray(idbStores.products) ||
+        Array.isArray(dataNode.products) ||
+        Array.isArray(idbStores.sales) ||
+        Array.isArray(dataNode.sales) ||
+        Array.isArray(idbStores.customers) ||
+        Array.isArray(dataNode.customers) ||
+        Boolean(settingsObj);
+
+      if (!hasValidCollections) {
+        return {
+          valid: false,
+          error:
+            'الملف المختار لا يحتوي على هيكلة بيانات IndexedDB أو كاشير كيان المعتمدة (لا توجد منتجات أو فواتير أو إعدادات).',
+          backupId: '',
+          app: '',
+          version: '',
+          exportDate: '',
+          storeName: '',
+          checksum: '',
+          triggerLabelAr: '',
+          fileSizeBytes: rawSize,
+          counts: {
+            productsCount: 0,
+            categoriesCount: 0,
+            customersCount: 0,
+            salesCount: 0,
+            offlineQueueCount: 0,
+            deviceTransfersCount: 0,
+            suppliersCount: 0,
+            debtTransactionsCount: 0,
+            refundsCount: 0,
+            inventoryLogsCount: 0,
+            expensesCount: 0,
+            usersCount: 0,
+            totalRecordsCount: 0,
+          },
+          rawSnapshot: null,
+        };
+      }
+
+      const totalRecordsCount =
+        products.length +
+        categories.length +
+        customers.length +
+        sales.length +
+        offlineQueue.length +
+        deviceTransfers.length +
+        suppliers.length +
+        debtTransactions.length +
+        refunds.length +
+        inventoryLogs.length +
+        expenses.length;
+
+      return {
+        valid: true,
+        backupId: parsed.backupId || `RESTORE_${Date.now()}`,
+        app: parsed.app || 'Kian Cashier',
+        version: String(parsed.version || '2.6'),
+        exportDate: parsed.exportDate || parsed.exportedAt || parsed.createdAt || new Date().toISOString(),
+        storeName:
+          parsed.storeName ||
+          settingsObj?.storeNameAr ||
+          settingsObj?.storeNameEn ||
+          'نسخة احتياطية معتمدة',
+        checksum: parsed.checksum || this.computeBackupChecksum(jsonString.slice(0, 2048)),
+        triggerLabelAr: parsed.triggerLabelAr || 'ملف نسخة احتياطية خارجي (JSON)',
+        fileSizeBytes: rawSize,
+        counts: {
+          productsCount: products.length,
+          categoriesCount: categories.length,
+          customersCount: customers.length,
+          salesCount: sales.length,
+          offlineQueueCount: offlineQueue.length,
+          deviceTransfersCount: deviceTransfers.length,
+          suppliersCount: suppliers.length,
+          debtTransactionsCount: debtTransactions.length,
+          refundsCount: refunds.length,
+          inventoryLogsCount: inventoryLogs.length,
+          expensesCount: expenses.length,
+          usersCount: users.length,
+          totalRecordsCount,
+        },
+        rawSnapshot: parsed,
+      };
+    } catch (err: any) {
+      return {
+        valid: false,
+        error: 'تعذر قراءة ملف JSON: تأكد من أن الملف بصيغة JSON صحيحة وغير تالف.',
+        backupId: '',
+        app: '',
+        version: '',
+        exportDate: '',
+        storeName: '',
+        checksum: '',
+        triggerLabelAr: '',
+        fileSizeBytes: 0,
+        counts: {
+          productsCount: 0,
+          categoriesCount: 0,
+          customersCount: 0,
+          salesCount: 0,
+          offlineQueueCount: 0,
+          deviceTransfersCount: 0,
+          suppliersCount: 0,
+          debtTransactionsCount: 0,
+          refundsCount: 0,
+          inventoryLogsCount: 0,
+          expensesCount: 0,
+          usersCount: 0,
+          totalRecordsCount: 0,
+        },
+        rawSnapshot: null,
+      };
+    }
+  }
+
+  /**
+   * Restores all IndexedDB object stores (`products`, `categories`, `customers`, `sales`, `settings`, `offline_queue`, `device_transfers`)
+   * from a parsed snapshot or JSON string, supporting both 'replace' (full overwrite) and 'merge' (smart non-destructive merge).
+   */
+  async restoreFullIndexedDbFromBackup(
+    jsonOrObject: string | any,
+    mode: 'replace' | 'merge' = 'replace'
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    restoredAt: string;
+    mode: 'replace' | 'merge';
+    restoredData: {
+      products: Product[];
+      categories: Category[];
+      customers: Customer[];
+      sales: Sale[];
+      settings: StoreSettings | null;
+      suppliers?: any[];
+      debtTransactions?: DebtTransaction[];
+      refunds?: Refund[];
+      inventoryLogs?: any[];
+      expenses?: Expense[];
+      auditLogs?: any[];
+      users?: any[];
+      wholesaleWarehouses?: any[];
+      deliveryVehicles?: any[];
+      vehicleManifests?: VehicleLoadingManifest[];
+      shifts?: any[];
+      promotions?: any[];
+    };
+  }> {
+    const restoredAt = new Date().toISOString();
+    try {
+      const rawString =
+        typeof jsonOrObject === 'string' ? jsonOrObject : JSON.stringify(jsonOrObject);
+      const preview = this.inspectBackupJsonForRestore(rawString);
+      if (!preview.valid || !preview.rawSnapshot) {
+        return {
+          success: false,
+          error: preview.error || 'ملف النسخة الاحتياطية غير صالح للاستعادة',
+          restoredAt,
+          mode,
+          restoredData: {
+            products: [],
+            categories: [],
+            customers: [],
+            sales: [],
+            settings: null,
+          },
+        };
+      }
+
+      const parsed = preview.rawSnapshot;
+      const idbStores = parsed.indexedDbStores || {};
+      const dataNode = parsed.data || parsed;
+
+      const incomingProducts: Product[] = Array.isArray(idbStores.products)
+        ? idbStores.products
+        : Array.isArray(dataNode.products)
+        ? dataNode.products
+        : [];
+      const incomingCategories: Category[] = Array.isArray(idbStores.categories)
+        ? idbStores.categories
+        : Array.isArray(dataNode.categories)
+        ? dataNode.categories
+        : [];
+      const incomingCustomers: Customer[] = Array.isArray(idbStores.customers)
+        ? idbStores.customers
+        : Array.isArray(dataNode.customers)
+        ? dataNode.customers
+        : [];
+      const incomingSales: Sale[] = Array.isArray(idbStores.sales)
+        ? idbStores.sales
+        : Array.isArray(dataNode.sales)
+        ? dataNode.sales
+        : [];
+      const incomingSettings: StoreSettings | null =
+        idbStores.settings || dataNode.settings || null;
+      const incomingQueue: OfflineQueueItem[] = Array.isArray(idbStores.offline_queue)
+        ? idbStores.offline_queue
+        : [];
+      const incomingTransfers: DeviceTransferPackage[] = Array.isArray(idbStores.device_transfers)
+        ? idbStores.device_transfers
+        : [];
+
+      await this.getDB();
+
+      let finalProducts = incomingProducts;
+      let finalCategories = incomingCategories;
+      let finalCustomers = incomingCustomers;
+      let finalSales = incomingSales;
+
+      if (mode === 'merge') {
+        const [currProds, currCats, currCusts, currSales] = await Promise.all([
+          this.getAll<Product>('products').catch(() => []),
+          this.getAll<Category>('categories').catch(() => []),
+          this.getAll<Customer>('customers').catch(() => []),
+          this.getAll<Sale>('sales').catch(() => []),
+        ]);
+
+        const mergeById = <T extends { id: string }>(current: T[], incoming: T[]): T[] => {
+          const map = new Map<string, T>();
+          current.forEach(item => {
+            if (item && item.id) map.set(item.id, item);
+          });
+          incoming.forEach(item => {
+            if (item && item.id) map.set(item.id, item);
+          });
+          return Array.from(map.values());
+        };
+
+        finalProducts = mergeById(currProds, incomingProducts);
+        finalCategories = mergeById(currCats, incomingCategories);
+        finalCustomers = mergeById(currCusts, incomingCustomers);
+        finalSales = mergeById(currSales, incomingSales);
+      }
+
+      // Write all stores to IndexedDB
+      await this.replaceStoreItems('products', finalProducts);
+      if (finalCategories.length > 0 || mode === 'replace') {
+        await this.replaceStoreItems('categories', finalCategories);
+      }
+      await this.replaceStoreItems('customers', finalCustomers);
+      await this.replaceStoreItems('sales', finalSales);
+
+      if (incomingSettings) {
+        await this.putOne('settings', {
+          id: 'current_store_settings',
+          ...incomingSettings,
+        });
+      }
+
+      if (incomingQueue.length > 0) {
+        await this.bulkPut('offline_queue', incomingQueue);
+      }
+
+      if (incomingTransfers.length > 0) {
+        await this.bulkPut('device_transfers', incomingTransfers);
+      }
+
+      await this.putOne('app_meta', {
+        key: 'last_restore_timestamp',
+        value: restoredAt,
+      });
+      await this.putOne('app_meta', {
+        key: 'last_cache_timestamp',
+        value: restoredAt,
+      });
+
+      return {
+        success: true,
+        restoredAt,
+        mode,
+        restoredData: {
+          products: finalProducts,
+          categories: finalCategories,
+          customers: finalCustomers,
+          sales: finalSales,
+          settings: incomingSettings,
+          suppliers: Array.isArray(dataNode.suppliers) ? dataNode.suppliers : undefined,
+          debtTransactions: Array.isArray(dataNode.debtTransactions)
+            ? dataNode.debtTransactions
+            : undefined,
+          refunds: Array.isArray(dataNode.refunds) ? dataNode.refunds : undefined,
+          inventoryLogs: Array.isArray(dataNode.inventoryLogs)
+            ? dataNode.inventoryLogs
+            : Array.isArray(dataNode.stockMovements)
+            ? dataNode.stockMovements
+            : undefined,
+          expenses: Array.isArray(dataNode.expenses) ? dataNode.expenses : undefined,
+          auditLogs: Array.isArray(dataNode.auditLogs) ? dataNode.auditLogs : undefined,
+          users: Array.isArray(dataNode.users) ? dataNode.users : undefined,
+          wholesaleWarehouses: Array.isArray(dataNode.wholesaleWarehouses)
+            ? dataNode.wholesaleWarehouses
+            : undefined,
+          deliveryVehicles: Array.isArray(dataNode.deliveryVehicles)
+            ? dataNode.deliveryVehicles
+            : undefined,
+          vehicleManifests: Array.isArray(dataNode.vehicleManifests)
+            ? dataNode.vehicleManifests
+            : undefined,
+          shifts: Array.isArray(dataNode.shifts) ? dataNode.shifts : undefined,
+          promotions: Array.isArray(dataNode.promotions) ? dataNode.promotions : undefined,
+        },
+      };
+    } catch (err: any) {
+      console.error('Failed to restore IndexedDB from backup:', err);
+      return {
+        success: false,
+        error: err?.message || 'حدث خطأ أثناء استعادة قاعدة بيانات IndexedDB',
+        restoredAt,
+        mode,
+        restoredData: {
+          products: [],
+          categories: [],
+          customers: [],
+          sales: [],
+          settings: null,
+        },
+      };
     }
   }
 
@@ -1194,20 +2035,29 @@ export function formatStorageSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-export function downloadJsonBackup(data: any, fileNamePrefix: string = 'kian_storage_backup'): void {
+export function downloadJsonBackup(
+  data: any,
+  fileNamePrefix: string = 'Kian_IndexedDB_Backup',
+  exactFileName?: string
+): string {
   try {
-    const jsonStr = JSON.stringify(data, null, 2);
+    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const dateStr = new Date().toISOString().slice(0, 10);
-    a.download = `${fileNamePrefix}_${dateStr}.json`;
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+    const finalFileName = exactFileName || `${fileNamePrefix}_${dateStr}_${timeStr}.json`;
+    a.download = finalFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    return finalFileName;
   } catch (err) {
     console.error('Failed to export backup file:', err);
+    return `${fileNamePrefix}.json`;
   }
 }

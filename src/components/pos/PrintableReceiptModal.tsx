@@ -9,15 +9,19 @@ import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
 import { bluetoothPrinter, BluetoothPrinterStatus } from '../../services/bluetoothPrinter';
 import { BluetoothPrinterModal } from './BluetoothPrinterModal';
 import { ReceiptCustomizerModal } from '../modals/ReceiptCustomizerModal';
+import {
+  normalizeReceiptLayoutBlocks,
+  getReceiptSectionComputedStyle,
+} from '../../utils/receiptLayoutUtils';
 
 interface PrintableReceiptModalProps {
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
   sale: Sale | null;
 }
 
 export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
-  isOpen,
+  isOpen = true,
   onClose,
   sale
 }) => {
@@ -142,6 +146,9 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
   const returnPolicyDays = settings.receiptReturnPolicyDays ?? 3;
 
   const totalQuantity = sale.items.reduce((acc, it) => acc + (it.quantity || 0), 0);
+  const layoutBlocks = normalizeReceiptLayoutBlocks(settings);
+  const saleDiscount = sale.discountTotal ?? sale.discount ?? 0;
+  const saleTax = sale.taxTotal ?? sale.tax ?? 0;
 
   return (
     <>
@@ -277,300 +284,449 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
               boxSizing: 'border-box'
             }}
           >
-            {/* Receipt Store Branding */}
-            <div className={`pb-2.5 mb-2.5 ${
-              templateStyle === 'classic' ? 'border-b-2 border-double border-black' :
-              templateStyle === 'thermal_bold' ? 'border-b-2 border-black' :
-              templateStyle === 'minimal' ? 'border-b border-slate-300' :
-              'border-b border-dashed border-slate-300'
-            }`}>
-              {showLogo && (
-                <div className="flex flex-col items-center justify-center mb-1">
-                  {settings.logo && (
-                    <img
-                      src={settings.logo}
-                      alt={settings.storeNameAr || 'شعار المتجر'}
-                      className="max-h-16 max-w-[140px] object-contain mb-1.5 filter grayscale contrast-125 print:filter-none mx-auto"
-                    />
-                  )}
-                  <h2 className={`tracking-tight ${
-                    templateStyle === 'thermal_bold' ? 'text-lg sm:text-xl font-black uppercase' :
-                    templateStyle === 'classic' ? 'text-base sm:text-lg font-bold tracking-wider' :
-                    'text-base sm:text-lg font-black'
-                  }`}>
-                    {settings.storeNameAr || 'كاشير كيان'}
-                  </h2>
-                </div>
-              )}
-              {settings.storeNameEn && (
-                <p className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">{settings.storeNameEn}</p>
-              )}
-              {settings.address && (
-                <p className="text-[10.5px] text-slate-700 mt-0.5">{settings.address}</p>
-              )}
-              {settings.phone && (
-                <p className="text-[10px] text-slate-600 font-mono">هاتف: {settings.phone}</p>
-              )}
-              {showTax && settings.taxNumber && (
-                <p className="text-[10px] text-slate-600 font-mono">الرقم الضريبي: {settings.taxNumber}</p>
-              )}
-            </div>
+            {/* Dynamically Ordered, Hideable & Resizable Receipt Sections */}
+            {layoutBlocks.map((block) => {
+              if (!block.visible) return null;
+              const computed = getReceiptSectionComputedStyle(block);
+              const dividerStyleClass = block.showDividerBelow
+                ? templateStyle === 'classic'
+                  ? 'border-b-2 border-double border-black'
+                  : templateStyle === 'thermal_bold'
+                  ? 'border-b-2 border-black'
+                  : templateStyle === 'minimal'
+                  ? 'border-b border-slate-300'
+                  : 'border-b border-dashed border-slate-300'
+                : '';
 
-            {/* Receipt Header Message */}
-            {settings.receiptHeader && (
-              <div className="text-[10px] text-slate-600 italic mb-2 border-b border-dashed border-slate-200 pb-1.5">
-                {settings.receiptHeader}
-              </div>
-            )}
-
-            {/* Invoice Meta */}
-            <div className={`text-[10.5px] text-slate-700 text-start space-y-0.5 pb-2 mb-2 ${
-              templateStyle === 'classic' ? 'border-b-2 border-double border-black' :
-              templateStyle === 'thermal_bold' ? 'border-b-2 border-black font-bold' :
-              'border-b border-dashed border-slate-300'
-            }`}>
-              <div className="flex justify-between">
-                <span>رقم الفاتورة:</span>
-                <span className="font-mono font-bold">{sale.invoiceNumber}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>التاريخ والوقت:</span>
-                <span className="font-mono">{new Date(sale.createdAt).toLocaleString(language === 'ar' ? 'ar-SY' : 'en-US')}</span>
-              </div>
-              {showCashier && (
-                <div className="flex justify-between">
-                  <span>الكاشير:</span>
-                  <span className="font-semibold">{sale.cashierName}</span>
-                </div>
-              )}
-
-              {/* Restaurant Meta if present */}
-              {sale.businessMode === 'restaurant' && (
-                <div className="flex justify-between font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
-                  <span>نوع الطلب:</span>
-                  <span>
-                    {sale.diningType === 'dine_in' ? `صالة (${sale.tableName || 'طاولة'} - ${sale.guestCount || 1} ضيوف)` : sale.diningType === 'takeaway' ? 'سفري / معلب' : 'توصيل دليفري'}
-                  </span>
-                </div>
-              )}
-
-              {/* Wholesale Meta if present */}
-              {sale.tradeType === 'wholesale' && (
-                <div className="flex justify-between font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">
-                  <span>نوع المعاملة:</span>
-                  <span>فاتورة جملة / موزع</span>
-                </div>
-              )}
-
-              {/* Customer Notes (Toggled via receiptShowCustomerNotes) */}
-              {showCustomerNotes && sale.notes && (
-                <div className="my-1.5 p-1.5 bg-slate-50 border border-dashed border-slate-300 rounded text-start text-[10px]">
-                  <div className="font-bold text-slate-800">ملاحظات العميل / الطلب:</div>
-                  <div className="text-slate-600 italic">{sale.notes}</div>
-                </div>
-              )}
-
-              {showCustomer && sale.customerName && (
-                <div className="flex justify-between">
-                  <span>العميل:</span>
-                  <span className="font-bold">{sale.customerName} {sale.customerCode ? `(${sale.customerCode})` : ''}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Receipt Items Table */}
-            <table className="w-full text-[10.5px] my-2 text-start border-collapse">
-              <thead>
-                <tr className={`${
-                  templateStyle === 'classic' ? 'border-b-2 border-t-2 border-black text-black' :
-                  templateStyle === 'thermal_bold' ? 'border-b-2 border-black text-black font-black bg-slate-100' :
-                  'border-b border-black text-black'
-                }`}>
-                  <th className="py-1 text-start">الصنف</th>
-                  <th className="py-1 text-center">الكمية</th>
-                  <th className="py-1 text-end">السعر</th>
-                  <th className="py-1 text-end">الإجمالي</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${
-                templateStyle === 'thermal_bold' ? 'divide-black' : 'divide-dashed divide-slate-200'
-              }`}>
-                {sale.items.map((it, idx) => (
-                  <tr key={idx} className="py-1">
-                    <td className="py-1 font-medium text-start">
-                      <div>{it.productNameAr}</div>
-                      {it.wholesaleUnit && (
-                        <div className="text-[9px] text-amber-700 font-bold">({it.wholesaleUnit})</div>
-                      )}
-                      {showCustomerNotes && it.kitchenNotes && (
-                        <div className="text-[9px] text-slate-500 italic font-mono">ملاحظة: {it.kitchenNotes}</div>
-                      )}
-                    </td>
-                    <td className="py-1 text-center font-mono">{it.quantity}</td>
-                    <td className="py-1 text-end font-mono">{it.unitPrice.toLocaleString()}</td>
-                    <td className="py-1 text-end font-bold font-mono">{it.total.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Items and pieces summary */}
-            {showItemCount && (
-              <div className="flex justify-between text-[9.5px] text-slate-500 border-t border-dashed border-slate-200 py-1 font-mono">
-                <span>عدد الأصناف: {sale.items.length}</span>
-                <span>إجمالي القطع: {totalQuantity}</span>
-              </div>
-            )}
-
-            {/* Calculations & Totals */}
-            <div className={`border-t pt-2 text-[10.5px] space-y-1 ${
-              templateStyle === 'classic' ? 'border-double border-t-2 border-black' :
-              templateStyle === 'thermal_bold' ? 'border-black border-t-2 font-bold' :
-              'border-dashed border-black'
-            }`}>
-              <div className="flex justify-between text-slate-700">
-                <span>المجموع الفرعي:</span>
-                <span className="font-mono">{sale.subtotal.toLocaleString()} {settings.currency.symbol}</span>
-              </div>
-
-              {sale.discountTotal > 0 && (
-                <div className="flex justify-between text-emerald-700 font-semibold">
-                  <span>الخصم الممنوح:</span>
-                  <span className="font-mono">-{sale.discountTotal.toLocaleString()} {settings.currency.symbol}</span>
-                </div>
-              )}
-
-              {sale.taxTotal > 0 && showTax && (
-                <div className="flex justify-between text-slate-700">
-                  <span>الضريبة:</span>
-                  <span className="font-mono">+{sale.taxTotal.toLocaleString()} {settings.currency.symbol}</span>
-                </div>
-              )}
-
-              <div className={`flex justify-between py-1.5 my-1.5 ${
-                templateStyle === 'modern' ? 'bg-slate-900 text-white px-2 rounded-lg font-black text-sm sm:text-base' :
-                templateStyle === 'classic' ? 'border-t-2 border-b-2 border-double border-black font-black text-sm sm:text-base' :
-                templateStyle === 'thermal_bold' ? 'border-t-2 border-b-2 border-black font-black text-base' :
-                'border-t-2 border-b-2 border-black font-black text-sm sm:text-base'
-              }`}>
-                <span>الإجمالي النهائي:</span>
-                <span className="font-mono">{sale.total.toLocaleString()} {settings.currency.symbol}</span>
-              </div>
-
-              {settings.printExchangeRateOnReceipt && settings.exchangeBulletin && (
-                <div className="flex justify-between text-[9.5px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300 font-mono">
-                  <span>
-                    {settings.currency.code === 'USD'
-                      ? (settings.exchangeBulletin.sourceLabel?.includes('لبنان') ? 'المعادل بالليرة اللبنانية:' : 'المعادل بالليرة السورية:')
-                      : 'المعادل بالدولار تقريباً:'}
-                  </span>
-                  <span>
-                    {settings.currency.code === 'USD'
-                      ? `${Math.round(sale.total * (settings.exchangeBulletin.usdSellRate || 89500)).toLocaleString()} ${settings.exchangeBulletin.sourceLabel?.includes('لبنان') ? 'ل.ل' : 'ل.س'}`
-                      : `$${((sale.total) / (settings.exchangeBulletin.usdSellRate || (settings.currency.code === 'LBP' ? 89500 : 14800))).toFixed(2)} USD`}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex justify-between text-slate-800">
-                <span>طريقة الدفع:</span>
-                <span className="font-bold">
-                  {sale.paymentMethod === 'cash' || sale.paymentMethod === 'نقداً'
-                    ? 'نقداً (Cash)'
-                    : sale.paymentMethod === 'card'
-                    ? 'بطاقة بنكية (Card)'
-                    : sale.paymentMethod === 'transfer'
-                    ? 'تحويل إلكتروني (Transfer)'
-                    : sale.paymentMethod === 'credit' || sale.paymentMethod === 'آجل'
-                    ? 'آجل على الحساب (Credit/Debt)'
-                    : sale.paymentMethod}
-                </span>
-              </div>
-
-              <div className="flex justify-between text-slate-800">
-                <span>المبلغ المدفوع / المستلم:</span>
-                <span className="font-mono font-bold">{sale.paidAmount.toLocaleString()} {settings.currency.symbol}</span>
-              </div>
-
-              {sale.changeAmount > 0 ? (
-                <div className="flex justify-between font-black text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded">
-                  <span>المبلغ الباقي للزبون (الفكة):</span>
-                  <span className="font-mono">{sale.changeAmount.toLocaleString()} {settings.currency.symbol}</span>
-                </div>
-              ) : (sale.paymentMethod === 'credit' || sale.paymentMethod === 'آجل') && (sale.total - sale.paidAmount) > 0 ? (
-                <div className="flex justify-between font-black text-indigo-900 bg-indigo-50 px-1 py-0.5 rounded">
-                  <span>المتبقي كدين آجل على الحساب:</span>
-                  <span className="font-mono">{(sale.total - sale.paidAmount).toLocaleString()} {settings.currency.symbol}</span>
-                </div>
-              ) : (
-                <div className="flex justify-between text-slate-600">
-                  <span>الباقي:</span>
-                  <span className="font-mono">0 {settings.currency.symbol}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Customer Points Section */}
-            {sale.customerName && (
-              <div className="mt-2.5 p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[9.5px]">
-                <div className="flex justify-between font-bold text-amber-700">
-                  <span>النقاط المكتسبة من هذه الفاتورة:</span>
-                  <span>+{sale.pointsEarned} نقطة</span>
-                </div>
-                {sale.pointsRedeemed > 0 && (
-                  <div className="flex justify-between text-rose-700">
-                    <span>النقاط المستبدلة:</span>
-                    <span>-{sale.pointsRedeemed} نقطة</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 1D Invoice Barcode for Return Scanners & Cashiers */}
-            {showBarcode && (
-              <div className="my-2.5 flex flex-col items-center justify-center">
+              return (
                 <div
-                  className="max-w-full overflow-hidden flex justify-center"
-                  dangerouslySetInnerHTML={{
-                    __html: generateBarcodeSvg(sale.invoiceNumber, {
-                      width: Math.min(260, paperWidthMm * 3.4),
-                      height: 48,
-                      fontSize: 9,
-                      showText: true,
-                      barColor: '#000000',
-                      bgColor: '#ffffff'
-                    })
+                  key={block.id}
+                  style={{
+                    fontSize: computed.fontSizeEm,
+                    paddingTop: computed.paddingYRem,
+                    paddingBottom: computed.paddingYRem,
+                    textAlign: computed.textAlign,
                   }}
-                />
-                <span className="text-[8.5px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                  <BarcodeIcon className="w-3 h-3 text-slate-400" />
-                  باركود استرجاع الفاتورة ({sale.invoiceNumber})
-                </span>
-              </div>
-            )}
+                  className={`${
+                    block.boxed ? 'border-2 border-black rounded-lg p-2 my-1.5 bg-slate-50/60' : ''
+                  } ${dividerStyleClass}`}
+                >
+                  {/* 1. LOGO SECTION */}
+                  {block.id === 'logo' && showLogo && (
+                    <div className={`flex flex-col ${computed.flexAlign}`}>
+                      {settings.logo ? (
+                        <img
+                          src={settings.logo}
+                          alt={settings.storeNameAr || 'شعار المتجر'}
+                          style={{ height: `${computed.logoHeightPx}px` }}
+                          className="w-auto max-w-[180px] object-contain filter grayscale contrast-125 print:filter-none"
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            height: `${computed.logoHeightPx}px`,
+                            width: `${computed.logoHeightPx}px`,
+                          }}
+                          className="rounded-xl border-2 border-black bg-slate-100 flex flex-col items-center justify-center text-black font-black"
+                        >
+                          <span className="text-xs font-mono">LOGO</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-            {/* QR Code */}
-            {showQr && qrCodeDataUrl && (
-              <div className="my-2 flex flex-col items-center justify-center">
-                <img src={qrCodeDataUrl} alt="Receipt QR" className="w-20 h-20" />
-                <span className="text-[8.5px] text-slate-400 font-mono mt-0.5">مسح للتحقق الرقمي من الفاتورة</span>
-              </div>
-            )}
+                  {/* 2. HEADERS SECTION */}
+                  {block.id === 'header' && (
+                    <div className={`flex flex-col ${computed.flexAlign} space-y-0.5`}>
+                      {(settings.receiptShowStoreNameAr ?? true) && (
+                        <h2
+                          className={`tracking-tight text-[1.35em] leading-tight ${
+                            templateStyle === 'thermal_bold'
+                              ? 'font-black uppercase'
+                              : templateStyle === 'classic'
+                              ? 'font-bold tracking-wider'
+                              : 'font-black'
+                          }`}
+                        >
+                          {settings.storeNameAr || 'كاشير كيان'}
+                        </h2>
+                      )}
+                      {(settings.receiptShowStoreNameEn ?? true) && settings.storeNameEn && (
+                        <p className="text-[0.82em] text-slate-600 font-bold uppercase tracking-wider">
+                          {settings.storeNameEn}
+                        </p>
+                      )}
+                      {settings.receiptHeaderTitle && (
+                        <div className="my-0.5 inline-block px-2.5 py-0.5 rounded bg-black text-white font-bold text-[0.85em]">
+                          {settings.receiptHeaderTitle}
+                        </div>
+                      )}
+                      {settings.receiptHeader && (
+                        <div className="text-[0.88em] text-slate-700 font-bold pt-0.5">
+                          {settings.receiptHeader}
+                        </div>
+                      )}
+                      {(settings.receiptShowAddress ?? true) && settings.address && (
+                        <p className="text-[0.85em] text-slate-700 mt-0.5">{settings.address}</p>
+                      )}
+                      {(settings.receiptShowPhone ?? true) && settings.phone && (
+                        <p className="text-[0.82em] text-slate-600 font-mono">هاتف: {settings.phone}</p>
+                      )}
+                    </div>
+                  )}
 
-            {/* Return Policy */}
-            {showReturnPolicy && (
-              <div className="text-[9px] text-slate-600 border-t border-dashed border-slate-300 pt-1.5 my-1">
-                البضاعة المباعة ترد وتستبدل خلال {returnPolicyDays} أيام بإحضار أصل الفاتورة بحالتها الأصلية
-              </div>
-            )}
+                  {/* 3. QUEUE BADGE SECTION */}
+                  {block.id === 'queue_badge' &&
+                    (sale.queueNumber || sale.businessMode === 'restaurant') && (
+                      <div className="my-1 p-2 border-2 border-black rounded-xl bg-slate-100 text-center">
+                        <div className="text-[0.82em] font-black uppercase tracking-wider text-slate-700">
+                          رقم الطابور / الدور (QUEUE NO)
+                        </div>
+                        <div className="text-[2.2em] font-mono font-black tracking-tight text-black leading-none my-1">
+                          #
+                          {String(
+                            sale.queueNumber ||
+                              Number((sale.invoiceNumber.match(/Q-(\d+)/i) || [])[1]) ||
+                              1
+                          ).padStart(3, '0')}
+                        </div>
+                        <div className="text-[0.85em] font-bold text-slate-800">
+                          {sale.diningType === 'dine_in'
+                            ? `صالة داخلية • ${sale.tableName || 'طاولة'}`
+                            : sale.diningType === 'takeaway'
+                            ? 'طلب سفري (Takeaway)'
+                            : sale.diningType === 'delivery'
+                            ? 'طلب توصيل (Delivery)'
+                            : 'طلب مطعم مرقم'}
+                        </div>
+                      </div>
+                    )}
 
-            {/* Footer Message (Toggled via receiptShowFooterMessage) */}
-            {showFooterMessage && settings.receiptFooter && (
-              <div className="border-t border-dashed border-slate-300 pt-2 text-[9.5px] text-slate-500">
-                <p>{settings.receiptFooter}</p>
-                <p className="font-bold mt-1 text-[8.5px]">نظام كيان كاشير الذكي لإدارة نقاط البيع</p>
-              </div>
-            )}
+                  {/* 4. INVOICE META INFO SECTION */}
+                  {block.id === 'meta_info' && (
+                    <div className="text-[0.92em] text-slate-700 text-start space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>رقم الفاتورة:</span>
+                        <span className="font-mono font-bold">{sale.invoiceNumber}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>التاريخ والوقت:</span>
+                        <span className="font-mono">
+                          {new Date(sale.createdAt).toLocaleString(
+                            language === 'ar' ? 'ar-SY' : 'en-US'
+                          )}
+                        </span>
+                      </div>
+                      {showCashier && (
+                        <div className="flex justify-between">
+                          <span>الكاشير:</span>
+                          <span className="font-semibold">{sale.cashierName}</span>
+                        </div>
+                      )}
+                      {sale.businessMode === 'restaurant' && (
+                        <div className="flex justify-between font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
+                          <span>نوع الطلب:</span>
+                          <span>
+                            {sale.diningType === 'dine_in'
+                              ? `صالة (${sale.tableName || 'طاولة'} - ${sale.guestCount || 1} ضيوف)`
+                              : sale.diningType === 'takeaway'
+                              ? 'سفري / معلب'
+                              : 'توصيل دليفري'}
+                          </span>
+                        </div>
+                      )}
+                      {sale.tradeType === 'wholesale' && (
+                        <div className="flex justify-between font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">
+                          <span>نوع المعاملة:</span>
+                          <span>فاتورة جملة / موزع</span>
+                        </div>
+                      )}
+                      {showCustomer && sale.customerName && (
+                        <div className="flex justify-between">
+                          <span>العميل:</span>
+                          <span className="font-bold">
+                            {sale.customerName} {sale.customerCode ? `(${sale.customerCode})` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 5. ITEMS TABLE SECTION */}
+                  {block.id === 'items_table' && (
+                    <div>
+                      <table className="w-full text-[0.92em] my-1 text-start border-collapse">
+                        <thead>
+                          <tr
+                            className={
+                              templateStyle === 'classic'
+                                ? 'border-b-2 border-t-2 border-black text-black'
+                                : templateStyle === 'thermal_bold'
+                                ? 'border-b-2 border-black text-black font-black bg-slate-100'
+                                : 'border-b border-black text-black'
+                            }
+                          >
+                            <th className="py-1 text-start">الصنف</th>
+                            <th className="py-1 text-center">الكمية</th>
+                            <th className="py-1 text-end">السعر</th>
+                            <th className="py-1 text-end">الإجمالي</th>
+                          </tr>
+                        </thead>
+                        <tbody
+                          className={`divide-y ${
+                            templateStyle === 'thermal_bold'
+                              ? 'divide-black'
+                              : 'divide-dashed divide-slate-200'
+                          }`}
+                        >
+                          {sale.items.map((it, idx) => (
+                            <tr key={idx} className="py-1">
+                              <td className="py-1 font-medium text-start">
+                                <div>{it.productNameAr || it.product?.nameAr || 'منتج'}</div>
+                                {it.wholesaleUnit && (
+                                  <div className="text-[0.82em] text-amber-700 font-bold">
+                                    ({it.wholesaleUnit})
+                                  </div>
+                                )}
+                                {showCustomerNotes && it.kitchenNotes && (
+                                  <div className="text-[0.82em] text-slate-500 italic font-mono">
+                                    ملاحظة: {it.kitchenNotes}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-1 text-center font-mono">{it.quantity}</td>
+                              <td className="py-1 text-end font-mono">
+                                {(it.unitPrice || 0).toLocaleString()}
+                              </td>
+                              <td className="py-1 text-end font-bold font-mono">
+                                {(it.total || 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      {showItemCount && (
+                        <div className="flex justify-between text-[0.82em] text-slate-500 border-t border-dashed border-slate-200 py-1 font-mono">
+                          <span>عدد الأصناف: {sale.items.length}</span>
+                          <span>إجمالي القطع: {totalQuantity}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 6. TOTALS & PAYMENT SECTION */}
+                  {block.id === 'totals' && (
+                    <div className="text-[0.92em] space-y-1">
+                      <div className="flex justify-between text-slate-700">
+                        <span>المجموع الفرعي:</span>
+                        <span className="font-mono">
+                          {(sale.subtotal || 0).toLocaleString()} {settings.currency.symbol}
+                        </span>
+                      </div>
+
+                      {saleDiscount > 0 && (
+                        <div className="flex justify-between text-emerald-700 font-semibold">
+                          <span>الخصم الممنوح:</span>
+                          <span className="font-mono">
+                            -{saleDiscount.toLocaleString()} {settings.currency.symbol}
+                          </span>
+                        </div>
+                      )}
+
+                      <div
+                        className={`flex justify-between py-1.5 my-1 ${
+                          templateStyle === 'modern'
+                            ? 'bg-slate-900 text-white px-2 rounded-lg font-black text-[1.15em]'
+                            : 'border-t-2 border-b-2 border-black font-black text-[1.15em]'
+                        }`}
+                      >
+                        <span>الإجمالي النهائي:</span>
+                        <span className="font-mono">
+                          {(sale.total || 0).toLocaleString()} {settings.currency.symbol}
+                        </span>
+                      </div>
+
+                      {settings.printExchangeRateOnReceipt && settings.exchangeBulletin && (
+                        <div className="flex justify-between text-[0.85em] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300 font-mono">
+                          <span>
+                            {settings.currency.code === 'USD'
+                              ? settings.exchangeBulletin.sourceLabel?.includes('لبنان')
+                                ? 'المعادل بالليرة اللبنانية:'
+                                : 'المعادل بالليرة السورية:'
+                              : 'المعادل بالدولار تقريباً:'}
+                          </span>
+                          <span>
+                            {settings.currency.code === 'USD'
+                              ? `${Math.round(
+                                  sale.total * (settings.exchangeBulletin.usdSellRate || 89500)
+                                ).toLocaleString()} ${
+                                  settings.exchangeBulletin.sourceLabel?.includes('لبنان')
+                                    ? 'ل.ل'
+                                    : 'ل.س'
+                                }`
+                              : `$${(
+                                  sale.total /
+                                  (settings.exchangeBulletin.usdSellRate ||
+                                    (settings.currency.code === 'LBP' ? 89500 : 14800))
+                                ).toFixed(2)} USD`}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between text-slate-800">
+                        <span>طريقة الدفع:</span>
+                        <span className="font-bold">
+                          {sale.paymentMethod === 'cash' || sale.paymentMethod === 'نقداً'
+                            ? 'نقداً (Cash)'
+                            : sale.paymentMethod === 'card'
+                            ? 'بطاقة بنكية (Card)'
+                            : sale.paymentMethod === 'transfer'
+                            ? 'تحويل إلكتروني (Transfer)'
+                            : sale.paymentMethod === 'credit' || sale.paymentMethod === 'آجل'
+                            ? 'آجل على الحساب (Credit/Debt)'
+                            : sale.paymentMethod}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between text-slate-800">
+                        <span>المبلغ المدفوع / المستلم:</span>
+                        <span className="font-mono font-bold">
+                          {(sale.paidAmount || 0).toLocaleString()} {settings.currency.symbol}
+                        </span>
+                      </div>
+
+                      {(sale.changeAmount || 0) > 0 ? (
+                        <div className="flex justify-between font-black text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded">
+                          <span>المبلغ الباقي للزبون (الفكة):</span>
+                          <span className="font-mono">
+                            {(sale.changeAmount || 0).toLocaleString()} {settings.currency.symbol}
+                          </span>
+                        </div>
+                      ) : (sale.paymentMethod === 'credit' || sale.paymentMethod === 'آجل') &&
+                        sale.total - (sale.paidAmount || 0) > 0 ? (
+                        <div className="flex justify-between font-black text-indigo-900 bg-indigo-50 px-1 py-0.5 rounded">
+                          <span>المتبقي كدين آجل على الحساب:</span>
+                          <span className="font-mono">
+                            {(sale.total - (sale.paidAmount || 0)).toLocaleString()}{' '}
+                            {settings.currency.symbol}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between text-slate-600">
+                          <span>الباقي:</span>
+                          <span className="font-mono">0 {settings.currency.symbol}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 7. TAX SECTION */}
+                  {block.id === 'tax' && (
+                    <div className={`text-[0.88em] space-y-0.5 ${computed.flexAlign}`}>
+                      <div className="w-full space-y-0.5">
+                        <div className="flex justify-between font-black text-black border-b border-dotted border-slate-300 pb-0.5">
+                          <span>تفاصيل الضريبة والبيانات الضريبية (VAT)</span>
+                          <span className="font-mono">{settings.defaultTaxRate ?? 5}%</span>
+                        </div>
+                        <div className="flex justify-between text-slate-700">
+                          <span>قيمة الضريبة المضافة:</span>
+                          <span className="font-mono font-bold">
+                            +{saleTax.toLocaleString()} {settings.currency.symbol}
+                          </span>
+                        </div>
+                        {settings.taxNumber && (
+                          <div className="flex justify-between text-slate-600 font-mono">
+                            <span>الرقم الضريبي (Tax ID):</span>
+                            <span className="font-bold">{settings.taxNumber}</span>
+                          </div>
+                        )}
+                        {settings.commercialRecord && (
+                          <div className="flex justify-between text-slate-600 font-mono">
+                            <span>السجل التجاري (CR):</span>
+                            <span className="font-bold">{settings.commercialRecord}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 8. FOOTER, NOTES, LOYALTY & BARCODES SECTION */}
+                  {block.id === 'footer' && (
+                    <div className={`flex flex-col ${computed.flexAlign} space-y-1.5 text-[0.88em]`}>
+                      {showCustomerNotes && sale.notes && (
+                        <div className="w-full p-1.5 bg-slate-50 border border-dashed border-slate-300 rounded text-start">
+                          <div className="font-bold text-slate-800">ملاحظات العميل / الطلب:</div>
+                          <div className="text-slate-600 italic">{sale.notes}</div>
+                        </div>
+                      )}
+
+                      {sale.customerName && (sale.pointsEarned || sale.pointsRedeemed) ? (
+                        <div className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-xl">
+                          <div className="flex justify-between font-bold text-amber-700">
+                            <span>النقاط المكتسبة من هذه الفاتورة:</span>
+                            <span>+{sale.pointsEarned || 0} نقطة</span>
+                          </div>
+                          {(sale.pointsRedeemed || 0) > 0 && (
+                            <div className="flex justify-between text-rose-700">
+                              <span>النقاط المستبدلة:</span>
+                              <span>-{sale.pointsRedeemed} نقطة</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {showReturnPolicy && (
+                        <div className="text-slate-600 border-t border-dashed border-slate-300 pt-1 w-full">
+                          {settings.receiptCustomFooterText ||
+                            `البضاعة المباعة ترد وتستبدل خلال ${returnPolicyDays} أيام بإحضار أصل الفاتورة بحالتها الأصلية`}
+                        </div>
+                      )}
+
+                      {showFooterMessage && settings.receiptFooter && (
+                        <div className="border-t border-dashed border-slate-300 pt-1.5 text-slate-600 w-full">
+                          <p className="font-bold text-black">{settings.receiptFooter}</p>
+                          <p className="font-bold mt-0.5 text-[0.85em] text-slate-500">
+                            نظام كيان كاشير الذكي لإدارة نقاط البيع
+                          </p>
+                        </div>
+                      )}
+
+                      {showBarcode && (
+                        <div className="my-1.5 flex flex-col items-center justify-center w-full">
+                          <div
+                            className="max-w-full overflow-hidden flex justify-center"
+                            dangerouslySetInnerHTML={{
+                              __html: generateBarcodeSvg(sale.invoiceNumber, {
+                                width: Math.min(260, paperWidthMm * 3.4),
+                                height: 48,
+                                fontSize: 9,
+                                showText: true,
+                                barColor: '#000000',
+                                bgColor: '#ffffff',
+                              }),
+                            }}
+                          />
+                          <span className="text-[0.8em] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
+                            <BarcodeIcon className="w-3 h-3 text-slate-400" />
+                            باركود استرجاع الفاتورة ({sale.invoiceNumber})
+                          </span>
+                        </div>
+                      )}
+
+                      {showQr && qrCodeDataUrl && (
+                        <div className="my-1 flex flex-col items-center justify-center w-full">
+                          <img src={qrCodeDataUrl} alt="Receipt QR" className="w-20 h-20" />
+                          <span className="text-[0.8em] text-slate-400 font-mono mt-0.5">
+                            مسح للتحقق الرقمي من الفاتورة
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {/* Thermal Cutter Safe Clearance Feed Space */}
             <div

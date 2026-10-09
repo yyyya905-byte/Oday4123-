@@ -7,6 +7,7 @@ import { POSView } from './components/pos/POSView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ProductsView } from './components/products/ProductsView';
 import { TradeView } from './components/trade/TradeView';
+import { RestaurantHubView } from './components/restaurant/RestaurantHubView';
 import { InventoryView } from './components/inventory/InventoryView';
 import { CustomersView } from './components/customers/CustomersView';
 import { DebtView } from './components/debts/DebtView';
@@ -92,18 +93,6 @@ const AppContent: React.FC = () => {
     wakeFromStandby
   } = useApp();
 
-  // If manager opened the Customer Menu Preview from POS (Restaurant Mode only)
-  if (isCustomerMenuPreviewOpen && businessMode === 'restaurant') {
-    return (
-      <CustomerQrMenuPage
-        isStandalone={false}
-        initialTable={selectedTable}
-        initialDiningType={restaurantDiningType}
-        onClosePreview={() => setIsCustomerMenuPreviewOpen(false)}
-      />
-    );
-  }
-
   // If this device was paired or selected as a dedicated terminal
   if (dedicatedDeviceRole === 'kitchen_display' && businessMode === 'restaurant') {
     return <KitchenDisplayView onBackToMain={exitSubDeviceMode} />;
@@ -134,6 +123,12 @@ const AppContent: React.FC = () => {
         return <DashboardView />;
       case 'products':
         return <ProductsView />;
+      case 'restaurant':
+        return (
+          <div className="flex-1 h-full min-h-0 overflow-y-auto p-3 sm:p-5 pb-28 lg:pb-10">
+            <RestaurantHubView />
+          </div>
+        );
       case 'trade':
         return <TradeView />;
       case 'ai':

@@ -132,8 +132,11 @@ export const InvoicesView: React.FC = () => {
       // 2. Text Search Query
       const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
+      const qNumStr = s.queueNumber ? String(s.queueNumber).padStart(3, '0') : '';
       return (
         s.invoiceNumber.toLowerCase().includes(q) ||
+        (qNumStr && (`#${qNumStr}`.includes(q) || qNumStr.includes(q) || String(s.queueNumber) === q.replace('#', ''))) ||
+        (s.tableName && s.tableName.toLowerCase().includes(q)) ||
         (s.customerName && s.customerName.toLowerCase().includes(q)) ||
         s.cashierName.toLowerCase().includes(q)
       );
@@ -472,7 +475,24 @@ export const InvoicesView: React.FC = () => {
                 filteredSales.map(sale => (
                   <tr key={sale.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">
-                      {sale.invoiceNumber}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(sale.queueNumber || sale.businessMode === 'restaurant') && (
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-950 font-mono font-black text-[11px] shadow-2xs">
+                            طابور #
+                            {String(
+                              sale.queueNumber ||
+                                Number((sale.invoiceNumber.match(/Q-(\d+)/i) || [])[1]) ||
+                                1
+                            ).padStart(3, '0')}
+                          </span>
+                        )}
+                        <span>{sale.invoiceNumber}</span>
+                        {sale.tableName && (
+                          <span className="text-[10px] font-sans font-bold text-emerald-600 dark:text-emerald-400">
+                            ({sale.tableName})
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
                       {new Date(sale.createdAt).toLocaleString(language === 'ar' ? 'ar-SY' : 'en-US')}

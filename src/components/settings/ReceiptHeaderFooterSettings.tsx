@@ -33,6 +33,7 @@ import {
   Square
 } from 'lucide-react';
 import { generateBarcodeSvg } from '../../utils/barcodeUtils';
+import { ReceiptLayoutDragDropEditor } from './ReceiptLayoutDragDropEditor';
 
 // 5 Preset Logo Badges for quick professional 1-click branding
 const PRESET_LOGOS = [
@@ -242,7 +243,7 @@ export const ReceiptHeaderFooterSettings: React.FC = () => {
   const currencySymbol = formData.currency?.symbolNative || formData.currency?.symbol || 'ل.س';
 
   return (
-    <div className="space-y-6 max-w-5xl animate-in fade-in pb-12">
+    <div className="space-y-6 max-w-6xl animate-in fade-in pb-12">
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950 text-white p-5 sm:p-6 rounded-3xl border border-slate-700/80 shadow-lg relative overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -270,6 +271,9 @@ export const ReceiptHeaderFooterSettings: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Interactive Drag-and-Drop Receipt Layout Editor */}
+      <ReceiptLayoutDragDropEditor compactHeader />
 
       {/* Main Grid: Settings Controls on Right, Live Receipt Simulator on Left */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

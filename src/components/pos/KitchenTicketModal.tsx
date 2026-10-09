@@ -20,6 +20,8 @@ export const KitchenTicketModal: React.FC<KitchenTicketModalProps> = ({ isOpen, 
     settings,
     devices,
     addKitchenOrder,
+    nextRestaurantQueueNumber,
+    getNextRestaurantQueueNumber,
     language,
     t,
     notify,
@@ -38,10 +40,14 @@ export const KitchenTicketModal: React.FC<KitchenTicketModalProps> = ({ isOpen, 
 
   if (!isOpen) return null;
 
+  const formattedQueueNum = `#${String(nextRestaurantQueueNumber).padStart(3, '0')}`;
+
   const dispatchToTargetDevices = () => {
     if (cart.length === 0) return;
+    const assignedQ = getNextRestaurantQueueNumber();
     addKitchenOrder({
-      orderNumber: `KOT-${Math.floor(100 + Math.random() * 899)}`,
+      orderNumber: `Q-${String(assignedQ).padStart(3, '0')}`,
+      queueNumber: assignedQ,
       sourceDevice: `كاشير (${currentUser?.name || 'رئيسي'})`,
       diningType: restaurantDiningType,
       tableName: selectedTable,
@@ -146,7 +152,15 @@ export const KitchenTicketModal: React.FC<KitchenTicketModalProps> = ({ isOpen, 
               <span className="inline-block px-3 py-1 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-md font-black text-sm tracking-wider">
                 بون تحضير المطبخ (KOT)
               </span>
-              <div className="mt-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+              <div className="my-2 py-1.5 px-3 rounded-xl bg-amber-500/15 border border-amber-500/40 inline-block">
+                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 block">
+                  رقم الطابور / الفاتورة التسلسلي
+                </span>
+                <span className="text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
+                  {formattedQueueNum}
+                </span>
+              </div>
+              <div className="mt-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
                 {diningLabel.toUpperCase()}
               </div>
             </div>

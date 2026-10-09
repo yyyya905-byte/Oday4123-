@@ -600,39 +600,41 @@ let liveCartState: any = {
   updatedAt: new Date().toISOString(),
 };
 
-let liveKitchenOrders: any[] = [
-  {
-    id: "k-ord-101",
-    orderNumber: "ORD-101",
-    sourceDevice: "جهاز الكاشير المركزي",
-    diningType: "dine_in",
-    tableName: "طاولة 4",
-    guestCount: 3,
-    status: "in_progress",
-    createdAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
-    estimatedMinutes: 12,
-    notes: "بدون ملح زائد، تجهيز سريع",
-    items: [
-      { id: "ki-1", productId: "p1", nameAr: "برغر لحم دبل كلاسيك", nameEn: "Double Beef Burger", quantity: 2, unitPrice: 28000, notes: "بدون مخلل", status: "cooking" },
-      { id: "ki-2", productId: "p4", nameAr: "بطاطا مقلية عائلية", nameEn: "Family Fries", quantity: 1, unitPrice: 12000, status: "ready" },
-      { id: "ki-3", productId: "p5", nameAr: "عصير برتقال طبيعي", nameEn: "Fresh Orange Juice", quantity: 2, unitPrice: 10000, status: "ready" }
-    ]
-  },
-  {
-    id: "k-ord-102",
-    orderNumber: "ORD-102",
-    sourceDevice: "هاتف النادل (سامسونج S23)",
-    diningType: "takeaway",
-    status: "pending",
-    createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    estimatedMinutes: 8,
-    notes: "تغليف سفري محكم",
-    items: [
-      { id: "ki-4", productId: "p2", nameAr: "بيتزا بيبروني وسط", nameEn: "Pepperoni Pizza Medium", quantity: 1, unitPrice: 35000, status: "pending" },
-      { id: "ki-5", productId: "p6", nameAr: "مشروب غازي كولا", nameEn: "Cola Can", quantity: 2, unitPrice: 5000, status: "pending" }
-    ]
+function getServerLocalDateKey(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+let serverRestaurantQueueDate = getServerLocalDateKey();
+let serverRestaurantQueueCounter = 0;
+
+function getNextServerDailyQueueNumber(): number {
+  const todayKey = getServerLocalDateKey();
+  if (serverRestaurantQueueDate !== todayKey) {
+    serverRestaurantQueueDate = todayKey;
+    serverRestaurantQueueCounter = 0;
   }
-];
+  serverRestaurantQueueCounter += 1;
+  return serverRestaurantQueueCounter;
+}
+
+function syncServerDailyQueueNumber(requestedQueueNum?: number): number {
+  const todayKey = getServerLocalDateKey();
+  if (serverRestaurantQueueDate !== todayKey) {
+    serverRestaurantQueueDate = todayKey;
+    serverRestaurantQueueCounter = 0;
+  }
+  const num = Number(requestedQueueNum);
+  if (num > 0) {
+    if (num > serverRestaurantQueueCounter) {
+      serverRestaurantQueueCounter = num;
+    }
+    return num;
+  }
+  serverRestaurantQueueCounter += 1;
+  return serverRestaurantQueueCounter;
+}
+
+let liveKitchenOrders: any[] = [];
 
 let syncEvents: any[] = [];
 
@@ -1307,15 +1309,26 @@ app.post("/api/sync/kitchen-order", (req, res) => {
   if (existingIdx !== -1) {
     liveKitchenOrders[existingIdx] = { ...liveKitchenOrders[existingIdx], ...order };
   } else {
+    const resolvedQueueNum = syncServerDailyQueueNumber(order.queueNumber);
     liveKitchenOrders.unshift({
       ...order,
+      queueNumber: resolvedQueueNum,
+      orderNumber: order.orderNumber || `Q-${String(resolvedQueueNum).padStart(3, "0")}`,
       id: order.id || `k-ord-${Date.now().toString(36)}`,
       createdAt: order.createdAt || new Date().toISOString(),
     });
   }
 
   broadcastSseEvent('KITCHEN_ORDERS_UPDATE', liveKitchenOrders);
-  res.json({ success: true, orders: liveKitchenOrders });
+  res.json({ success: true, orders: liveKitchenOrders, queueCounter: serverRestaurantQueueCounter, queueDate: serverRestaurantQueueDate });
+});
+
+app.post("/api/restaurant/reset-queue", (req, res) => {
+  const { startFrom = 0 } = req.body || {};
+  serverRestaurantQueueDate = getServerLocalDateKey();
+  serverRestaurantQueueCounter = Math.max(0, Number(startFrom) || 0);
+  broadcastSseEvent('RESTAURANT_QUEUE_RESET', { queueCounter: serverRestaurantQueueCounter, queueDate: serverRestaurantQueueDate });
+  res.json({ success: true, queueCounter: serverRestaurantQueueCounter, queueDate: serverRestaurantQueueDate });
 });
 
 app.post("/api/sync/kitchen-order-item-status", (req, res) => {
@@ -1341,7 +1354,9 @@ app.post("/api/sync/kitchen-order-item-status", (req, res) => {
 // 5.4. Customer QR Menu & Per-Product Device Routing Engine
 // ==========================================
 
-// Get current restaurant/cafe menu catalog + connected devices + live orders + customer reviews
+let liveTableServiceRequests: any[] = [];
+
+// Get current restaurant/cafe menu catalog + connected devices + live orders + customer reviews + table requests
 app.get("/api/menu/catalog", (_req, res) => {
   res.json({
     success: true,
@@ -1349,6 +1364,7 @@ app.get("/api/menu/catalog", (_req, res) => {
     devices: connectedDevices,
     orders: liveKitchenOrders,
     reviews: liveCustomerReviews,
+    tableRequests: liveTableServiceRequests,
   });
 });
 
@@ -1406,13 +1422,14 @@ app.post("/api/menu/update-product", (req, res) => {
   res.json({ success: true, productId, updates });
 });
 
-// Submit a Customer QR Order & automatically route each product to its designated target device
+// Submit a Customer QR Order & automatically route to Cashier + Waiter Device + Kitchen Display
 app.post("/api/menu/submit-order", (req, res) => {
   const {
     tableName,
     diningType = "dine_in",
     customerName,
     customerPhone,
+    deliveryAddress,
     guestCount = 1,
     notes,
     items,
@@ -1423,8 +1440,8 @@ app.post("/api/menu/submit-order", (req, res) => {
     return res.status(400).json({ success: false, error: "السلة فارغة، يرجى اختيار صنف واحد على الأقل" });
   }
 
-  const orderSeq = liveKitchenOrders.length + 201;
-  const orderNumber = `QR-${orderSeq}`;
+  const nextQueueNum = getNextServerDailyQueueNumber();
+  const orderNumber = `Q-${String(nextQueueNum).padStart(3, "0")}`;
   const nowIso = new Date().toISOString();
 
   const formattedItems = items.map((item: any, idx: number) => ({
@@ -1437,18 +1454,24 @@ app.post("/api/menu/submit-order", (req, res) => {
     image: item.image,
     notes: item.notes || "",
     status: "pending" as const,
-    targetDeviceRole: item.targetDeviceRole || "kitchen_display",
+    targetDeviceRole: item.targetDeviceRole || "all",
     targetDeviceId: item.targetDeviceId || "",
-    targetDeviceName: item.targetDeviceName || "شاشة المطبخ (KDS)",
+    targetDeviceName: item.targetDeviceName || "الكاشير + النادل + المطبخ",
   }));
 
   const newOrder = {
     id: `qr-ord-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
     orderNumber,
-    sourceDevice: `منيو QR الذكي (${tableName || (diningType === "takeaway" ? "سفري" : "توصيل")})`,
+    queueNumber: nextQueueNum,
+    invoiceNumber: `Q-${String(nextQueueNum).padStart(3, "0")}-QR`,
+    sourceDevice: `منيو الزبائن QR (${tableName || (diningType === "takeaway" ? "سفري" : "توصيل")})`,
     isCustomerQrOrder: true,
+    routedToCashier: true,
+    routedToWaiter: true,
+    waiterConfirmed: false,
     customerName: customerName || "",
     customerPhone: customerPhone || "",
+    deliveryAddress: deliveryAddress || "",
     diningType,
     tableName: tableName || (diningType === "takeaway" ? "طلب سفري" : "توصيل"),
     guestCount: Number(guestCount) || 1,
@@ -1462,17 +1485,100 @@ app.post("/api/menu/submit-order", (req, res) => {
 
   liveKitchenOrders.unshift(newOrder);
 
-  // Broadcast to all connected terminals & KDS screens so each device displays its routed items immediately
+  // Broadcast to Cashier (Master & Secondary POS), Waiter Devices, and KDS screens simultaneously
   broadcastSseEvent("KITCHEN_ORDERS_UPDATE", liveKitchenOrders);
   broadcastSseEvent("CUSTOMER_QR_ORDER_RECEIVED", newOrder);
-  broadcastSseEvent("QR_CUSTOMER_ORDER_RECEIVED", { order: newOrder });
+  broadcastSseEvent("QR_CUSTOMER_ORDER_RECEIVED", {
+    order: newOrder,
+    routedToCashier: true,
+    routedToWaiter: true,
+  });
 
   res.json({
     success: true,
     order: newOrder,
     orders: liveKitchenOrders,
-    message: "تم إرسال طلبك بنجاح وتوجيه الأصناف للأقسام المختصة",
+    message: "تم إرسال طلبك فوراً إلى الكاشير وجهاز النادل والمطبخ",
   });
+});
+
+// Confirm / Update Kitchen or QR Order Status by Waiter or Cashier
+app.post("/api/menu/confirm-order", (req, res) => {
+  const { orderId, confirmedBy = "الكابتن / النادل", status } = req.body;
+  const ord = liveKitchenOrders.find(o => o.id === orderId || o.orderNumber === orderId);
+  if (ord) {
+    ord.waiterConfirmed = true;
+    ord.waiterConfirmedBy = confirmedBy;
+    ord.waiterConfirmedAt = new Date().toISOString();
+    if (status) {
+      ord.status = status;
+      if (status === "ready") {
+        ord.items.forEach((it: any) => {
+          if (it.status === "pending" || it.status === "cooking") it.status = "ready";
+        });
+      } else if (status === "completed") {
+        ord.items.forEach((it: any) => {
+          it.status = "served";
+        });
+      }
+    } else if (ord.status === "new" || ord.status === "pending") {
+      ord.status = "in_progress";
+    }
+  }
+  broadcastSseEvent("KITCHEN_ORDERS_UPDATE", liveKitchenOrders);
+  res.json({ success: true, order: ord, orders: liveKitchenOrders });
+});
+
+// Customer Table Service Request (Call Waiter / Request Bill / Water & Napkins) -> Reaches Cashier & Waiter!
+app.post("/api/menu/table-request", (req, res) => {
+  const {
+    tableName = "الطاولة 1",
+    requestType = "call_waiter",
+    labelAr = "نداء الكابتن / النادل للطاولة",
+    customerName = "",
+    paymentPreference,
+    notes = "",
+  } = req.body;
+
+  const newReq = {
+    id: `tbl-req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    tableName,
+    requestType,
+    labelAr,
+    customerName,
+    paymentPreference,
+    notes,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+
+  liveTableServiceRequests.unshift(newReq);
+  if (liveTableServiceRequests.length > 50) {
+    liveTableServiceRequests = liveTableServiceRequests.slice(0, 50);
+  }
+
+  broadcastSseEvent("TABLE_SERVICE_REQUEST", {
+    request: newReq,
+    requests: liveTableServiceRequests,
+  });
+
+  res.json({
+    success: true,
+    request: newReq,
+    requests: liveTableServiceRequests,
+    message: "تم إرسال طلبك فوراً إلى جهاز النادل والكاشير",
+  });
+});
+
+app.post("/api/menu/acknowledge-table-request", (req, res) => {
+  const { requestId, acknowledgedBy = "الكابتن", status = "completed" } = req.body;
+  liveTableServiceRequests = liveTableServiceRequests.map(r =>
+    r.id === requestId ? { ...r, status, acknowledgedBy } : r
+  );
+  broadcastSseEvent("TABLE_SERVICE_REQUEST_UPDATED", {
+    requests: liveTableServiceRequests,
+  });
+  res.json({ success: true, requests: liveTableServiceRequests });
 });
 
 // Submit Customer Experience Review from QR Menu Page

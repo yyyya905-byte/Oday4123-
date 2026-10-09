@@ -51,6 +51,7 @@ import {
 import { DarkContrastLevel } from '../../types';
 import { soundEffects } from '../../services/audio';
 import { GoogleDriveBackupSection } from '../backup/GoogleDriveBackupSection';
+import { IndexedDbAutoBackupPanel } from '../backup/IndexedDbAutoBackupPanel';
 import { WhatsAppDebtAutomationDashboard } from '../debts/WhatsAppDebtAutomationDashboard';
 import { PrintSettingsPanel } from './PrintSettingsPanel';
 import { ReceiptCustomizerPanel } from './ReceiptCustomizerPanel';
@@ -180,7 +181,7 @@ export const SettingsView: React.FC = () => {
 
   const isAuthorizedToGenerate = isAuthorizedToGenerateCodes(activeEmail);
 
-  const [activeSubTab, setActiveSubTab] = useState<'theme_color' | 'receipt_header_footer' | 'appearance' | 'receipt_design' | 'printer' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'license' | 'buttons_layout'>('theme_color');
+  const [activeSubTab, setActiveSubTab] = useState<'indexeddb_autobackup' | 'theme_color' | 'receipt_header_footer' | 'appearance' | 'receipt_design' | 'printer' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'license' | 'buttons_layout'>('receipt_design');
   const [formData, setFormData] = useState({ ...settings });
   const [fileInputKey, setFileInputKey] = useState(Date.now());
 
@@ -416,6 +417,39 @@ export const SettingsView: React.FC = () => {
 
       {/* Sub Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('receipt_design')}
+          id="btn-settings-subtab-receipt-layout-top"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'receipt_design'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Receipt className="w-4 h-4 text-amber-500" />
+          <span>محرر تخطيط الفاتورة (سحب وإفلات) 🧾</span>
+          <span className="px-1.5 py-0.2 rounded-md text-[10px] bg-slate-900 text-amber-400 font-mono font-bold">
+            Drag & Drop
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('indexeddb_autobackup')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+            activeSubTab === 'indexeddb_autobackup'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <HardDrive className="w-4 h-4 text-emerald-500" />
+          <span>النسخ الاحتياطي الذاتي واستعادة IndexedDB (JSON)</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-600 text-white font-mono font-bold">
+            Auto-Backup
+          </span>
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveSubTab('theme_color')}
@@ -1130,53 +1164,18 @@ export const SettingsView: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: IndexedDB Auto-Backup & Restore (JSON) */}
+      {activeSubTab === 'indexeddb_autobackup' && (
+        <div className="space-y-6 max-w-5xl animate-in fade-in">
+          <IndexedDbAutoBackupPanel />
+        </div>
+      )}
+
       {/* TAB 1: Google Drive Cloud Backup & Offline JSON */}
       {activeSubTab === 'google_drive' && (
-        <div className="space-y-6 max-w-4xl">
+        <div className="space-y-6 max-w-5xl">
+          <IndexedDbAutoBackupPanel />
           <GoogleDriveBackupSection />
-
-          {/* Local Backup Section */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <Download className="w-4 h-4 text-amber-500" />
-              <span>النسخ الاحتياطي المحلي المباشر (Offline JSON File)</span>
-            </h3>
-            <p className="text-xs text-slate-400">
-              تطبيق KIAN يعمل بدون إنترنت تماماً. يمكنك تنزيل ملف JSON محلي إلى جهازك أو فلاش ميموري واستعادته بأي وقت.
-            </p>
-
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={exportDataJson}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>تحميل ملف نسخة احتياطية (JSON)</span>
-              </button>
-
-              <label className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer transition-all">
-                <Upload className="w-4 h-4" />
-                <span>استيراد ملف من الجهاز</span>
-                <input
-                  key={fileInputKey}
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileImport}
-                  className="hidden"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={handleReset}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>استعادة البيانات التجريبية الافتراضية</span>
-              </button>
-            </div>
-          </div>
 
           {/* IndexedDB Storage Health & Smart Cleanup Card */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">

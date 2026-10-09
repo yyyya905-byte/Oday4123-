@@ -392,6 +392,24 @@ class BluetoothPrinterService {
     drawDashedLine(ctx, padding, y, targetWidth - padding);
     y += 12;
 
+    // 1.5. Restaurant Queue Number Box (if applicable)
+    const resolvedQueueNum =
+      sale.queueNumber ||
+      Number((sale.invoiceNumber?.match(/Q-(\d+)/i) || [])[1]) ||
+      0;
+    if (resolvedQueueNum > 0 || sale.businessMode === 'restaurant') {
+      const qBoxHeight = paperWidthMm === '58mm' ? 58 : 68;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#000000';
+      ctx.strokeRect(padding, y, contentWidth, qBoxHeight);
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${paperWidthMm === '58mm' ? '12px' : '14px'} Tahoma, sans-serif`;
+      ctx.fillText('رقم الطابور / الدور (QUEUE)', centerX, y + 6);
+      ctx.font = `bold ${paperWidthMm === '58mm' ? '26px' : '32px'} Tahoma, sans-serif`;
+      ctx.fillText(`#${String(resolvedQueueNum || 1).padStart(3, '0')}`, centerX, y + 24);
+      y += qBoxHeight + 12;
+    }
+
     // 2. Invoice Meta Info
     ctx.font = `bold ${paperWidthMm === '58mm' ? '13px' : '15px'} Tahoma, sans-serif`;
     ctx.textAlign = 'right';
