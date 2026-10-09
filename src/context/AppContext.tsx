@@ -6468,10 +6468,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isZeroed =
         localStorage.getItem(STORAGE_KEYS.ZEROED_OUT) === 'true' ||
         localStorage.getItem(STORAGE_KEYS.APP_PURCHASED) === 'true';
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMER_REVIEWS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      const savedMain = localStorage.getItem(STORAGE_KEYS.CUSTOMER_REVIEWS);
+      const savedV1 = localStorage.getItem('kian_pos_customer_reviews_v1');
+      const parsedMain = savedMain ? JSON.parse(savedMain) : [];
+      const parsedV1 = savedV1 ? JSON.parse(savedV1) : [];
+
+      const mergedMap = new Map<string, CustomerFeedbackReview>();
+      if (Array.isArray(parsedV1)) {
+        parsedV1.forEach((r: CustomerFeedbackReview) => {
+          if (r && r.id) mergedMap.set(r.id, r);
+        });
+      }
+      if (Array.isArray(parsedMain)) {
+        parsedMain.forEach((r: CustomerFeedbackReview) => {
+          if (r && r.id && !mergedMap.has(r.id)) mergedMap.set(r.id, r);
+        });
+      }
+      if (mergedMap.size > 0) {
+        return Array.from(mergedMap.values()).sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
       }
       if (isZeroed) return [];
       return [
@@ -6530,31 +6546,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REVIEWS, JSON.stringify(customerReviews));
+      const serialized = JSON.stringify(customerReviews);
+      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REVIEWS, serialized);
+      localStorage.setItem('kian_pos_customer_reviews_v1', serialized);
     } catch {}
   }, [customerReviews]);
 
+  // Listen for reviews saved in standalone Customer QR Menu tab via storage events
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        (e.key === STORAGE_KEYS.CUSTOMER_REVIEWS || e.key === 'kian_pos_customer_reviews_v1') &&
+        e.newValue
+      ) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setCustomerReviewsState(prev => {
+              const map = new Map<string, CustomerFeedbackReview>();
+              parsed.forEach((r: CustomerFeedbackReview) => {
+                if (r && r.id) map.set(r.id, r);
+              });
+              prev.forEach(r => {
+                if (r && r.id && !map.has(r.id)) map.set(r.id, r);
+              });
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const addCustomerReview = (
-    reviewData: Omit<CustomerFeedbackReview, 'id' | 'createdAt'>
+    reviewData: Omit<CustomerFeedbackReview, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
   ): CustomerFeedbackReview => {
     const newRev: CustomerFeedbackReview = {
       ...reviewData,
-      id: `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-      createdAt: new Date().toISOString(),
+      id: reviewData.id || `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      createdAt: reviewData.createdAt || new Date().toISOString(),
     };
-    setCustomerReviewsState(prev => [newRev, ...prev]);
+    setCustomerReviewsState(prev => {
+      const exists = prev.some(r => r.id === newRev.id);
+      return exists ? prev.map(r => (r.id === newRev.id ? newRev : r)) : [newRev, ...prev];
+    });
     return newRev;
   };
 
   const deleteCustomerReview = (id: string) => {
     setCustomerReviewsState(prev => prev.filter(r => r.id !== id));
+    fetch('/api/menu/delete-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
   };
 
   const clearCustomerReviews = () => {
     setCustomerReviewsState([]);
     try {
       localStorage.setItem(STORAGE_KEYS.CUSTOMER_REVIEWS, JSON.stringify([]));
+      localStorage.setItem('kian_pos_customer_reviews_v1', JSON.stringify([]));
     } catch {}
+    fetch('/api/menu/clear-reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => {});
   };
 
   const updateQrMenuTheme = (themeUpdates: Partial<QrMenuThemeConfig>) => {
@@ -7066,6 +7127,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (data.devices) setDevices(data.devices);
           if (data.masterPairingPin) setMasterPairingPin(data.masterPairingPin);
           if (data.kitchenOrders) setKitchenOrders(data.kitchenOrders);
+          if (Array.isArray(data.tableRequests) && data.tableRequests.length > 0) {
+            setTableServiceRequests(data.tableRequests);
+          }
+          if (Array.isArray(data.customerReviews) && data.customerReviews.length > 0) {
+            setCustomerReviewsState(prev => {
+              const map = new Map<string, CustomerFeedbackReview>();
+              data.customerReviews.forEach((r: CustomerFeedbackReview) => {
+                if (r && r.id) map.set(r.id, r);
+              });
+              prev.forEach(r => {
+                if (r && r.id && !map.has(r.id)) map.set(r.id, r);
+              });
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
           if (data.sharedStoreState?.sales && Array.isArray(data.sharedStoreState.sales) && data.sharedStoreState.sales.length > 0) {
             setSalesState(prev => {
               const existingIds = new Set(prev.map(s => s.id));
@@ -7285,6 +7363,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
       });
 
+      eventSource.addEventListener('QR_CUSTOMER_REVIEWS_UPDATED', (e: any) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (Array.isArray(data?.reviews)) {
+            setCustomerReviewsState(data.reviews);
+          }
+        } catch {}
+      });
+
       eventSource.addEventListener('CART_UPDATE', (e: any) => {
         try {
           const cartData = JSON.parse(e.data);
@@ -7432,7 +7519,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             qrMenuTheme: settings.qrMenuTheme,
           },
         }),
-      }).catch(() => {});
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data?.reviews) && data.reviews.length > 0) {
+            setCustomerReviewsState(prev => {
+              const existingIds = new Set(prev.map(r => r.id));
+              const incoming = data.reviews.filter((r: CustomerFeedbackReview) => r && r.id && !existingIds.has(r.id));
+              if (incoming.length === 0) return prev;
+              return [...incoming, ...prev].sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+        })
+        .catch(() => {});
     }, 350);
     return () => clearTimeout(timer);
   }, [products, categories, settings, customerReviews]);
@@ -7448,6 +7549,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const existingIds = new Set(prev.map(s => s.id));
             const incoming = data.sharedState.sales.filter((s: Sale) => s && s.id && !existingIds.has(s.id));
             return incoming.length > 0 ? [...incoming, ...prev] : prev;
+          });
+        }
+        if (Array.isArray(data?.customerReviews) && data.customerReviews.length > 0) {
+          setCustomerReviewsState(prev => {
+            const existingIds = new Set(prev.map(r => r.id));
+            const incoming = data.customerReviews.filter((r: CustomerFeedbackReview) => r && r.id && !existingIds.has(r.id));
+            if (incoming.length === 0) return prev;
+            return [...incoming, ...prev].sort(
+              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+            );
           });
         }
       })

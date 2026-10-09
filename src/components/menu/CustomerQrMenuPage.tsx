@@ -1161,7 +1161,11 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       myLiveOrders[0]?.tableName ||
       (diningType === 'dine_in' ? tableName : diningType === 'takeaway' ? 'طلب سفري' : 'توصيل');
 
-    const reviewPayload: Omit<CustomerFeedbackReview, 'id' | 'createdAt'> = {
+    const reviewId = `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const nowIso = new Date().toISOString();
+
+    const createdLocal: CustomerFeedbackReview = {
+      id: reviewId,
       orderId: ratingOrderInfo?.orderId || myLiveOrders[0]?.id || '',
       orderNumber: ratingOrderInfo?.orderNumber || myLiveOrders[0]?.orderNumber || 'QR',
       tableName: resolvedTable,
@@ -1174,31 +1178,36 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       menuEaseRating,
       tags: selectedReviewTags,
       comment: reviewComment.trim(),
+      createdAt: nowIso,
     };
 
     try {
-      // 1. Save in AppContext / localStorage so Manager Dashboard has it immediately
-      let createdLocal: CustomerFeedbackReview;
+      // 1. Save in AppContext / localStorage so Restaurant section has it immediately
       if (appCtx?.addCustomerReview) {
-        createdLocal = appCtx.addCustomerReview(reviewPayload);
+        appCtx.addCustomerReview(createdLocal);
       } else {
-        createdLocal = {
-          ...reviewPayload,
-          id: `rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          createdAt: new Date().toISOString(),
-        };
         try {
-          const saved = localStorage.getItem('kian_pos_customer_reviews_v1');
-          const parsed = saved ? JSON.parse(saved) : [];
-          localStorage.setItem('kian_pos_customer_reviews_v1', JSON.stringify([createdLocal, ...parsed]));
+          const savedMain = localStorage.getItem('kian_pos_customer_reviews');
+          const savedV1 = localStorage.getItem('kian_pos_customer_reviews_v1');
+          const parsed = savedMain
+            ? JSON.parse(savedMain)
+            : savedV1
+            ? JSON.parse(savedV1)
+            : [];
+          const nextList = Array.isArray(parsed)
+            ? [createdLocal, ...parsed.filter((r: any) => r?.id !== createdLocal.id)]
+            : [createdLocal];
+          const serialized = JSON.stringify(nextList);
+          localStorage.setItem('kian_pos_customer_reviews', serialized);
+          localStorage.setItem('kian_pos_customer_reviews_v1', serialized);
         } catch {}
       }
 
-      // 2. Post to backend so all connected screens receive SSE
+      // 2. Post to backend with the same ID so all connected screens receive SSE without duplicates
       await fetch('/api/menu/submit-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reviewPayload),
+        body: JSON.stringify(createdLocal),
       }).catch(() => {});
 
       // 3. Broadcast on local mesh
@@ -1213,6 +1222,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
 
       soundEffects.saleSuccess();
       setHasSubmittedReview(true);
+      setReviewComment('');
       setTimeout(() => {
         setIsRatingModalOpen(false);
       }, 1800);

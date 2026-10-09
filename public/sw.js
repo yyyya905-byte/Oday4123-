@@ -1,13 +1,12 @@
 // KIAN CASHIER - Service Worker
-// Version 1.2.0 - Offline-First POS & Safe Dev Module Strategy
+// Version 1.3.0 - Offline-First POS & Safe Dev Module Strategy
 
-const CACHE_NAME = 'kian-cashier-cache-v4';
+const CACHE_NAME = 'kian-cashier-cache-v5';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './icon.svg',
-  './manifest.json',
-  'https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap'
+  './manifest.json'
 ];
 
 // Install Event: Pre-cache core shell
@@ -30,7 +29,6 @@ self.addEventListener('activate', (event) => {
         cacheNames
           .filter((name) => name !== CACHE_NAME)
           .map((name) => {
-            console.log('[Service Worker] Deleting obsolete cache:', name);
             return caches.delete(name);
           })
       );
@@ -38,14 +36,24 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event: Network-first for API & Vite modules, fallback to cache when offline
+// Fetch Event: Network-first for same-origin requests, bypass cross-origin & SSE
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch {
+    return;
+  }
 
-  // 1. Bypass Service Worker for Server-Sent Events (SSE), HMR/Vite internals, and non-GET requests
+  // 1. Always bypass cross-origin requests, non-GET requests, SSE streams, and Vite dev endpoints
+  const acceptHeader = event.request.headers.get('accept') || '';
   if (
+    url.origin !== self.location.origin ||
     event.request.method !== 'GET' ||
+    acceptHeader.includes('text/event-stream') ||
+    url.pathname.startsWith('/api/sync/stream') ||
     url.pathname.startsWith('/api/devices/stream') ||
+    url.pathname.startsWith('/src/') ||
     url.pathname.startsWith('/@vite') ||
     url.pathname.startsWith('/@react-refresh') ||
     url.pathname.startsWith('/@fs') ||
@@ -54,13 +62,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Source files & JS/TS modules -> Always Network-First to prevent duplicate React hook instances
-  if (
-    url.pathname.startsWith('/src/') ||
-    url.pathname.endsWith('.tsx') ||
-    url.pathname.endsWith('.ts') ||
-    url.pathname.endsWith('.js')
-  ) {
+  // 2. API GET requests (network first, fallback to cached response if offline)
+  if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -70,39 +73,35 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
-
-  // 3. API GET requests (network first, fallback to cached response if offline)
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
-          }
-          return response;
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          return (
+            cached ||
+            new Response(JSON.stringify({ offline: true }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
         })
-        .catch(() => caches.match(event.request))
     );
     return;
   }
 
-  // 4. Navigation requests (HTML pages) -> Network first with cache fallback
+  // 3. Navigation requests (HTML pages) -> Network first with cache fallback
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
-        .catch(() => {
-          return caches.match('./index.html') || caches.match('/');
-        })
+      fetch(event.request).catch(async () => {
+        return (
+          (await caches.match('./index.html')) ||
+          (await caches.match('/')) ||
+          new Response('Offline', { status: 503 })
+        );
+      })
     );
     return;
   }
 
-  // 5. Static assets (CSS, Fonts, Images, Icons) -> Network first with cache fallback
+  // 4. Same-origin static assets -> Network first with safe cache fallback
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
@@ -112,7 +111,10 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        return cached || new Response('', { status: 504 });
+      })
   );
 });
 

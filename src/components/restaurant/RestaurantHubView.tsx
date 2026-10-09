@@ -78,6 +78,9 @@ export const RestaurantHubView: React.FC = () => {
     submitTableServiceRequest,
     acknowledgeTableServiceRequest,
     customerReviews,
+    addCustomerReview,
+    deleteCustomerReview,
+    clearCustomerReviews,
     devices,
     setActiveTab,
     setIsRestaurantQrModalOpen,
@@ -126,6 +129,176 @@ export const RestaurantHubView: React.FC = () => {
   const [resTime, setResTime] = useState('20:00');
   const [resGuestsCount, setResGuestsCount] = useState(4);
   const [resNotes, setResNotes] = useState('');
+
+  // Customer QR Menu Reviews Filters & Quick Entry Modal State
+  const [reviewStarFilter, setReviewStarFilter] = useState<'all' | '5' | '4' | 'low'>('all');
+  const [reviewDiningFilter, setReviewDiningFilter] = useState<'all' | 'dine_in' | 'takeaway' | 'delivery'>('all');
+  const [reviewTagFilter, setReviewTagFilter] = useState<string>('all');
+  const [reviewSearchQuery, setReviewSearchQuery] = useState<string>('');
+  const [confirmClearReviews, setConfirmClearReviews] = useState<boolean>(false);
+  const [isAddReviewModalOpen, setIsAddReviewModalOpen] = useState<boolean>(false);
+  const [newRevCustomerName, setNewRevCustomerName] = useState<string>('');
+  const [newRevCustomerPhone, setNewRevCustomerPhone] = useState<string>('');
+  const [newRevTableName, setNewRevTableName] = useState<string>('الطاولة 1');
+  const [newRevDiningType, setNewRevDiningType] = useState<'dine_in' | 'takeaway' | 'delivery'>('dine_in');
+  const [newRevOrderNumber, setNewRevOrderNumber] = useState<string>('');
+  const [newRevRating, setNewRevRating] = useState<number>(5);
+  const [newRevFoodRating, setNewRevFoodRating] = useState<number>(5);
+  const [newRevSpeedRating, setNewRevSpeedRating] = useState<number>(5);
+  const [newRevMenuRating, setNewRevMenuRating] = useState<number>(5);
+  const [newRevTags, setNewRevTags] = useState<string[]>(['طعم رائع ولذيذ 😋', 'سهولة وسرعة في الطلب ⚡']);
+  const [newRevComment, setNewRevComment] = useState<string>('');
+
+  const MENU_REVIEW_PRESET_TAGS = [
+    'طعم رائع ولذيذ 😋',
+    'سهولة وسرعة في الطلب ⚡',
+    'صور الأصناف واضحة وشهية 📸',
+    'خدمة ممتازة 🌟',
+    'تصميم المنيو أنيق ومرتب 🎨',
+    'أسعار مناسبة 💰',
+  ];
+
+  // Comprehensive Customer QR Menu Reviews Analytics
+  const reviewAnalytics = useMemo(() => {
+    const total = customerReviews.length;
+    if (total === 0) {
+      return {
+        total: 0,
+        avgOverall: '5.0',
+        avgOverallNum: 5,
+        avgFood: '5.0',
+        avgFoodNum: 5,
+        avgSpeed: '5.0',
+        avgSpeedNum: 5,
+        avgMenuEase: '5.0',
+        avgMenuEaseNum: 5,
+        satisfactionPercent: 100,
+        starCounts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } as Record<number, number>,
+        topTags: [] as { tag: string; count: number }[],
+      };
+    }
+
+    let sumOverall = 0;
+    let sumFood = 0;
+    let sumSpeed = 0;
+    let sumMenu = 0;
+    const starCounts: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const tagMap = new Map<string, number>();
+
+    customerReviews.forEach(r => {
+      const overall = Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5)));
+      const food = Math.min(5, Math.max(1, Number(r.foodQualityRating) || overall));
+      const speed = Math.min(5, Math.max(1, Number(r.serviceSpeedRating) || overall));
+      const menuEase = Math.min(5, Math.max(1, Number(r.menuEaseRating) || overall));
+
+      sumOverall += overall;
+      sumFood += food;
+      sumSpeed += speed;
+      sumMenu += menuEase;
+      starCounts[overall] = (starCounts[overall] || 0) + 1;
+
+      if (Array.isArray(r.tags)) {
+        r.tags.forEach(t => {
+          if (t && t.trim()) {
+            tagMap.set(t.trim(), (tagMap.get(t.trim()) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    const avgOverallNum = sumOverall / total;
+    const avgFoodNum = sumFood / total;
+    const avgSpeedNum = sumSpeed / total;
+    const avgMenuEaseNum = sumMenu / total;
+
+    const topTags = Array.from(tagMap.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      total,
+      avgOverall: avgOverallNum.toFixed(1),
+      avgOverallNum,
+      avgFood: avgFoodNum.toFixed(1),
+      avgFoodNum,
+      avgSpeed: avgSpeedNum.toFixed(1),
+      avgSpeedNum,
+      avgMenuEase: avgMenuEaseNum.toFixed(1),
+      avgMenuEaseNum,
+      satisfactionPercent: Math.round((avgOverallNum / 5) * 100),
+      starCounts,
+      topTags,
+    };
+  }, [customerReviews]);
+
+  const filteredCustomerReviews = useMemo(() => {
+    return customerReviews.filter(rev => {
+      const rating = Math.round(Number(rev.rating) || 5);
+      if (reviewStarFilter === '5' && rating !== 5) return false;
+      if (reviewStarFilter === '4' && rating !== 4) return false;
+      if (reviewStarFilter === 'low' && rating > 3) return false;
+
+      if (reviewDiningFilter !== 'all' && (rev.diningType || 'dine_in') !== reviewDiningFilter) {
+        return false;
+      }
+
+      if (reviewTagFilter !== 'all' && !(rev.tags || []).includes(reviewTagFilter)) {
+        return false;
+      }
+
+      const q = reviewSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (rev.customerName || '').toLowerCase().includes(q) ||
+        (rev.tableName || '').toLowerCase().includes(q) ||
+        (rev.orderNumber || '').toLowerCase().includes(q) ||
+        (rev.comment || '').toLowerCase().includes(q) ||
+        (rev.customerPhone || '').toLowerCase().includes(q) ||
+        (rev.tags || []).some(t => t.toLowerCase().includes(q))
+      );
+    });
+  }, [customerReviews, reviewStarFilter, reviewDiningFilter, reviewTagFilter, reviewSearchQuery]);
+
+  const handleCreateQuickMenuReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    const created = addCustomerReview({
+      orderId: `qr-ord-${Date.now().toString(36)}`,
+      orderNumber: newRevOrderNumber.trim() || `Q-${String(nextRestaurantQueueNumber || 1).padStart(3, '0')}`,
+      tableName:
+        newRevDiningType === 'dine_in'
+          ? newRevTableName
+          : newRevDiningType === 'takeaway'
+          ? 'طلب سفري'
+          : 'طلب توصيل',
+      diningType: newRevDiningType,
+      customerName: newRevCustomerName.trim() || 'ضيف المطعم',
+      customerPhone: newRevCustomerPhone.trim(),
+      rating: newRevRating,
+      foodQualityRating: newRevFoodRating,
+      serviceSpeedRating: newRevSpeedRating,
+      menuEaseRating: newRevMenuRating,
+      tags: newRevTags,
+      comment: newRevComment.trim(),
+    });
+
+    fetch('/api/menu/submit-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(created),
+    }).catch(() => {});
+
+    soundEffects.saleSuccess();
+    notify(
+      'تم تسجيل تقييم الزبون بنجاح ⭐',
+      `تمت إضافة تقييم (${created.customerName} - ${created.rating}/5 نجوم) إلى سجل تقييمات المنيو`,
+      'success'
+    );
+    setNewRevCustomerName('');
+    setNewRevCustomerPhone('');
+    setNewRevOrderNumber('');
+    setNewRevComment('');
+    setIsAddReviewModalOpen(false);
+  };
 
   // Synchronize table statuses dynamically with active kitchen orders & service requests
   const enrichedTables = useMemo(() => {
@@ -684,6 +857,19 @@ export const RestaurantHubView: React.FC = () => {
 
             <button
               type="button"
+              onClick={() => setActiveSubTab('reviews_analytics')}
+              className="px-3.5 py-2.5 rounded-2xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 font-black text-xs flex items-center gap-2 transition-all cursor-pointer"
+              title="عرض تقييمات الزبائن التي تتم عن طريق المنيو الرقمي QR"
+            >
+              <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+              <span>
+                {isAr
+                  ? `تقييمات المنيو (${reviewAnalytics.avgOverall} ★ • ${customerReviews.length})`
+                  : `Menu Reviews (${reviewAnalytics.avgOverall} ★)`}
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => setIsCustomerMenuPreviewOpen(true)}
               className="px-3.5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-amber-500/25 transition-all cursor-pointer"
             >
@@ -799,15 +985,18 @@ export const RestaurantHubView: React.FC = () => {
 
           <div
             onClick={() => setActiveSubTab('reviews_analytics')}
-            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-3 cursor-pointer transition-all"
+            className="bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 rounded-2xl p-3 cursor-pointer transition-all"
           >
-            <div className="flex items-center justify-between text-slate-400 text-[11px] font-bold">
-              <span>{isAr ? 'مبيعات اليوم' : 'Today Sales'}</span>
-              <DollarSign className="w-4 h-4 text-emerald-400" />
+            <div className="flex items-center justify-between text-amber-200 text-[11px] font-bold">
+              <span>{isAr ? 'تقييمات الزبائن (المنيو)' : 'QR Menu Reviews'}</span>
+              <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
             </div>
             <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-base sm:text-lg font-black text-emerald-400 truncate">
-                {formatCurrency(stats.todayRevenue)}
+              <span className="text-xl font-black text-amber-300 font-mono">
+                {reviewAnalytics.avgOverall} ★
+              </span>
+              <span className="text-xs text-amber-100 font-bold">
+                ({customerReviews.length} {isAr ? 'تقييم' : 'reviews'})
               </span>
             </div>
           </div>
@@ -895,9 +1084,12 @@ export const RestaurantHubView: React.FC = () => {
           },
           {
             id: 'reviews_analytics',
-            label: isAr ? 'تقييمات الضيوف والتحليلات' : 'Reviews & Analytics',
+            label: isAr ? 'تقييمات الزبائن عبر المنيو (QR)' : 'Customer Menu Reviews',
             icon: Star,
-            badge: customerReviews.length > 0 ? String(customerReviews.length) : undefined,
+            badge:
+              customerReviews.length > 0
+                ? `${customerReviews.length} • ${reviewAnalytics.avgOverall}★`
+                : '0',
           },
         ].map(tab => {
           const Icon = tab.icon;
@@ -2721,43 +2913,922 @@ export const RestaurantHubView: React.FC = () => {
       )}
 
       {/* =========================================================
-          TAB 6: REVIEWS & RESTAURANT ANALYTICS
+          TAB 6: CUSTOMER QR MENU REVIEWS & SATISFACTION ANALYTICS
          ========================================================= */}
       {activeSubTab === 'reviews_analytics' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <div className="lg:col-span-12 bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 space-y-4">
-            <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <Star className="w-5 h-5 text-amber-500" />
-              <span>تقييمات الضيوف وتجربة منيو المطعم ({customerReviews.length})</span>
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-              {customerReviews.map(rev => (
-                <div
-                  key={rev.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-900 dark:text-white">
-                      {rev.customerName || 'ضيف المطعم'} • {rev.tableName}
-                    </span>
-                    <div className="flex items-center gap-0.5 text-amber-500">
-                      {Array.from({ length: 5 }).map((_, idx) => (
-                        <Star
-                          key={idx}
-                          className={`w-3.5 h-3.5 ${
-                            idx < rev.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
+        <div className="space-y-5">
+          {/* Top Executive Summary & 3-Pillar QR Menu Rating Breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Overall Rating Score & Star Distribution Card */}
+            <div className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[11px] font-black inline-flex items-center gap-1.5">
+                    <QrCode className="w-3.5 h-3.5" />
+                    {isAr ? 'تقييمات منيو الزبائن التفاعلي (QR)' : 'QR Menu Customer Reviews'}
+                  </span>
+                  <h2 className="text-lg font-black text-slate-900 dark:text-white mt-2">
+                    {isAr ? 'مؤشر رضا الزبائن العام' : 'Overall Customer Satisfaction'}
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {isAr
+                      ? 'تقييمات حية يرسلها الزبائن مباشرة من صفحة المنيو بعد الطلب.'
+                      : 'Live feedback submitted directly by guests from the QR Menu page.'}
+                  </p>
+                </div>
+
+                <div className="text-center bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-4 py-3 rounded-2xl shrink-0">
+                  <div className="text-3xl font-black font-mono text-amber-600 dark:text-amber-400 leading-none">
+                    {reviewAnalytics.avgOverall}
+                  </div>
+                  <div className="flex items-center justify-center gap-0.5 my-1.5">
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Star
+                        key={s}
+                        className={`w-3.5 h-3.5 ${
+                          s <= Math.round(reviewAnalytics.avgOverallNum)
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'text-slate-300 dark:text-slate-600'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 block">
+                    {customerReviews.length} {isAr ? 'تقييم مسجل' : 'reviews'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 5-to-1 Star Distribution Bars */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                {[5, 4, 3, 2, 1].map(star => {
+                  const count = reviewAnalytics.starCounts[star] || 0;
+                  const pct =
+                    reviewAnalytics.total > 0
+                      ? Math.round((count / reviewAnalytics.total) * 100)
+                      : 0;
+                  return (
+                    <div key={star} className="flex items-center gap-2.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setReviewStarFilter(
+                            star === 5 ? '5' : star === 4 ? '4' : 'low'
+                          )
+                        }
+                        className="w-14 flex items-center gap-1 font-black text-slate-700 dark:text-slate-300 hover:text-amber-500 cursor-pointer shrink-0"
+                      >
+                        <span className="font-mono">{star}</span>
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                      </button>
+                      <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            star >= 4
+                              ? 'bg-amber-400'
+                              : star === 3
+                              ? 'bg-orange-400'
+                              : 'bg-rose-500'
                           }`}
+                          style={{ width: `${pct}%` }}
                         />
+                      </div>
+                      <span className="w-16 text-left font-mono text-[11px] font-bold text-slate-500">
+                        {count} ({pct}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3 Detailed QR Menu Sub-Ratings Breakdown + Top Customer Tags */}
+            <div className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Award className="w-4 h-4 text-amber-500" />
+                    <span>
+                      {isAr
+                        ? 'تفاصيل التقييمات الثلاثية الواردة من المنيو الرقمي'
+                        : 'Detailed 3-Pillar QR Menu Ratings'}
+                    </span>
+                  </h3>
+                  <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-black text-xs">
+                    {isAr
+                      ? `نسبة الرضا العام: ${reviewAnalytics.satisfactionPercent}%`
+                      : `Satisfaction: ${reviewAnalytics.satisfactionPercent}%`}
+                  </span>
+                </div>
+
+                {/* 3 Sub-Rating Pillars */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    {
+                      title: isAr ? '🍔 جودة الطعام والمذاق' : 'Food Quality & Taste',
+                      score: reviewAnalytics.avgFood,
+                      num: reviewAnalytics.avgFoodNum,
+                      color: 'bg-amber-500',
+                      badgeBg: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+                    },
+                    {
+                      title: isAr ? '⚡ سرعة الاستجابة والخدمة' : 'Service Speed',
+                      score: reviewAnalytics.avgSpeed,
+                      num: reviewAnalytics.avgSpeedNum,
+                      color: 'bg-emerald-500',
+                      badgeBg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+                    },
+                    {
+                      title: isAr ? '📱 سهولة الطلب من المنيو' : 'QR Menu Ease of Use',
+                      score: reviewAnalytics.avgMenuEase,
+                      num: reviewAnalytics.avgMenuEaseNum,
+                      color: 'bg-sky-500',
+                      badgeBg: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20',
+                    },
+                  ].map(pillar => (
+                    <div
+                      key={pillar.title}
+                      className={`p-3.5 rounded-2xl border ${pillar.badgeBg} space-y-2`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-black">{pillar.title}</span>
+                        <span className="text-sm font-black font-mono flex items-center gap-0.5">
+                          {pillar.score}
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        </span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${pillar.color}`}
+                          style={{ width: `${Math.min(100, Math.round((pillar.num / 5) * 100))}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] opacity-80 font-bold block">
+                        {isAr ? `من أصل 5.0 نجوم في المنيو` : 'Out of 5.0 stars'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top Customer Feedback Tags Selected in QR Menu */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-black text-slate-700 dark:text-slate-300">
+                    {isAr
+                      ? 'أكثر الانطباعات والوسوم اختياراً من الزبائن في المنيو (انقر للفلترة):'
+                      : 'Top Customer Menu Tags (Click to filter):'}
+                  </span>
+                  {reviewTagFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setReviewTagFilter('all')}
+                      className="text-[11px] font-black text-amber-600 hover:underline cursor-pointer"
+                    >
+                      {isAr ? 'إلغاء فلتر الوسم ✕' : 'Clear tag filter'}
+                    </button>
+                  )}
+                </div>
+                {reviewAnalytics.topTags.length === 0 ? (
+                  <p className="text-xs text-slate-400">
+                    {isAr ? 'لا توجد وسوم مختارة بعد.' : 'No tags selected yet.'}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {reviewAnalytics.topTags.map(item => {
+                      const isActive = reviewTagFilter === item.tag;
+                      return (
+                        <button
+                          key={item.tag}
+                          type="button"
+                          onClick={() =>
+                            setReviewTagFilter(isActive ? 'all' : item.tag)
+                          }
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isActive
+                              ? 'bg-amber-500 text-slate-950 border-amber-500 font-black shadow-xs'
+                              : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-amber-400'
+                          }`}
+                        >
+                          <span>{item.tag}</span>
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-black/10 dark:bg-white/10 font-black">
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Filter, Search & Actions Toolbar */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-amber-500" />
+                  <span>
+                    {isAr
+                      ? `سجل تقييمات وآراء الزبائن الواردة عبر المنيو (${filteredCustomerReviews.length})`
+                      : `Customer Menu Reviews Feed (${filteredCustomerReviews.length})`}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {isAr
+                    ? 'تظهر هنا جميع التقييمات والملاحظات التي يرسلها الزبائن من باركود الطاولات أو رابط المنيو مع تفاصيل الطاولة ورقم الطلب.'
+                    : 'All reviews and comments submitted via table QR codes or the digital menu.'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerMenuPreviewOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  <span>{isAr ? 'فتح المنيو لتجربة التقييم كزبون' : 'Open QR Menu to Rate'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddReviewModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-amber-400" />
+                  <span>{isAr ? 'تسجيل تقييم زبون مباشر' : 'Add Review'}</span>
+                </button>
+
+                {customerReviews.length > 0 && (
+                  <>
+                    {!confirmClearReviews ? (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearReviews(true)}
+                        className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 text-xs font-bold cursor-pointer"
+                      >
+                        {isAr ? 'مسح السجل' : 'Clear All'}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1 bg-rose-50 dark:bg-rose-950/60 p-1 rounded-xl border border-rose-300 dark:border-rose-800">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearCustomerReviews();
+                            setConfirmClearReviews(false);
+                            notify('تم مسح سجل التقييمات', '', 'info');
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-black cursor-pointer"
+                        >
+                          {isAr ? 'تأكيد المسح' : 'Confirm'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmClearReviews(false)}
+                          className="px-2 py-1 rounded-lg text-slate-600 dark:text-slate-300 text-[11px] font-bold cursor-pointer"
+                        >
+                          {isAr ? 'إلغاء' : 'Cancel'}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Pills & Search Box */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { id: 'all', label: isAr ? `الكل (${customerReviews.length})` : 'All' },
+                    { id: '5', label: isAr ? '5 نجوم ⭐⭐⭐⭐⭐' : '5 Stars' },
+                    { id: '4', label: isAr ? '4 نجوم ⭐⭐⭐⭐' : '4 Stars' },
+                    { id: 'low', label: isAr ? 'ملاحظات للمتابعة (1-3 ★)' : '1-3 Stars' },
+                  ] as const
+                ).map(st => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setReviewStarFilter(st.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      reviewStarFilter === st.id
+                        ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+
+                <span className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:inline-block" />
+
+                {(
+                  [
+                    { id: 'all', label: isAr ? 'كل الطلبات' : 'All Types' },
+                    { id: 'dine_in', label: isAr ? '🍽️ صالة المطعم' : 'Dine-in' },
+                    { id: 'takeaway', label: isAr ? '🛍️ سفري' : 'Takeaway' },
+                    { id: 'delivery', label: isAr ? '🛵 توصيل' : 'Delivery' },
+                  ] as const
+                ).map(dt => (
+                  <button
+                    key={dt.id}
+                    type="button"
+                    onClick={() => setReviewDiningFilter(dt.id)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      reviewDiningFilter === dt.id
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-950 font-black'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {dt.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative w-full md:w-64">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={reviewSearchQuery}
+                  onChange={e => setReviewSearchQuery(e.target.value)}
+                  placeholder={isAr ? 'ابحث باسم الزبون، الطاولة، التعليق...' : 'Search reviews...'}
+                  className="w-full pr-9 pl-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:outline-none focus:border-amber-500"
+                />
+                {reviewSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setReviewSearchQuery('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Detailed Customer Reviews Cards Grid */}
+            {filteredCustomerReviews.length === 0 ? (
+              <div className="py-14 text-center space-y-3 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200/70 dark:border-slate-800">
+                <Star className="w-11 h-11 text-slate-300 mx-auto" />
+                <h4 className="text-sm font-black text-slate-700 dark:text-slate-200">
+                  {isAr ? 'لا توجد تقييمات مطابقة للبحث الحالي' : 'No matching customer reviews'}
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  {isAr
+                    ? 'عندما يقوم الزبون بالطلب من المنيو الرقمي (QR) والضغط على "تقييم التجربة"، سيظهر تقييمه هنا فوراً مع إشعار صوتي.'
+                    : 'Customer reviews submitted via the QR menu appear here automatically.'}
+                </p>
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomerMenuPreviewOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-black text-xs cursor-pointer"
+                  >
+                    {isAr ? 'فتح منيو الزبائن وإرسال تقييم تجريبي' : 'Open QR Menu'}
+                  </button>
+                  {(reviewStarFilter !== 'all' ||
+                    reviewDiningFilter !== 'all' ||
+                    reviewTagFilter !== 'all' ||
+                    reviewSearchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReviewStarFilter('all');
+                        setReviewDiningFilter('all');
+                        setReviewTagFilter('all');
+                        setReviewSearchQuery('');
+                      }}
+                      className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs cursor-pointer"
+                    >
+                      {isAr ? 'إعادة ضبط الفلاتر' : 'Reset Filters'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pt-2">
+                {filteredCustomerReviews.map(rev => {
+                  const overall = Math.min(5, Math.max(1, Math.round(Number(rev.rating) || 5)));
+                  const foodR = Number(rev.foodQualityRating) || overall;
+                  const speedR = Number(rev.serviceSpeedRating) || overall;
+                  const menuR = Number(rev.menuEaseRating) || overall;
+
+                  return (
+                    <div
+                      key={rev.id}
+                      className={`rounded-2xl p-4 border-2 flex flex-col justify-between gap-3 transition-all ${
+                        overall >= 4
+                          ? 'bg-slate-50/70 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/80 hover:border-amber-400'
+                          : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800/70'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        {/* Card Header: Customer Avatar, Name, Table, Order #, & Overall Stars */}
+                        <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-slate-200/70 dark:border-slate-700/70">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 ${
+                                overall >= 4
+                                  ? 'bg-amber-500 text-slate-950'
+                                  : 'bg-rose-600 text-white'
+                              }`}
+                            >
+                              {(rev.customerName || 'ض').trim().charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                                {rev.customerName || 'عميل المنيو الكريم'}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[10px] font-black">
+                                  {rev.tableName || 'منيو QR'}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold">
+                                  {rev.diningType === 'takeaway'
+                                    ? '🛍️ سفري'
+                                    : rev.diningType === 'delivery'
+                                    ? '🛵 توصيل'
+                                    : '🍽️ صالة'}
+                                </span>
+                                {rev.orderNumber && (
+                                  <span className="px-2 py-0.5 rounded-lg bg-slate-900 text-amber-400 font-mono text-[10px] font-black">
+                                    #{rev.orderNumber}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-left shrink-0">
+                            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30">
+                              <span className="font-mono font-black text-xs text-amber-700 dark:text-amber-300">
+                                {overall}.0
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                {Array.from({ length: 5 }).map((_, idx) => (
+                                  <Star
+                                    key={idx}
+                                    className={`w-3 h-3 ${
+                                      idx < overall
+                                        ? 'fill-amber-400 text-amber-400'
+                                        : 'text-slate-300 dark:text-slate-600'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block mt-1">
+                              {new Date(rev.createdAt).toLocaleString('ar-SY', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 3 Detailed Sub-Ratings Row (Food / Speed / Menu Ease) */}
+                        <div className="grid grid-cols-3 gap-1.5 text-center">
+                          <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 block font-bold">
+                              🍔 جودة الطعام
+                            </span>
+                            <span className="text-xs font-black font-mono text-slate-900 dark:text-white inline-flex items-center gap-0.5 mt-0.5">
+                              {foodR}/5
+                              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 block font-bold">
+                              ⚡ سرعة الخدمة
+                            </span>
+                            <span className="text-xs font-black font-mono text-slate-900 dark:text-white inline-flex items-center gap-0.5 mt-0.5">
+                              {speedR}/5
+                              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 block font-bold">
+                              📱 سهولة المنيو
+                            </span>
+                            <span className="text-xs font-black font-mono text-slate-900 dark:text-white inline-flex items-center gap-0.5 mt-0.5">
+                              {menuR}/5
+                              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Selected Menu Feedback Tags */}
+                        {rev.tags && rev.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {rev.tags.map(tag => (
+                              <span
+                                key={tag}
+                                className="px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 text-[11px] font-bold"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Written Customer Comment */}
+                        {rev.comment ? (
+                          <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 font-semibold leading-relaxed">
+                            &ldquo;{rev.comment}&rdquo;
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 italic">
+                            {isAr ? 'تقييم بالنجوم والوسوم بدون تعليق نصي إضافي.' : 'Star and tag rating.'}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Footer: Phone / WhatsApp Follow-up & Delete */}
+                      <div className="pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {rev.customerPhone ? (
+                            <span className="text-[11px] font-mono font-bold text-slate-500 flex items-center gap-1 truncate">
+                              <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                              {rev.customerPhone}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-bold">
+                              {isAr ? 'عبر منيو الزبائن QR' : 'Via QR Menu'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {rev.customerPhone && (
+                            <a
+                              href={`https://wa.me/${rev.customerPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                `مرحباً ${rev.customerName || 'عميلنا الكريم'}، نشكرك جزيل الشكر على تقييمك لتجربتك عبر المنيو الرقمي (${overall}/5 نجوم). نسعد دائماً بخدمتك!`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black flex items-center gap-1"
+                            >
+                              <Phone className="w-3 h-3" />
+                              <span>{isAr ? 'رد واتساب' : 'WhatsApp'}</span>
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => deleteCustomerReview(rev.id)}
+                            className="px-2 py-1 rounded-lg bg-slate-200/70 dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-950/50 text-slate-500 hover:text-rose-600 text-[10px] font-bold transition-colors cursor-pointer"
+                            title="حذف هذا التقييم"
+                          >
+                            {isAr ? 'حذف' : 'Delete'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          LIVE CUSTOMER QR MENU REVIEWS SHOWCASE ON OTHER RESTAURANT TABS
+          (So customer reviews from the menu are always visible in the Restaurant section)
+         ========================================================= */}
+      {activeSubTab !== 'reviews_analytics' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
+                <Star className="w-6 h-6 fill-amber-400 text-amber-500" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    {isAr
+                      ? 'تقييمات الزبائن المباشرة الواردة عن طريق المنيو (QR Menu)'
+                      : 'Live Customer Reviews Submitted via QR Menu'}
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black font-mono text-xs flex items-center gap-1">
+                    <span>{reviewAnalytics.avgOverall} ★</span>
+                    <span>({customerReviews.length})</span>
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {isAr
+                    ? `جودة الطعام: ${reviewAnalytics.avgFood}★ • سرعة الخدمة: ${reviewAnalytics.avgSpeed}★ • سهولة المنيو: ${reviewAnalytics.avgMenuEase}★`
+                    : `Food: ${reviewAnalytics.avgFood}★ • Speed: ${reviewAnalytics.avgSpeed}★ • Menu Ease: ${reviewAnalytics.avgMenuEase}★`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCustomerMenuPreviewOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-black text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>{isAr ? 'تجربة التقييم من المنيو' : 'Rate in QR Menu'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('reviews_analytics')}
+                className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-amber-500 text-white dark:text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Star className="w-3.5 h-3.5 fill-current" />
+                <span>
+                  {isAr
+                    ? `عرض كافة التقييمات والتحليلات (${customerReviews.length})`
+                    : `View All Reviews (${customerReviews.length})`}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {customerReviews.length === 0 ? (
+            <div className="py-8 text-center space-y-2">
+              <p className="text-xs font-bold text-slate-500">
+                {isAr
+                  ? 'لا توجد تقييمات مسجلة حالياً. يمكن للزبائن إرسال تقييماتهم مباشرة من صفحة المنيو (QR).'
+                  : 'No reviews yet. Customers can submit reviews directly from the QR Menu.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+              {customerReviews.slice(0, 6).map(rev => {
+                const overall = Math.min(5, Math.max(1, Math.round(Number(rev.rating) || 5)));
+                return (
+                  <div
+                    key={rev.id}
+                    onClick={() => setActiveSubTab('reviews_analytics')}
+                    className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 hover:border-amber-400 transition-all space-y-2.5 cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-black text-slate-900 dark:text-white block">
+                          {rev.customerName || 'ضيف المطعم'}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[10px] font-black">
+                            {rev.tableName || 'منيو QR'}
+                          </span>
+                          {rev.orderNumber && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-slate-900 text-amber-400 font-mono text-[10px] font-black">
+                              #{rev.orderNumber}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-0.5 text-amber-500">
+                        {Array.from({ length: 5 }).map((_, idx) => (
+                          <Star
+                            key={idx}
+                            className={`w-3.5 h-3.5 ${
+                              idx < overall ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                      <span>🍔 الطعام: {rev.foodQualityRating || overall}/5</span>
+                      <span>•</span>
+                      <span>⚡ السرعة: {rev.serviceSpeedRating || overall}/5</span>
+                      <span>•</span>
+                      <span>📱 المنيو: {rev.menuEaseRating || overall}/5</span>
+                    </div>
+
+                    {rev.tags && rev.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {rev.tags.slice(0, 3).map(tag => (
+                          <span
+                            key={tag}
+                            className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {rev.comment && (
+                      <p className="text-xs text-slate-700 dark:text-slate-200 font-semibold line-clamp-2">
+                        &ldquo;{rev.comment}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quick Add Customer Menu Review Modal */}
+      {isAddReviewModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleCreateQuickMenuReview}
+            className="bg-white dark:bg-slate-900 rounded-3xl p-5 w-full max-w-lg border border-slate-200 dark:border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center">
+                  <Star className="w-5 h-5 fill-slate-950" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                    {isAr ? 'تسجيل تقييم زبون عبر المنيو' : 'Add Customer Menu Review'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {isAr ? 'إضافة تقييم جديد لسجل تقييمات منيو المطعم' : 'Record guest menu feedback'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddReviewModalOpen(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    {isAr ? 'اسم الزبون' : 'Customer Name'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newRevCustomerName}
+                    onChange={e => setNewRevCustomerName(e.target.value)}
+                    placeholder="مثال: أحمد الدمشقي"
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    {isAr ? 'رقم الهاتف (اختياري)' : 'Phone'}
+                  </label>
+                  <input
+                    type="tel"
+                    value={newRevCustomerPhone}
+                    onChange={e => setNewRevCustomerPhone(e.target.value)}
+                    placeholder="09xxxxxxxx"
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    {isAr ? 'نوع الطلب' : 'Dining Type'}
+                  </label>
+                  <select
+                    value={newRevDiningType}
+                    onChange={e => setNewRevDiningType(e.target.value as any)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
+                  >
+                    <option value="dine_in">محلي بالصالة</option>
+                    <option value="takeaway">طلب سفري</option>
+                    <option value="delivery">توصيل</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    {isAr ? 'الطاولة' : 'Table'}
+                  </label>
+                  <select
+                    value={newRevTableName}
+                    onChange={e => setNewRevTableName(e.target.value)}
+                    disabled={newRevDiningType !== 'dine_in'}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold disabled:opacity-50"
+                  >
+                    {restaurantTables.map(t => (
+                      <option key={t.id} value={t.name}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    {isAr ? 'رقم الطلب / الطابور' : 'Order #'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newRevOrderNumber}
+                    onChange={e => setNewRevOrderNumber(e.target.value)}
+                    placeholder="QR-205"
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Overall + 3 Sub-Ratings */}
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                {[
+                  { label: '⭐ التقييم العام للتجربة', val: newRevRating, setter: setNewRevRating },
+                  { label: '🍔 جودة الطعام والمذاق', val: newRevFoodRating, setter: setNewRevFoodRating },
+                  { label: '⚡ سرعة الاستجابة والخدمة', val: newRevSpeedRating, setter: setNewRevSpeedRating },
+                  { label: '📱 سهولة الطلب من المنيو', val: newRevMenuRating, setter: setNewRevMenuRating },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700 dark:text-slate-200">{item.label}</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => item.setter(s)}
+                          className="cursor-pointer p-0.5"
+                        >
+                          <Star
+                            className={`w-4 h-4 ${
+                              s <= item.val
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-slate-300 dark:text-slate-600'
+                            }`}
+                          />
+                        </button>
                       ))}
                     </div>
                   </div>
-                  {rev.comment && (
-                    <p className="text-xs text-slate-600 dark:text-slate-300">"{rev.comment}"</p>
-                  )}
+                ))}
+              </div>
+
+              {/* Tags */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1.5">
+                  {isAr ? 'وسوم الانطباع السريع:' : 'Quick Tags:'}
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {MENU_REVIEW_PRESET_TAGS.map(tag => {
+                    const active = newRevTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() =>
+                          setNewRevTags(prev =>
+                            prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border cursor-pointer ${
+                          active
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 font-black'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {active ? '✓ ' : '+ '}
+                        {tag}
+                      </button>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+
+              {/* Comment */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                  {isAr ? 'ملاحظات أو تعليق الزبون:' : 'Customer Comment:'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={newRevComment}
+                  onChange={e => setNewRevComment(e.target.value)}
+                  placeholder="اكتب تعليق الزبون..."
+                  className="w-full p-2.5 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                />
+              </div>
             </div>
-          </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsAddReviewModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs cursor-pointer"
+              >
+                {isAr ? 'حفظ التقييم في سجل المنيو' : 'Save Review'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

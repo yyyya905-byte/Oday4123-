@@ -43,6 +43,7 @@ export interface FloatingHubActionItem {
 export const DEFAULT_FLOATING_HUB_ORDER: string[] = [
   'pos',
   'dashboard',
+  'ai',
   'debts',
   'products',
   'inventory',
@@ -58,6 +59,7 @@ export const DEFAULT_FLOATING_HUB_ORDER: string[] = [
 export const DEFAULT_FLOATING_HUB_VISIBILITY: Record<string, boolean> = {
   pos: true,
   dashboard: true,
+  ai: true,
   debts: true,
   products: true,
   inventory: true,
@@ -146,6 +148,18 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
       onTrigger: () => {
         setIsOpen(false);
         setActiveTab('dashboard');
+      }
+    },
+    ai: {
+      id: 'ai',
+      labelAr: 'المستشار الذكي (AI Engine)',
+      labelEn: 'AI Intelligence Hub',
+      icon: Sparkles,
+      badgeColorClass: 'bg-amber-500/20 text-amber-600 dark:text-amber-400',
+      titleAr: 'فتح منظومة الذكاء الاصطناعي والتحليل المالي والتسعير الذكي',
+      onTrigger: () => {
+        setIsOpen(false);
+        setActiveTab('ai');
       }
     },
     debts: {

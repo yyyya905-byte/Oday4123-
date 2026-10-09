@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import zlib from "zlib";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -40,21 +40,22 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// 1. General AI Assistant & Chat for POS / ERP
+// 1. General AI Assistant & Chat for POS / ERP with Actionable Suggestions
 app.post("/api/ai/chat", async (req, res) => {
   try {
     const { messages, contextData, systemPrompt } = req.body;
     const ai = getGeminiClient();
 
-    const baseSystemPrompt = `أنت المساعد الذكي المالي والإداري لنظام كاشير ونقاط البيع المتكامل (KIAN POS Pro).
-دورك هو مساعدة الكاشير، صاحب العمل، ومدير المتجر في:
-1. تحليل المبيعات والمخزون والأرباح وتقديم نصائح فورية لزيادة الدخل.
-2. اقتراح استراتيجيات التسعير (مفرق وجملة) وتقديم عروض ترويجية.
-3. التنبؤ بالأصناف الأكثر مبيعاً والأصناف الراكدة وكيفية تصريفها.
-4. حل مشاكل العملاء، اقتراح برامج الولاء والخصومات.
-5. الإجابة بدقة وسرعة وبلغة عربية مهنية واضحة ومباشرة.
+    const baseSystemPrompt = `أنت المستشار الذكي المالي والتشغيلي المتقدم لنظام كاشير ونقاط البيع المتكامل (KIAN POS Pro).
+دورك هو مساعدة صاحب العمل، المدير المالي، والكاشير عبر تقديم إجابات تنفيذية دقيقة مدعومة بالأرقام الفعلية من بيانات المتجر المرفقة، واقتراح أوامر ذكية قابلة للتنفيذ الفوري بضغطة زر.
+المهام الأساسية:
+1. تحليل المبيعات، الأرباح الصافية، تكلفة البضاعة المباعة (COGS)، والمصروفات التشغيلية بدقة رقمية.
+2. كشف الأصناف الحرجة التي أوشكت على النفاد، والأصناف الراكدة التي تجمد السيولة النقدية.
+3. اقتراح استراتيجيات التسعير (مفرق وجملة) وعروض الترويج الذكية.
+4. تحليل ديون العملاء ومستحقات الموردين وتقديم خطط تحصيل عملية.
+5. الرد بلغة عربية واضحة، منظمة بنقاط وعناوين فرعية وأرقام دقيقة.
 
-بيانات المتجر والعمليات الحالية للسياق:
+بيانات المتجر والعمليات الحية الحالية للسياق:
 ${contextData ? JSON.stringify(contextData, null, 2) : "لا توجد بيانات إضافية"}
 
 ${systemPrompt || ""}`;
@@ -80,13 +81,68 @@ ${systemPrompt || ""}`;
       contents,
       config: {
         systemInstruction: baseSystemPrompt,
-        temperature: 0.7,
+        temperature: 0.4,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reply: {
+              type: Type.STRING,
+              description: "الرد التحليلي المفصل والمنظم بتنسيق Markdown باللغة العربية مع الأرقام والنقاط الواضحة.",
+            },
+            followUpQuestions: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "3 أسئلة متابعة ذكية قصيرة مقترحة للمستخدم.",
+            },
+            suggestedActions: {
+              type: Type.ARRAY,
+              description: "أوامر ذكية عملية مقترحة يمكن للمستخدم تنفيذها بضغطة زر في النظام.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  actionType: {
+                    type: Type.STRING,
+                    description: "نوع الإجراء: 'create_promotion' | 'restock_low_items' | 'apply_wholesale_margin' | 'open_tab'",
+                  },
+                  labelAr: {
+                    type: Type.STRING,
+                    description: "عنوان الزر باللغة العربية (مثال: إنشاء عرض خصم 15%، توريد النواقص الحرجة)",
+                  },
+                  descriptionAr: {
+                    type: Type.STRING,
+                    description: "وصف مختصر لما سيقوم به الإجراء",
+                  },
+                  value: {
+                    type: Type.NUMBER,
+                    description: "قيمة رقمية مرتبطة بالإجراء مثل نسبة الخصم أو الكمية",
+                  },
+                  targetTab: {
+                    type: Type.STRING,
+                    description: "اسم التبويب عند الحاجة مثل 'inventory' أو 'debts' أو 'promotions'",
+                  },
+                },
+                required: ["actionType", "labelAr"],
+              },
+            },
+          },
+          required: ["reply"],
+        },
       },
     });
 
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(response.text?.trim() || "{}");
+    } catch {
+      parsed = { reply: response.text || "لم يتم استلام رد من النموذج." };
+    }
+
     res.json({
       success: true,
-      reply: response.text || "لم يتم استلام رد من النموذج.",
+      reply: parsed.reply || response.text || "لم يتم استلام رد من النموذج.",
+      followUpQuestions: parsed.followUpQuestions || [],
+      suggestedActions: parsed.suggestedActions || [],
     });
   } catch (error: any) {
     console.error("AI Chat Error:", error);
@@ -97,43 +153,103 @@ ${systemPrompt || ""}`;
   }
 });
 
-// 2. Automated Smart Sales & Financial Analysis
+// 2. Automated Smart Sales & Financial Analysis (Structured + Executive Report)
 app.post("/api/ai/analyze-sales", async (req, res) => {
   try {
     const { sales, products, expenses, period, businessMode } = req.body;
     const ai = getGeminiClient();
 
-    const prompt = `قم بإجراء تحليل مالي وإداري شامل وعميق للمبيعات والمخزون والمصاريف الحالية لنظام (${businessMode || "عام"}):
-الفترة: ${period || "الشهر الحالي"}
+    const prompt = `قم بإجراء تدقيق مالي وإداري شامل وعميق للمبيعات والمخزون والمصاريف الحالية لنظام (${businessMode || "عام"}):
+الفترة: ${period || "الفترة الحالية"}
 إجمالي عدد الفواتير: ${sales?.length || 0}
 إجمالي عدد المنتجات: ${products?.length || 0}
 المصروفات المسجلة: ${expenses?.length || 0}
 
 بيانات العمليات والمنتجات:
-- المبيعات: ${JSON.stringify(sales || []).slice(0, 8000)}
-- المنتجات ومستويات المخزون: ${JSON.stringify(products || []).slice(0, 6000)}
+- المبيعات: ${JSON.stringify(sales || []).slice(0, 9000)}
+- المنتجات ومستويات المخزون: ${JSON.stringify(products || []).slice(0, 7000)}
 - المصاريف: ${JSON.stringify(expenses || []).slice(0, 4000)}
 
-المطلوب: توليد تقرير تنفيذي متقدم يتضمن:
-1. **ملخص الأداء المالي**: (المبيعات الإجمالية، الأرباح التقديرية، هامش الربح، وتأثير المصاريف).
-2. **أفضل 3 أصناف ربحية وأكثرها طلباً**.
-3. **تنبيهات المخزون الحرج والأصناف الراكدة**: (توصيات بإعادة الطلب أو عمل عروض).
-4. **توصيات استراتيجية عملية فورية**: (3 نصائح محددة بالأرقام لزيادة الإيرادات وخفض التكاليف).
-5. **توقع المبيعات القادمة**: (تقدير اتجاه النمو).
-
-قدم الرد بتنسيق Markdown احترافي، مدعماً بالعناوين والنقاط والأرقام الواضحة باللغة العربية.`;
+المطلوب توليد تقرير تدقيق مالي وتشغيلي مهيكل يتضمن:
+1. تقييم صحة الأداء المالي (من 0 إلى 100) مع ملخص تنفيذي دقيق.
+2. أهم المؤشرات والرؤى المالية (إيجابيات، تنبيهات، وفرص زيادة الأرباح).
+3. خطة عملية لتصريف الأصناف الراكدة أو بطيئة الحركة مع اقتراح نسبة خصم لكل صنف.
+4. توصيات ضبط المصاريف التشغيلية وتوقع اتجاه الإيرادات للأسبوع القادم.
+5. تقرير تفصيلي شامل بتنسيق Markdown باللغة العربية.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
       contents: prompt,
       config: {
-        temperature: 0.4,
+        temperature: 0.3,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            healthScore: {
+              type: Type.NUMBER,
+              description: "مؤشر صحة الأداء المالي والتشغيلي من 0 إلى 100",
+            },
+            executiveSummary: {
+              type: Type.STRING,
+              description: "ملخص تنفيذي مركز للأرباح والهوامش والوضع المالي الحالي",
+            },
+            keyInsights: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  metric: { type: Type.STRING },
+                  impact: { type: Type.STRING },
+                  type: { type: Type.STRING, description: "'positive' | 'warning' | 'action'" },
+                },
+                required: ["title", "metric", "impact", "type"],
+              },
+            },
+            slowMoversPlan: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  productName: { type: Type.STRING },
+                  currentStock: { type: Type.NUMBER },
+                  suggestedDiscountPercent: { type: Type.NUMBER },
+                  actionPlan: { type: Type.STRING },
+                },
+                required: ["productName", "suggestedDiscountPercent", "actionPlan"],
+              },
+            },
+            strategicRecommendations: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "4 توصيات استراتيجية عملية مرقمة لزيادة صافي الربح",
+            },
+            forecastSummary: {
+              type: Type.STRING,
+              description: "توقع المبيعات والتدفق النقدي للفترة القادمة",
+            },
+            analysis: {
+              type: Type.STRING,
+              description: "التقرير المالي التفصيلي الكامل بتنسيق Markdown باللغة العربية",
+            },
+          },
+          required: ["healthScore", "executiveSummary", "keyInsights", "strategicRecommendations", "analysis"],
+        },
       },
     });
 
+    let structured: any = {};
+    try {
+      structured = JSON.parse(response.text?.trim() || "{}");
+    } catch {
+      structured = { analysis: response.text || "" };
+    }
+
     res.json({
       success: true,
-      analysis: response.text,
+      analysis: structured.analysis || response.text,
+      structuredAudit: structured,
     });
   } catch (error: any) {
     console.error("AI Sales Analysis Error:", error);
@@ -144,7 +260,7 @@ app.post("/api/ai/analyze-sales", async (req, res) => {
   }
 });
 
-// 3. Smart Inventory Restock & Forecasting
+// 3. Smart Inventory Restock & Forecasting (Structured Purchase Order Plan)
 app.post("/api/ai/smart-inventory", async (req, res) => {
   try {
     const { products, recentSales } = req.body;
@@ -152,28 +268,65 @@ app.post("/api/ai/smart-inventory", async (req, res) => {
 
     const prompt = `أنت خبير سلاسل إمداد ومخازن ذكي.
 بناءً على قائمة المنتجات ومعدلات بيعها أدناه:
-- المنتجات: ${JSON.stringify(products || []).slice(0, 9000)}
+- المنتجات: ${JSON.stringify(products || []).slice(0, 10000)}
 - عينة من المبيعات الأخيرة: ${JSON.stringify(recentSales || []).slice(0, 5000)}
 
 المطلوب:
-1. تحديد الأصناف التي يجب طلبها فوراً (Out of stock أو Low stock).
-2. اقتراح الكميات المثالية لإعادة الطلب (Reorder Quantities) لكل صنف مع مراعاة سرعة الدوران وسعر التكلفة وسعر الجملة.
-3. تقدير ميزانية الشراء المطلوبة الإجمالية.
-4. تقديم خطة أولوية الشراء (عالي الأهمية، متوسط، منخفض).
-
-قم بالرد بصيغة Markdown منظمة وبجداول واضحة وملاحظات باللغة العربية.`;
+1. تحديد الأصناف التي يجب طلبها وتوريدها (الأصناف النافدة أو المنخفضة أو سريعة الدوران).
+2. اقتراح الكميات المثالية لإعادة الطلب (recommendedOrderQty) لكل صنف مع حساب التكلفة التقديرية بحسب سعر التكلفة (costPrice).
+3. تصنيف الأولوية ('critical' | 'high' | 'medium') وتوضيح السبب لكل صنف.
+4. كتابة ملخص وتوصيات خطة الشراء بتنسيق Markdown.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
       contents: prompt,
       config: {
-        temperature: 0.3,
+        temperature: 0.2,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            estimatedTotalBudget: { type: Type.NUMBER },
+            items: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  productId: { type: Type.STRING },
+                  productName: { type: Type.STRING },
+                  currentStock: { type: Type.NUMBER },
+                  minStock: { type: Type.NUMBER },
+                  recommendedOrderQty: { type: Type.NUMBER },
+                  estimatedUnitCost: { type: Type.NUMBER },
+                  estimatedTotalCost: { type: Type.NUMBER },
+                  priority: { type: Type.STRING, description: "'critical' | 'high' | 'medium'" },
+                  reason: { type: Type.STRING },
+                },
+                required: ["productName", "currentStock", "recommendedOrderQty", "estimatedUnitCost", "priority", "reason"],
+              },
+            },
+            recommendation: {
+              type: Type.STRING,
+              description: "تقرير خطة التوريد والمخزون الشامل بتنسيق Markdown",
+            },
+          },
+          required: ["summary", "estimatedTotalBudget", "items", "recommendation"],
+        },
       },
     });
 
+    let structured: any = {};
+    try {
+      structured = JSON.parse(response.text?.trim() || "{}");
+    } catch {
+      structured = { recommendation: response.text || "", items: [] };
+    }
+
     res.json({
       success: true,
-      recommendation: response.text,
+      recommendation: structured.recommendation || response.text,
+      restockPlan: structured,
     });
   } catch (error: any) {
     console.error("AI Inventory Error:", error);
@@ -184,16 +337,15 @@ app.post("/api/ai/smart-inventory", async (req, res) => {
   }
 });
 
-// 4. Smart Product Creation & Description Generator
+// 4. Smart Product Creation & Batch Catalog Generator
 app.post("/api/ai/generate-product", async (req, res) => {
   try {
-    const { inputPrompt, categoryName, imageBase64 } = req.body;
+    const { inputPrompt, categoryName, imageBase64, batchMode, count = 4 } = req.body;
     const ai = getGeminiClient();
 
     const parts: any[] = [];
     if (imageBase64) {
-      // Clean base64 string
-      const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+      const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
       parts.push({
         inlineData: {
           mimeType: "image/jpeg",
@@ -202,27 +354,82 @@ app.post("/api/ai/generate-product", async (req, res) => {
       });
     }
 
-    const textPrompt = `بصفتك خبير منتجات وتجزئة ومطاعم، استخرج واقترح تفاصيل منتج متكامل بصيغة JSON نظيفة فقط بدون أي نصوص خارج الـ JSON.
+    const productItemSchema = {
+      type: Type.OBJECT,
+      properties: {
+        nameAr: { type: Type.STRING, description: "اسم المنتج بالعربية جذاب ودقيق" },
+        nameEn: { type: Type.STRING, description: "English Product Name" },
+        suggestedRetailPrice: { type: Type.NUMBER, description: "سعر البيع بالمفرق المقترح" },
+        suggestedCostPrice: { type: Type.NUMBER, description: "سعر التكلفة المقترح" },
+        suggestedWholesalePrice: { type: Type.NUMBER, description: "سعر البيع بالجملة للوحدة" },
+        wholesaleMinQty: { type: Type.NUMBER, description: "الحد الأدنى لكمية الجملة" },
+        wholesaleUnit: { type: Type.STRING, description: "وحدة الجملة مثل كرتونة أو طرد" },
+        wholesaleUnitMultiplier: { type: Type.NUMBER, description: "عدد القطع داخل وحدة الجملة" },
+        unit: { type: Type.STRING, description: "وحدة البيع الأساسية مثل قطعة، كغ، وجبة، علبة" },
+        minStock: { type: Type.NUMBER, description: "حد التنبيه الأدنى للمخزون" },
+        sku: { type: Type.STRING, description: "رمز SKU فريد للمنتج" },
+        barcode: { type: Type.STRING, description: "باركود رقمي مكون من 12 أو 13 رقم" },
+        notes: { type: Type.STRING, description: "وصف تسويقي ومواصفات المنتج" },
+      },
+      required: [
+        "nameAr",
+        "nameEn",
+        "suggestedRetailPrice",
+        "suggestedCostPrice",
+        "suggestedWholesalePrice",
+        "unit",
+        "minStock",
+        "sku",
+        "barcode",
+        "notes",
+      ],
+    };
+
+    if (batchMode) {
+      const batchPrompt = `بصفتك خبير منتجات وتجزئة ومطاعم، قم بتوليد قائمة مكونة من ${Math.min(Number(count) || 4, 8)} أصناف متنوعة ومتكاملة جاهزة للإضافة للمتجر بناءً على الوصف التالي:
+- الوصف أو القسم المطلوب: ${inputPrompt || "منتجات متنوعة"}
+- التصنيف: ${categoryName || "عام"}
+احرص على أن تكون الأسعار منطقية ومتناسبة (سعر التكلفة أقل من الجملة، والجملة أقل من المفرق) مع باركود وأكواد SKU مميزة.`;
+
+      parts.push({ text: batchPrompt });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: { parts },
+        config: {
+          temperature: 0.4,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              products: {
+                type: Type.ARRAY,
+                items: productItemSchema,
+              },
+            },
+            required: ["products"],
+          },
+        },
+      });
+
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(response.text?.trim() || "{}");
+      } catch {
+        parsed = { products: [] };
+      }
+
+      return res.json({
+        success: true,
+        products: parsed.products || [],
+        product: parsed.products?.[0] || null,
+      });
+    }
+
+    const textPrompt = `بصفتك خبير منتجات وتجزئة ومطاعم، استخرج واقترح تفاصيل منتج متكامل بصيغة JSON.
 بيانات الإدخال:
 - الوصف أو الاسم الأولي: ${inputPrompt || "منتج جديد"}
-- القسم المقترح: ${categoryName || "عام"}
-
-يجب أن يكون الـ JSON بهذا التنسيق الدقيق:
-{
-  "nameAr": "اسم المنتج بالعربية جذاب ودقيق",
-  "nameEn": "English Name",
-  "suggestedRetailPrice": 10000,
-  "suggestedCostPrice": 7000,
-  "suggestedWholesalePrice": 8500,
-  "wholesaleMinQty": 12,
-  "wholesaleUnit": "كرتونة",
-  "wholesaleUnitMultiplier": 12,
-  "unit": "قطعة",
-  "minStock": 10,
-  "sku": "SKU-AUTO",
-  "barcode": "629123456789",
-  "notes": "وصف تسويقي ومواصفات المنتج"
-}`;
+- القسم المقترح: ${categoryName || "عام"}`;
 
     parts.push({ text: textPrompt });
 
@@ -232,6 +439,7 @@ app.post("/api/ai/generate-product", async (req, res) => {
       config: {
         temperature: 0.3,
         responseMimeType: "application/json",
+        responseSchema: productItemSchema,
       },
     });
 
@@ -255,37 +463,61 @@ app.post("/api/ai/generate-product", async (req, res) => {
   }
 });
 
-// 5. Smart Customer Marketing & Loyalty Campaigns
+// 5. Smart Customer Marketing & Loyalty Campaigns (Structured Multi-Channel + Promo Deal)
 app.post("/api/ai/marketing-campaign", async (req, res) => {
   try {
     const { campaignType, targetAudience, offerDetails, storeName } = req.body;
     const ai = getGeminiClient();
 
     const prompt = `أنت مسؤول تسويق ونمو مبيعات محترف للمتاجر والمطاعم.
-المطلوب إنشاء نصوص حملة تسويقية ذكية وجذابة لـ (${storeName || "متجرنا"}):
+المطلوب إنشاء حملة تسويقية ذكية ومتكاملة لـ (${storeName || "متجرنا"}):
 - نوع الحملة: ${campaignType || "عرض تخفيضات"}
 - الجمهور المستهدف: ${targetAudience || "كافة العملاء والزبائن المميزين"}
 - تفاصيل العرض: ${offerDetails || "خصومات مميزة على باقة من المنتجات"}
 
-قم بتوليد:
-1. **رسالة واتساب WhatsApp ترويجية جاهزة للإرسال** (مع إيموجي جذاب، دعوة لاتخاذ إجراء CTA، وصياغة مشوقة).
-2. **رسالة SMS قصيرة مركزة** (أقل من 160 حرف).
-3. **منشور سوشيال ميديا جذاب** (إنستغرام / فيسبوك مع هاشتاغات ملائمة).
-4. **نصيحة لزيادة تفاعل العملاء وتحويل الرسالة إلى زيارة فعلية**.
-
-اجعل الرد منظم في أقسام Markdown منسقة باللغة العربية.`;
+قم بتوليد نصوص جاهزة للنسخ والإرسال عبر واتساب، الرسائل القصيرة SMS، ومنصات التواصل الاجتماعي، مع اقتراح إعدادات عرض ترويجي رقمي يمكن تفعيله مباشرة في شاشة الكاشير.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
       contents: prompt,
       config: {
-        temperature: 0.7,
+        temperature: 0.6,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            campaignTitle: { type: Type.STRING },
+            whatsappMessage: { type: Type.STRING, description: "رسالة واتساب ترويجية منسقة وجاهزة للإرسال للعملاء" },
+            smsMessage: { type: Type.STRING, description: "رسالة SMS قصيرة مركزة أقل من 160 حرفاً" },
+            socialPost: { type: Type.STRING, description: "منشور انستغرام وفيسبوك جذاب مع هاشتاغات" },
+            conversionTip: { type: Type.STRING, description: "نصيحة عملية لزيادة التحويل والمبيعات من هذه الحملة" },
+            suggestedPromotion: {
+              type: Type.OBJECT,
+              properties: {
+                nameAr: { type: Type.STRING },
+                discountPercent: { type: Type.NUMBER },
+                description: { type: Type.STRING },
+              },
+              required: ["nameAr", "discountPercent", "description"],
+            },
+            campaign: { type: Type.STRING, description: "النص الكامل للحملة بتنسيق Markdown" },
+          },
+          required: ["campaignTitle", "whatsappMessage", "smsMessage", "socialPost", "conversionTip", "suggestedPromotion", "campaign"],
+        },
       },
     });
 
+    let structured: any = {};
+    try {
+      structured = JSON.parse(response.text?.trim() || "{}");
+    } catch {
+      structured = { campaign: response.text || "" };
+    }
+
     res.json({
       success: true,
-      campaign: response.text,
+      campaign: structured.campaign || response.text,
+      structuredCampaign: structured,
     });
   } catch (error: any) {
     console.error("AI Marketing Error:", error);
@@ -305,26 +537,9 @@ app.post("/api/ai/ocr-receipt", async (req, res) => {
     }
 
     const ai = getGeminiClient();
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
 
-    const prompt = `قم بفحص وقراءة صورة الفاتورة / سند التوريد واستخراج كافة بنود الأصناف والأسعار والإجماليات في شكل كائن JSON دقيق فقط.
-يجب أن يكون الـ JSON بهذا التنسيق:
-{
-  "supplierName": "اسم المورد أو الشركة",
-  "invoiceDate": "YYYY-MM-DD",
-  "invoiceNumber": "رقم الفاتورة إن وجد",
-  "totalAmount": 150000,
-  "items": [
-    {
-      "name": "اسم الصنف",
-      "quantity": 10,
-      "unitPrice": 12000,
-      "total": 120000,
-      "unit": "قطعة / كرتونة"
-    }
-  ],
-  "notes": "ملاحظات إضافية مستخرجة"
-}`;
+    const prompt = `قم بفحص وقراءة صورة الفاتورة أو سند التوريد واستخراج بيانات المورد ورقم وتاريخ الفاتورة وكافة بنود الأصناف والكميات والأسعار بدقة عالية.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
@@ -342,6 +557,33 @@ app.post("/api/ai/ocr-receipt", async (req, res) => {
       config: {
         temperature: 0.1,
         responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            supplierName: { type: Type.STRING },
+            invoiceDate: { type: Type.STRING },
+            invoiceNumber: { type: Type.STRING },
+            totalAmount: { type: Type.NUMBER },
+            items: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  quantity: { type: Type.NUMBER },
+                  unitPrice: { type: Type.NUMBER },
+                  suggestedRetailPrice: { type: Type.NUMBER },
+                  suggestedWholesalePrice: { type: Type.NUMBER },
+                  total: { type: Type.NUMBER },
+                  unit: { type: Type.STRING },
+                },
+                required: ["name", "quantity", "unitPrice", "total"],
+              },
+            },
+            notes: { type: Type.STRING },
+          },
+          required: ["supplierName", "totalAmount", "items"],
+        },
       },
     });
 
@@ -361,6 +603,158 @@ app.post("/api/ai/ocr-receipt", async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || "تعذر قراءة الفاتورة بالذكاء الاصطناعي",
+    });
+  }
+});
+
+// 6B. Smart Pricing & Profit Margin Optimizer
+app.post("/api/ai/optimize-pricing", async (req, res) => {
+  try {
+    const { products, sales, businessMode } = req.body;
+    const ai = getGeminiClient();
+
+    const prompt = `أنت خبير تسعير وهندسة أرباح للمتاجر والمطاعم وتجارة الجملة (${businessMode || "عام"}).
+حلل قائمة الأصناف التالية (سعر التكلفة costPrice، سعر البيع بالمفرق price، سعر الجملة wholesalePrice، والمخزون stock) ومبيعاتها:
+- المنتجات: ${JSON.stringify(products || []).slice(0, 9500)}
+- المبيعات: ${JSON.stringify(sales || []).slice(0, 4500)}
+
+المطلوب:
+1. اكتشاف الأصناف ذات هامش الربح الضعيف أو التسعير غير المتوازن بين المفرق والجملة.
+2. اقتراح أسعار بيع مثالية للمفرق (suggestedRetailPrice) وللجملة (suggestedWholesalePrice) لزيادة الربحية الصافية مع الحفاظ على التنافسية.
+3. توضيح سبب التعديل لكل صنف ونسبة التحسن المتوقعة في الهامش.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: {
+        temperature: 0.25,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            strategySummary: { type: Type.STRING },
+            expectedOverallMarginGain: { type: Type.STRING },
+            recommendations: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  productId: { type: Type.STRING },
+                  productName: { type: Type.STRING },
+                  costPrice: { type: Type.NUMBER },
+                  currentRetailPrice: { type: Type.NUMBER },
+                  suggestedRetailPrice: { type: Type.NUMBER },
+                  currentWholesalePrice: { type: Type.NUMBER },
+                  suggestedWholesalePrice: { type: Type.NUMBER },
+                  marginBeforePercent: { type: Type.NUMBER },
+                  marginAfterPercent: { type: Type.NUMBER },
+                  reasoning: { type: Type.STRING },
+                },
+                required: [
+                  "productName",
+                  "costPrice",
+                  "currentRetailPrice",
+                  "suggestedRetailPrice",
+                  "suggestedWholesalePrice",
+                  "reasoning",
+                ],
+              },
+            },
+          },
+          required: ["strategySummary", "recommendations"],
+        },
+      },
+    });
+
+    let pricingPlan: any = {};
+    try {
+      pricingPlan = JSON.parse(response.text?.trim() || "{}");
+    } catch {
+      pricingPlan = { strategySummary: response.text || "", recommendations: [] };
+    }
+
+    res.json({
+      success: true,
+      pricingPlan,
+    });
+  } catch (error: any) {
+    console.error("AI Pricing Optimizer Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "تعذر تحليل وتحسين الأسعار بالذكاء الاصطناعي",
+    });
+  }
+});
+
+// 6C. Smart Debt & Credit Risk Analyzer
+app.post("/api/ai/analyze-debts", async (req, res) => {
+  try {
+    const { customers, suppliers, debtTransactions, storeName } = req.body;
+    const ai = getGeminiClient();
+
+    const debtors = (customers || []).filter((c: any) => Number(c.debtBalance) > 0);
+    const creditors = (suppliers || []).filter((s: any) => Number(s.creditBalance) > 0);
+
+    const prompt = `أنت مستشار ائتمان وتحصيل ديون مالي لـ (${storeName || "المتجر"}).
+حلل بيانات الديون والمستحقات التالية:
+- العملاء المدينون: ${JSON.stringify(debtors).slice(0, 6000)}
+- الموردون الدائنون: ${JSON.stringify(creditors).slice(0, 4000)}
+- حركات الديون الأخيرة: ${JSON.stringify((debtTransactions || []).slice(0, 25)).slice(0, 4000)}
+
+المطلوب:
+1. تقييم مخاطر السيولة والديون الحالية وتقديم خطة تحصيل ذكية.
+2. ترتيب العملاء المدينين حسب أولوية التحصيل ('high' | 'medium' | 'low') مع اقتراح خطة جدولة لكل عميل.
+3. صياغة رسالة مطالبة واتساب احترافية ولطيفة مخصصة لكل عميل مدين تتضمن اسمه وقيمة الرصيد المستحق.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: {
+        temperature: 0.3,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            overallStrategy: { type: Type.STRING },
+            liquidityRiskLevel: { type: Type.STRING, description: "'low' | 'moderate' | 'high'" },
+            debtorsPlan: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  customerId: { type: Type.STRING },
+                  customerName: { type: Type.STRING },
+                  phone: { type: Type.STRING },
+                  debtAmount: { type: Type.NUMBER },
+                  priority: { type: Type.STRING, description: "'high' | 'medium' | 'low'" },
+                  recommendedAction: { type: Type.STRING },
+                  whatsappMessage: { type: Type.STRING },
+                },
+                required: ["customerName", "debtAmount", "priority", "recommendedAction", "whatsappMessage"],
+              },
+            },
+          },
+          required: ["overallStrategy", "liquidityRiskLevel", "debtorsPlan"],
+        },
+      },
+    });
+
+    let debtAnalysis: any = {};
+    try {
+      debtAnalysis = JSON.parse(response.text?.trim() || "{}");
+    } catch {
+      debtAnalysis = { overallStrategy: response.text || "", debtorsPlan: [] };
+    }
+
+    res.json({
+      success: true,
+      debtAnalysis,
+    });
+  } catch (error: any) {
+    console.error("AI Debt Analysis Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "تعذر تحليل الديون بالذكاء الاصطناعي",
     });
   }
 });
@@ -765,6 +1159,8 @@ app.get("/api/sync/stream", (req, res) => {
     devices: connectedDevices,
     liveCart: liveCartState,
     kitchenOrders: liveKitchenOrders,
+    customerReviews: liveCustomerReviews,
+    tableRequests: liveTableServiceRequests,
     sharedStoreState: masterSharedStoreState,
     timestamp: new Date().toISOString()
   })}\n\n`);
@@ -1175,6 +1571,8 @@ app.get("/api/devices/mesh-sync/state", (_req, res) => {
     devices: connectedDevices,
     sharedStoreState: masterSharedStoreState,
     kitchenOrders: liveKitchenOrders,
+    customerReviews: liveCustomerReviews,
+    tableRequests: liveTableServiceRequests,
     masterPairingPin,
   });
 });
@@ -1374,11 +1772,29 @@ app.post("/api/menu/sync-catalog", (req, res) => {
   if (Array.isArray(products)) liveMenuCatalog.products = products;
   if (Array.isArray(categories)) liveMenuCatalog.categories = categories;
   if (settings) liveMenuCatalog.settings = { ...liveMenuCatalog.settings, ...settings };
-  if (Array.isArray(reviews)) liveCustomerReviews = reviews;
+  if (Array.isArray(reviews)) {
+    const map = new Map<string, any>();
+    // Keep server-received QR reviews first so none are ever overwritten
+    liveCustomerReviews.forEach(r => {
+      if (r && r.id) map.set(r.id, r);
+    });
+    reviews.forEach((r: any) => {
+      if (r && r.id && !map.has(r.id)) {
+        map.set(r.id, r);
+      }
+    });
+    liveCustomerReviews = Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+  }
   liveMenuCatalog.updatedAt = new Date().toISOString();
 
   broadcastSseEvent("MENU_CATALOG_UPDATED", liveMenuCatalog);
-  res.json({ success: true, updatedAt: liveMenuCatalog.updatedAt });
+  res.json({
+    success: true,
+    updatedAt: liveMenuCatalog.updatedAt,
+    reviews: liveCustomerReviews,
+  });
 });
 
 // Update QR Menu Brand Colors & Theme Identity
@@ -1584,6 +2000,7 @@ app.post("/api/menu/acknowledge-table-request", (req, res) => {
 // Submit Customer Experience Review from QR Menu Page
 app.post("/api/menu/submit-review", (req, res) => {
   const {
+    id,
     orderId,
     orderNumber,
     tableName,
@@ -1596,14 +2013,15 @@ app.post("/api/menu/submit-review", (req, res) => {
     menuEaseRating,
     tags,
     comment,
+    createdAt,
   } = req.body;
 
   const numericRating = Math.min(5, Math.max(1, Number(rating) || 5));
 
   const newReview = {
-    id: `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    id: id || `qr-rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
     orderId: orderId || "",
-    orderNumber: orderNumber || "",
+    orderNumber: orderNumber || "QR",
     tableName: tableName || "منيو QR",
     diningType,
     customerName: customerName || "عميل كريم",
@@ -1614,10 +2032,15 @@ app.post("/api/menu/submit-review", (req, res) => {
     menuEaseRating: Number(menuEaseRating) || numericRating,
     tags: Array.isArray(tags) ? tags : [],
     comment: comment || "",
-    createdAt: new Date().toISOString(),
+    createdAt: createdAt || new Date().toISOString(),
   };
 
-  liveCustomerReviews.unshift(newReview);
+  const existsIdx = liveCustomerReviews.findIndex(r => r.id === newReview.id);
+  if (existsIdx !== -1) {
+    liveCustomerReviews[existsIdx] = newReview;
+  } else {
+    liveCustomerReviews.unshift(newReview);
+  }
 
   broadcastSseEvent("QR_CUSTOMER_REVIEW_RECEIVED", {
     review: newReview,
@@ -1630,6 +2053,25 @@ app.post("/api/menu/submit-review", (req, res) => {
     reviews: liveCustomerReviews,
     message: "شكراً لتقييمك! نسعد دائماً بخدمتك",
   });
+});
+
+app.post("/api/menu/delete-review", (req, res) => {
+  const { id } = req.body || {};
+  if (id) {
+    liveCustomerReviews = liveCustomerReviews.filter(r => r.id !== id);
+  }
+  broadcastSseEvent("QR_CUSTOMER_REVIEWS_UPDATED", {
+    reviews: liveCustomerReviews,
+  });
+  res.json({ success: true, reviews: liveCustomerReviews });
+});
+
+app.post("/api/menu/clear-reviews", (_req, res) => {
+  liveCustomerReviews = [];
+  broadcastSseEvent("QR_CUSTOMER_REVIEWS_UPDATED", {
+    reviews: liveCustomerReviews,
+  });
+  res.json({ success: true, reviews: liveCustomerReviews });
 });
 
 // ==========================================

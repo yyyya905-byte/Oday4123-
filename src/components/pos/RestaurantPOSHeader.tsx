@@ -11,6 +11,8 @@ import {
   Smartphone,
   Receipt,
   Layers,
+  Star,
+  MessageSquare,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -42,6 +44,7 @@ export const RestaurantPOSHeader: React.FC<RestaurantPOSHeaderProps> = ({
     confirmKitchenOrder,
     tableServiceRequests,
     acknowledgeTableServiceRequest,
+    customerReviews,
     restaurantTables,
     setActiveTab,
     setIsCustomerMenuPreviewOpen,
@@ -52,7 +55,14 @@ export const RestaurantPOSHeader: React.FC<RestaurantPOSHeaderProps> = ({
 
   const isAr = language === 'ar';
   const [isLiveInboxOpen, setIsLiveInboxOpen] = useState(false);
+  const [isReviewsPanelOpen, setIsReviewsPanelOpen] = useState(false);
   const cartLength = cart.reduce((acc, it) => acc + it.quantity, 0);
+
+  const avgCustomerRating = useMemo(() => {
+    if (!customerReviews || customerReviews.length === 0) return '5.0';
+    const sum = customerReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+    return (sum / customerReviews.length).toFixed(1);
+  }, [customerReviews]);
 
   const tables = useMemo(() => {
     if (restaurantTables && restaurantTables.length > 0) {
@@ -208,6 +218,26 @@ export const RestaurantPOSHeader: React.FC<RestaurantPOSHeaderProps> = ({
 
           <button
             type="button"
+            onClick={() => {
+              setIsReviewsPanelOpen(!isReviewsPanelOpen);
+              setIsLiveInboxOpen(false);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+              isReviewsPanelOpen
+                ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-amber-500'
+            }`}
+            title="عرض تقييمات الزبائن الواردة من منيو المطعم QR"
+          >
+            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+            <span>{isAr ? 'تقييمات المنيو' : 'Menu Reviews'}</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300 font-black">
+              {avgCustomerRating}★ ({customerReviews.length})
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('restaurant')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-amber-500 text-white dark:text-slate-950 text-xs font-black shadow-xs transition-all cursor-pointer"
           >
@@ -236,6 +266,101 @@ export const RestaurantPOSHeader: React.FC<RestaurantPOSHeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Expandable Customer QR Menu Reviews Drawer */}
+      {isReviewsPanelOpen && (
+        <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border-2 border-amber-500/60 space-y-2.5 shadow-lg">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+            <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+              <span>تقييمات الزبائن المباشرة عبر منيو المطعم الإلكتروني (QR Menu)</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                المعدل العام: {avgCustomerRating} / 5 ({customerReviews.length} تقييم)
+              </span>
+            </h4>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReviewsPanelOpen(false);
+                  setActiveTab('restaurant');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 text-[10px] font-black cursor-pointer"
+              >
+                فتح سجل التقييمات الكامل في قسم المطعم
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsReviewsPanelOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {customerReviews.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-3">
+              لا توجد تقييمات مرسلة من منيو الزبائن حتى الآن.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto">
+              {customerReviews.slice(0, 6).map(rev => (
+                <div
+                  key={rev.id}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                      {rev.customerName || 'زبون المطعم'}
+                    </span>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {[1, 2, 3, 4, 5].map(st => (
+                        <Star
+                          key={st}
+                          className={`w-3 h-3 ${
+                            st <= rev.rating
+                              ? 'text-amber-400 fill-amber-400'
+                              : 'text-slate-300 dark:text-slate-600'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500 font-bold">
+                    {rev.tableName && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                        {rev.tableName}
+                      </span>
+                    )}
+                    {rev.orderNumber && <span>طلب #{rev.orderNumber}</span>}
+                    {rev.foodQualityRating && <span>• الطعم: {rev.foodQualityRating}★</span>}
+                    {rev.serviceSpeedRating && <span>• الخدمة: {rev.serviceSpeedRating}★</span>}
+                    {rev.menuEaseRating && <span>• المنيو: {rev.menuEaseRating}★</span>}
+                  </div>
+                  {rev.tags && rev.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {rev.tags.slice(0, 3).map((tg, i) => (
+                        <span
+                          key={i}
+                          className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[9px] font-black"
+                        >
+                          ✓ {tg}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {rev.comment && (
+                    <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2">
+                      "{rev.comment}"
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Expandable Cashier Inbox for Customer QR Orders & Table Calls */}
       {isLiveInboxOpen && (

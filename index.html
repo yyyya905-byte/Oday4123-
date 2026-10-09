@@ -2,6 +2,25 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      window.addEventListener(
+        'error',
+        function (e) {
+          if (
+            e &&
+            (e.message === 'Script error.' ||
+              e.message === 'Script error' ||
+              (typeof e.message === 'string' && e.message.indexOf('ResizeObserver loop') !== -1) ||
+              (!e.filename && !e.lineno && !e.colno && !e.error))
+          ) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        },
+        true
+      );
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>KIAN CASHIER — كيان كاشير</title>
     <meta name="description" content="KIAN CASHIER — نظام كاشير ونقاط بيع احترافي متكامل لإدارة المبيعات والمخزون والعملاء والفواتير" />
@@ -20,7 +39,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-amber-500 selection:text-white transition-colors duration-150">
     <div id="root"></div>
