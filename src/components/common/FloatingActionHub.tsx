@@ -241,8 +241,8 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
       icon: theme === 'dark' ? Sun : Moon,
       badgeColorClass: 'bg-purple-500/20 text-purple-600 dark:text-purple-400',
       titleAr: 'تبديل المظهر الليلي والنهاري',
-      onTrigger: () => {
-        toggleTheme();
+      onTrigger: (e?: React.MouseEvent) => {
+        toggleTheme(e);
       }
     },
     themeColor: {
@@ -533,9 +533,9 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
                       haptics.buttonPress();
-                      item.onTrigger();
+                      (item as any).onTrigger?.(e);
                     }}
                     className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-200/80 dark:border-slate-700/70 text-slate-800 dark:text-slate-100 transition-all cursor-pointer group text-xs font-black active:scale-98"
                     title={item.titleAr}

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Product,
   Category,
@@ -219,8 +220,8 @@ interface AppContextType {
   dir: 'rtl' | 'ltr';
   theme: 'light' | 'dark';
   themeMode: ThemeMode;
-  setThemeMode: (mode: ThemeMode) => void;
-  toggleTheme: () => void;
+  setThemeMode: (mode: ThemeMode, event?: React.MouseEvent | MouseEvent | { clientX: number; clientY: number } | null) => void;
+  toggleTheme: (event?: React.MouseEvent | MouseEvent | { clientX: number; clientY: number } | null) => void;
   isNightTime: boolean;
   nightModeStartHour: number;
   nightModeEndHour: number;
@@ -962,31 +963,121 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return computeEffectiveTheme(initialMode, nightModeStartHour, nightModeEndHour);
   });
 
-  // Helper to trigger subtle cross-fade animation when switching themes
-  const applyThemeWithTransition = (applyFn: () => void) => {
+  // Helper to trigger seamless circular ripple transition or cross-fade using View Transitions API
+  const applyThemeWithTransition = (
+    applyFn: () => void,
+    event?: React.MouseEvent | MouseEvent | { clientX: number; clientY: number } | null
+  ) => {
     if (typeof document === 'undefined') {
       applyFn();
       return;
     }
 
-    // Support native View Transitions API if supported by browser
-    if ('startViewTransition' in document && typeof (document as any).startViewTransition === 'function') {
-      (document as any).startViewTransition(() => {
-        applyFn();
-      });
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Check if View Transitions API is supported and user doesn't request reduced motion
+    const hasViewTransition =
+      !prefersReducedMotion &&
+      'startViewTransition' in document &&
+      typeof (document as any).startViewTransition === 'function';
+
+    if (!hasViewTransition) {
+      // Fallback: Smooth CSS cross-fade transition
+      document.documentElement.classList.add('theme-cross-fade');
+      applyFn();
+      setTimeout(() => {
+        document.documentElement.classList.remove('theme-cross-fade');
+      }, 400);
       return;
     }
 
-    // Smooth CSS cross-fade transition
-    document.documentElement.classList.add('theme-cross-fade');
-    applyFn();
-    setTimeout(() => {
-      document.documentElement.classList.remove('theme-cross-fade');
-    }, 450);
+    // Determine the origin of the transition wave (click coordinates or button center)
+    let x = window.innerWidth / 2;
+    let y = window.innerHeight / 2;
+
+    if (
+      event &&
+      typeof event.clientX === 'number' &&
+      typeof event.clientY === 'number' &&
+      (event.clientX !== 0 || event.clientY !== 0)
+    ) {
+      x = event.clientX;
+      y = event.clientY;
+    } else {
+      const toggleBtn =
+        document.getElementById('btn-theme-toggle') ||
+        document.querySelector('[data-theme-toggle]');
+      if (toggleBtn) {
+        const rect = toggleBtn.getBoundingClientRect();
+        x = rect.left + rect.width / 2;
+        y = rect.top + rect.height / 2;
+      }
+    }
+
+    // Maximum distance from the origin point to the furthest screen corner
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    // Call startViewTransition with flushSync to guarantee immediate synchronous DOM & React commit
+    try {
+      const transition = (document as any).startViewTransition(() => {
+        flushSync(() => {
+          applyFn();
+        });
+      });
+
+      // Once the transition snapshots are captured and ready to animate
+      if (transition && typeof transition.ready?.then === 'function') {
+        transition.ready
+          .then(() => {
+            const clipPath = [
+              `circle(0px at ${x}px ${y}px)`,
+              `circle(${endRadius}px at ${x}px ${y}px)`,
+            ];
+
+            if (typeof document.documentElement.animate === 'function') {
+              try {
+                document.documentElement.animate(
+                  {
+                    clipPath,
+                  },
+                  {
+                    duration: 520,
+                    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+                    pseudoElement: '::view-transition-new(root)',
+                  }
+                );
+              } catch {
+                // Fallback to CSS animation if pseudoElement option is not supported in current browser
+                document.documentElement.classList.add('theme-transition-fallback');
+              }
+            }
+          })
+          .catch(() => {
+            // Ignore if transition was skipped or aborted
+          });
+
+        if (transition.finished && typeof transition.finished.finally === 'function') {
+          transition.finished.finally(() => {
+            document.documentElement.classList.remove('theme-transition-fallback');
+          });
+        }
+      }
+    } catch {
+      applyFn();
+    }
   };
 
   // Function to explicitly set theme mode (Manual Light, Manual Dark, Auto Time, System)
-  const setThemeMode = (newMode: ThemeMode) => {
+  const setThemeMode = (
+    newMode: ThemeMode,
+    event?: React.MouseEvent | MouseEvent | { clientX: number; clientY: number } | null
+  ) => {
     applyThemeWithTransition(() => {
       setThemeModeState(newMode);
       localStorage.setItem(STORAGE_KEYS.THEME_MODE, newMode);
@@ -1004,7 +1095,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         document.documentElement.classList.remove('dark');
       }
-    });
+    }, event);
 
     if (newMode === 'auto_time') {
       const isNight = checkIsNightTime(settings.nightModeStartHour, settings.nightModeEndHour);
@@ -1025,7 +1116,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Manual fast toggle (toggles between light and dark)
-  const toggleTheme = () => {
+  const toggleTheme = (
+    event?: React.MouseEvent | MouseEvent | { clientX: number; clientY: number } | null
+  ) => {
     const next: ThemeMode = theme === 'light' ? 'dark' : 'light';
     applyThemeWithTransition(() => {
       setTheme(next);
@@ -1042,7 +1135,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         document.documentElement.classList.remove('dark');
       }
-    });
+    }, event);
   };
 
   // Periodic check (every 30 seconds) to adapt auto_time mode when shift enters evening/morning hours

@@ -314,6 +314,11 @@ export const ReceiptLayoutDragDropEditor: React.FC<ReceiptLayoutDragDropEditorPr
       queueNumber: 1,
       items: [
         {
+          productId: 'p1',
+          productNameAr: businessMode === 'restaurant' ? 'وجبة شاورما عربي دبل' : 'بن برازيلي فاخر 500 غرام',
+          productNameEn: 'Premium Item 1',
+          barcode: '6210001',
+          costPrice: 30000,
           product: {
             id: 'p1',
             nameAr: businessMode === 'restaurant' ? 'وجبة شاورما عربي دبل' : 'بن برازيلي فاخر 500 غرام',
@@ -333,6 +338,11 @@ export const ReceiptLayoutDragDropEditor: React.FC<ReceiptLayoutDragDropEditorPr
           kitchenNotes: businessMode === 'restaurant' ? 'زيادة ثوم ومخلل — خبز محمص' : undefined,
         },
         {
+          productId: 'p2',
+          productNameAr: businessMode === 'restaurant' ? 'عصير برتقال طبيعي طازج' : 'حليب كامل الدسم 1 لتر',
+          productNameEn: 'Fresh Item 2',
+          barcode: '6210002',
+          costPrice: 12000,
           product: {
             id: 'p2',
             nameAr: businessMode === 'restaurant' ? 'عصير برتقال طبيعي طازج' : 'حليب كامل الدسم 1 لتر',
@@ -353,8 +363,12 @@ export const ReceiptLayoutDragDropEditor: React.FC<ReceiptLayoutDragDropEditorPr
       ],
       subtotal: 110000,
       discount: 5000,
+      discountTotal: 5000,
       tax: settings.enableTax ? Math.round(105000 * ((settings.defaultTaxRate || 5) / 100)) : 5250,
+      taxTotal: settings.enableTax ? Math.round(105000 * ((settings.defaultTaxRate || 5) / 100)) : 5250,
       total: 110250,
+      costTotal: 42000,
+      profitTotal: 68250,
       paidAmount: 115000,
       changeAmount: 4750,
       paymentMethod: 'cash',
@@ -367,6 +381,11 @@ export const ReceiptLayoutDragDropEditor: React.FC<ReceiptLayoutDragDropEditorPr
       customerPhone: '0933123456',
       notes: settings.receiptSampleCustomerNote || 'يرجى تغليف الطلب بعناية — تسليم فوري',
       pointsEarned: 11,
+      pointsRedeemed: 0,
+      pointsDiscountAmount: 0,
+      status: 'completed',
+      storeId: 'store_default',
+      branchId: 'branch_main',
       createdAt: new Date().toISOString(),
     };
     setTestPrintSale(sampleSale);

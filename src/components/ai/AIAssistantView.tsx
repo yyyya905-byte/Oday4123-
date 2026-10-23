@@ -156,7 +156,7 @@ export const AIAssistantView: React.FC = () => {
   // LIVE STORE QUANTITATIVE INTELLIGENCE ENGINE (Local Real-Time Computations)
   // ============================================================================
   const liveStoreIntel = useMemo(() => {
-    const activeSales = safeSales.filter(s => s.status !== 'refunded' && s.status !== 'cancelled');
+    const activeSales = safeSales.filter(s => s.status !== 'refunded' && s.status !== 'voided');
     const totalRevenue = activeSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
 
     // Compute COGS & Product Velocity

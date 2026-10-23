@@ -30,6 +30,7 @@ import { PrintPaperSize, LabelAlignmentConfig } from '../../types';
 import { generateBarcodeSvg } from '../../utils/barcodeUtils';
 import { soundEffects } from '../../services/audio';
 import { StoreLogoUploader } from './StoreLogoUploader';
+import { ReceiptPrinterUsage } from '../ui/Usage';
 
 interface PaperPreset {
   id: PrintPaperSize;
@@ -171,6 +172,7 @@ export const PrintSettingsPanel: React.FC = () => {
   const [showCrosshairs, setShowCrosshairs] = useState<boolean>(true);
   const [sampleProductId, setSampleProductId] = useState<string>(products[0]?.id || '');
   const [activePrintMode, setActivePrintMode] = useState<'receipt' | 'calibration' | 'label' | null>(null);
+  const [isTactileModalOpen, setIsTactileModalOpen] = useState<boolean>(false);
 
   const sampleProduct = products.find(p => p.id === sampleProductId) || products[0] || {
     id: 'sample_01',
@@ -344,6 +346,15 @@ export const PrintSettingsPanel: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsTactileModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 transition-all cursor-pointer"
+              title="تجربة خروج الفاتورة الحركية (ORD 2048)"
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>محاكي الطابعة (ORD 2048)</span>
+            </button>
             <button
               type="button"
               onClick={handleSave}
@@ -2340,6 +2351,27 @@ export const PrintSettingsPanel: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tactile Receipt Printer Simulator Modal (ORD 2048) */}
+      {isTactileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto bg-slate-100 dark:bg-slate-950 rounded-3xl border border-slate-300 dark:border-slate-800 shadow-2xl p-4 sm:p-6">
+            <button
+              type="button"
+              onClick={() => setIsTactileModalOpen(false)}
+              className="absolute top-4 left-4 p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors z-20 cursor-pointer"
+            >
+              ✕
+            </button>
+            <ReceiptPrinterUsage
+              orderNumber="ORD-2048"
+              storeName={settings.storeNameAr || "كيان كاشير"}
+              storeNameEn={settings.storeNameEn || "KIAN CASHIER"}
+              onClose={() => setIsTactileModalOpen(false)}
+            />
           </div>
         </div>
       )}

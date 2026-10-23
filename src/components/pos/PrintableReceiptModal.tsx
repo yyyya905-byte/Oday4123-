@@ -13,6 +13,7 @@ import {
   normalizeReceiptLayoutBlocks,
   getReceiptSectionComputedStyle,
 } from '../../utils/receiptLayoutUtils';
+import { ReceiptPrinterUsage } from '../ui/Usage';
 
 interface PrintableReceiptModalProps {
   isOpen?: boolean;
@@ -33,6 +34,7 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
   const [btProgress, setBtProgress] = useState<number>(0);
   const [isBtModalOpen, setIsBtModalOpen] = useState<boolean>(false);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
+  const [isTactileModalOpen, setIsTactileModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const unsub = bluetoothPrinter.subscribe(status => {
@@ -147,8 +149,8 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
 
   const totalQuantity = sale.items.reduce((acc, it) => acc + (it.quantity || 0), 0);
   const layoutBlocks = normalizeReceiptLayoutBlocks(settings);
-  const saleDiscount = sale.discountTotal ?? sale.discount ?? 0;
-  const saleTax = sale.taxTotal ?? sale.tax ?? 0;
+  const saleDiscount = sale.discountTotal ?? 0;
+  const saleTax = sale.taxTotal ?? 0;
 
   return (
     <>
@@ -162,6 +164,19 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
       className="max-h-[92vh] flex flex-col"
       headerExtra={
         <div className="flex items-center gap-1.5">
+          {/* Tactile 3D Printer Simulator Button */}
+          <button
+            type="button"
+            onClick={() => setIsTactileModalOpen(true)}
+            data-longpress-title="محاكي الطابعة الحرارية 3D"
+            data-longpress-desc="محاكاة حركية تفاعلية واقعية لتلقيم وخروج الورق من الطابعة."
+            className="flex items-center gap-1 px-2.5 py-2 font-black text-xs rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 transition-all cursor-pointer active:scale-95 shadow-sm hover:from-amber-400 hover:to-amber-500"
+            title="محاكاة خروج الفاتورة الحركية (Tactile 3D Printer)"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">محاكي 3D</span>
+          </button>
+
           {/* Quick Receipt Customizer Button */}
           <button
             type="button"
@@ -482,7 +497,7 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
                           {sale.items.map((it, idx) => (
                             <tr key={idx} className="py-1">
                               <td className="py-1 font-medium text-start">
-                                <div>{it.productNameAr || it.product?.nameAr || 'منتج'}</div>
+                                <div>{it.productNameAr || (it as any).product?.nameAr || 'منتج'}</div>
                                 {it.wholesaleUnit && (
                                   <div className="text-[0.82em] text-amber-700 font-bold">
                                     ({it.wholesaleUnit})
@@ -820,6 +835,27 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
         isOpen={isCustomizerOpen}
         onClose={() => setIsCustomizerOpen(false)}
       />
+
+      {/* Tactile 3D Animated Receipt Printer Modal */}
+      {isTactileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto bg-slate-100 dark:bg-slate-950 rounded-3xl border border-slate-300 dark:border-slate-800 shadow-2xl p-4 sm:p-6">
+            <button
+              type="button"
+              onClick={() => setIsTactileModalOpen(false)}
+              className="absolute top-4 left-4 p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors z-20 cursor-pointer"
+            >
+              ✕
+            </button>
+            <ReceiptPrinterUsage
+              orderNumber={sale.invoiceNumber || "ORD-2048"}
+              storeName={settings.storeNameAr || "كيان كاشير"}
+              storeNameEn={settings.storeNameEn || "KIAN CASHIER"}
+              onClose={() => setIsTactileModalOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </DraggableModalWrapper>
     </>
   );

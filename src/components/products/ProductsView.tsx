@@ -38,6 +38,9 @@ import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
 import { ProductBarcodeScannerModal } from './ProductBarcodeScannerModal';
 import { SupplierPurchaseModal } from '../debts/SupplierPurchaseModal';
 import { generateBarcodeSvg, generateRandomEan13 } from '../../utils/barcodeUtils';
+import { HoldToConfirmButton } from '../ui/HoldToConfirmButton';
+import { CheckIcon } from '@phosphor-icons/react/dist/ssr';
+import { soundEffects } from '../../services/audio';
 
 export const ProductsView: React.FC = () => {
   const {
@@ -70,6 +73,7 @@ export const ProductsView: React.FC = () => {
   // Product Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
   // Barcode Designer State
   const [isBarcodeDesignerOpen, setIsBarcodeDesignerOpen] = useState(false);
@@ -742,13 +746,9 @@ export const ProductsView: React.FC = () => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm(`هل أنت متأكد من حذف المنتج (${product.nameAr})؟`)) {
-                                deleteProduct(product.id);
-                              }
-                            }}
+                            onClick={() => setProductToDelete(product)}
                             className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                            title="حذف المنتج"
+                            title="حذف المنتج (بالضغط المطوّل)"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1409,20 +1409,48 @@ export const ProductsView: React.FC = () => {
               </div>
 
               {/* Submit Buttons */}
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsProductModalOpen(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-xs font-black rounded-xl shadow-md shadow-amber-500/20 cursor-pointer"
-                >
-                  {editingProduct ? 'حفظ التعديلات' : 'إضافة المنتج'}
-                </button>
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                {editingProduct ? (
+                  <HoldToConfirmButton
+                    duration={1500}
+                    className="h-9 px-4 text-xs font-bold shrink-0"
+                    onConfirm={() => {
+                      const prodName = editingProduct.nameAr;
+                      soundEffects.playWarning();
+                      deleteProduct(editingProduct.id);
+                      notify('تم الحذف', `تم حذف المنتج (${prodName}) بنجاح`, 'success');
+                      setIsProductModalOpen(false);
+                      setEditingProduct(null);
+                    }}
+                    confirmedContent={
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <CheckIcon size={15} weight="bold" />
+                        تم حذف المنتج
+                      </span>
+                    }
+                  >
+                    <Trash2 className="w-3.5 h-3.5 ml-1" />
+                    <span>اضغط مطولاً لحذف المنتج</span>
+                  </HoldToConfirmButton>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsProductModalOpen(false)}
+                    className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-xs font-black rounded-xl shadow-md shadow-amber-500/20 cursor-pointer"
+                  >
+                    {editingProduct ? 'حفظ التعديلات' : 'إضافة المنتج'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1527,6 +1555,94 @@ export const ProductsView: React.FC = () => {
         }}
         initialProductsToRestock={productsToRestockInPurchase}
       />
+
+      {/* Hold To Confirm Delete Product Modal */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full shadow-2xl border border-red-500/30 overflow-hidden">
+            {/* Header */}
+            <div className="p-4 bg-red-50 dark:bg-red-950/40 border-b border-red-100 dark:border-red-900/40 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-red-700 dark:text-red-400">
+                <div className="w-9 h-9 rounded-2xl bg-red-100 dark:bg-red-900/60 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm">تأكيد حذف المنتج نهائياً</h3>
+                  <p className="text-[11px] text-red-600/80 dark:text-red-400/80">
+                    Hold to Confirm Deletion
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Product Card Details */}
+            <div className="p-5 space-y-4">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-slate-900 dark:text-white text-sm">
+                    {productToDelete.nameAr}
+                  </span>
+                  <span className="font-mono font-bold text-xs text-amber-600 dark:text-amber-400">
+                    {formatCurrency(productToDelete.price)}
+                  </span>
+                </div>
+                {productToDelete.nameEn && (
+                  <div className="text-xs text-slate-500 font-medium">
+                    {productToDelete.nameEn}
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span>الباركود: {productToDelete.barcode || 'غير محدد'}</span>
+                  <span>الكمية بالمخزن: {productToDelete.stock}</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs leading-relaxed">
+                ⚠️ <strong>تنبيه الأمان:</strong> لمنع الحذف العرضي أو الخاطئ، يرجى الضغط مع الاستمرار على الزر الأحمر أدناه لاكتمال شريط التأكيد.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-1">
+                <HoldToConfirmButton
+                  duration={1500}
+                  className="w-full h-11 text-xs font-black shadow-md"
+                  onConfirm={() => {
+                    const prodName = productToDelete.nameAr;
+                    soundEffects.playWarning();
+                    deleteProduct(productToDelete.id);
+                    notify('تم الحذف', `تم حذف المنتج (${prodName}) من المخزون بنجاح`, 'success');
+                    setProductToDelete(null);
+                  }}
+                  confirmedContent={
+                    <span className="flex items-center gap-1.5 font-bold text-xs">
+                      <CheckIcon size={16} weight="bold" />
+                      تم حذف المنتج بنجاح
+                    </span>
+                  }
+                >
+                  <Trash2 className="w-4 h-4 ml-1.5" />
+                  <span>اضغط مع الاستمرار لتأكيد الحذف</span>
+                </HoldToConfirmButton>
+
+                <button
+                  type="button"
+                  onClick={() => setProductToDelete(null)}
+                  className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  إلغاء التراجع
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

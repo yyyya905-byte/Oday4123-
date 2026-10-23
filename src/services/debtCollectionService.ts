@@ -536,19 +536,38 @@ export function openWhatsAppDeepLink(phone: string, message: string): string {
  * 1. Attempts direct background WhatsApp Business API via Backend endpoint (if configured)
  * 2. Falls back to opening official WhatsApp / Web in new tab
  */
-export async function sendWhatsAppDebtMessage(params: {
-  phone: string;
-  message: string;
-  customerName: string;
-  customerId: string;
-  saleId?: string;
-  invoiceNumber?: string;
-  amountDue: number;
-  totalDebt: number;
-  currencySymbol: string;
-  type: DebtReminderLog['type'];
-  storeSettings: StoreSettings;
-}): Promise<{ success: boolean; method: 'direct_api' | 'whatsapp_link'; logId: string; waUrl: string }> {
+export async function sendWhatsAppDebtMessage(
+  phoneOrParams:
+    | string
+    | {
+        phone: string;
+        message: string;
+        customerName: string;
+        customerId: string;
+        saleId?: string;
+        invoiceNumber?: string;
+        amountDue: number;
+        totalDebt: number;
+        currencySymbol: string;
+        type: DebtReminderLog['type'];
+        storeSettings: StoreSettings;
+      },
+  maybeMessage?: string,
+  onWarning?: (msg: string) => void
+): Promise<{ success: boolean; method: 'direct_api' | 'whatsapp_link'; logId: string; waUrl: string }> {
+  if (typeof phoneOrParams === 'string') {
+    const phone = phoneOrParams;
+    const message = maybeMessage || '';
+    const cleanPhone = formatPhoneForWhatsApp(phone);
+    if (!cleanPhone && onWarning) {
+      onWarning('رقم هاتف العميل غير صحيح أو فارغ');
+    }
+    const waUrl = getWhatsAppClickToChatUrl(cleanPhone, message);
+    openWhatsAppDeepLink(cleanPhone, message);
+    return { success: true, method: 'whatsapp_link', logId: `wlog_${Date.now()}`, waUrl };
+  }
+
+  const params = phoneOrParams;
   const {
     phone,
     message,

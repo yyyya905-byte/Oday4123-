@@ -2,6 +2,34 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --color-grayscale-1: #ffffff;
+  --color-grayscale-2: #fafafa;
+  --color-grayscale-3: #f4f4f5;
+  --color-grayscale-4: #e4e4e7;
+  --color-grayscale-5: #d4d4d8;
+  --color-grayscale-6: #a1a1aa;
+  --color-grayscale-7: #71717a;
+  --color-grayscale-8: #52525b;
+  --color-grayscale-9: #3f3f46;
+  --color-grayscale-10: #27272a;
+  --color-grayscale-11: #18181b;
+  --color-grayscale-12: #09090b;
+  --color-green-9: #22c55e;
+  --color-red-1: #fffcfc;
+  --color-red-2: #fff7f7;
+  --color-red-3: #fee2e2;
+  --color-red-4: #fecaca;
+  --color-red-5: #fca5a5;
+  --color-red-6: #f87171;
+  --color-red-7: #ef4444;
+  --color-red-8: #dc2626;
+  --color-red-9: #e11d48;
+  --color-red-10: #b91c1c;
+  --color-red-11: #991b1b;
+  --color-red-12: #450a0a;
+}
+
 @layer base {
   :root {
     --font-cairo: 'Cairo', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', system-ui, sans-serif;
@@ -37,7 +65,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Smooth cross-fade transition class for theme toggle */
+  /* Smooth cross-fade transition class fallback when View Transitions API is not available */
   html.theme-cross-fade,
   html.theme-cross-fade *,
   html.theme-cross-fade *::before,
@@ -51,11 +79,58 @@
     transition-delay: 0s !important;
   }
 
-  /* Native View Transitions animation */
+  /* Native View Transitions API for seamless theme switching */
+  ::view-transition-group(root) {
+    animation-duration: 0.52s;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   ::view-transition-old(root),
   ::view-transition-new(root) {
-    animation-duration: 0.35s;
-    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  ::view-transition-old(root) {
+    z-index: 1;
+  }
+
+  ::view-transition-new(root) {
+    z-index: 9999;
+  }
+
+  /* Fallback keyframes if pseudoElement animation is not supported by the browser engine */
+  .theme-transition-fallback::view-transition-old(root) {
+    animation: 0.38s cubic-bezier(0.16, 1, 0.3, 1) both vt-fade-out;
+  }
+  .theme-transition-fallback::view-transition-new(root) {
+    animation: 0.38s cubic-bezier(0.16, 1, 0.3, 1) both vt-fade-in;
+  }
+
+  @keyframes vt-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes vt-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(root),
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation: none !important;
+    }
   }
 
   /* Harmonious, eye-friendly light mode palette */

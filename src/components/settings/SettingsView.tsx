@@ -2067,8 +2067,8 @@ export const SettingsView: React.FC = () => {
               {/* 1. Manual Light */}
               <button
                 type="button"
-                onClick={() => {
-                  setThemeMode('light');
+                onClick={(e) => {
+                  setThemeMode('light', e);
                   soundEffects.playClick();
                   notify('تم تفعيل الوضع النهاري الدائم', 'info');
                 }}
@@ -2097,8 +2097,8 @@ export const SettingsView: React.FC = () => {
               {/* 2. Manual Dark */}
               <button
                 type="button"
-                onClick={() => {
-                  setThemeMode('dark');
+                onClick={(e) => {
+                  setThemeMode('dark', e);
                   soundEffects.playClick();
                   notify('تم تفعيل الوضع الليلي الدائم', 'info');
                 }}
@@ -2127,8 +2127,8 @@ export const SettingsView: React.FC = () => {
               {/* 3. Automatic Time-based (Recommended) */}
               <button
                 type="button"
-                onClick={() => {
-                  setThemeMode('auto_time');
+                onClick={(e) => {
+                  setThemeMode('auto_time', e);
                   soundEffects.playClick();
                   notify('تم تفعيل التبديل التلقائي الذكي حسب توقيت جهاز الكاشير', 'success');
                 }}
@@ -2159,8 +2159,8 @@ export const SettingsView: React.FC = () => {
               {/* 4. System OS */}
               <button
                 type="button"
-                onClick={() => {
-                  setThemeMode('system');
+                onClick={(e) => {
+                  setThemeMode('system', e);
                   soundEffects.playClick();
                   notify('تم تفعيل التزامن مع نظام التشغيل', 'info');
                 }}
@@ -2865,11 +2865,11 @@ export const SettingsView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    toggleTheme();
+                  onClick={(e) => {
+                    toggleTheme(e);
                     soundEffects.playClick();
                   }}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
                 >
                   {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-500" /> : <Moon className="w-3.5 h-3.5 text-indigo-400" />}
                   <span>تبديل الوضع المعروض الآن</span>

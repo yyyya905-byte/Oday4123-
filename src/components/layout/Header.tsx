@@ -425,15 +425,17 @@ export const Header: React.FC = () => {
         {headerVisibility.themeToggle !== false && (
           <button
             id="btn-theme-toggle"
+            data-theme-toggle="true"
             type="button"
-            onClick={toggleTheme}
-            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-white/[0.08] transition-all cursor-pointer btn-tactile"
+            onClick={(e) => toggleTheme(e)}
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-white/[0.08] active:scale-90 transition-all cursor-pointer btn-tactile"
             title={theme === 'dark' ? t('lightMode') : t('darkMode')}
+            aria-label={theme === 'dark' ? 'تبديل إلى الوضع النهاري' : 'تبديل إلى الوضع الليلي'}
           >
             {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
+              <Sun className="w-4 h-4 text-amber-400 rotate-0 transition-transform duration-300" />
             ) : (
-              <Moon className="w-4 h-4 text-slate-700" />
+              <Moon className="w-4 h-4 text-slate-700 -rotate-12 transition-transform duration-300" />
             )}
           </button>
         )}

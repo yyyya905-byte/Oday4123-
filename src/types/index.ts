@@ -111,6 +111,7 @@ export interface Customer {
   paymentTerms?: string;
   creditLimit?: number; // Maximum debt limit
   currentDebt?: number; // Current unpaid balance
+  debtBalance?: number; // Compatibility alias
   debtDueDate?: string; // Scheduled payment due date (ISO YYYY-MM-DD)
   lastDebtChargeDate?: string; // Date of last credit charge
   lastPurchaseDate?: string;
@@ -134,6 +135,8 @@ export interface SaleItem {
   productId: string;
   productNameAr: string;
   productNameEn: string;
+  productName?: string;
+  product?: any;
   barcode: string;
   quantity: number;
   unitPrice: number;
@@ -169,7 +172,9 @@ export interface Sale {
   items: SaleItem[];
   subtotal: number;
   discountTotal: number;
+  discount?: number; // Compatibility alias
   taxTotal: number;
+  tax?: number; // Compatibility alias
   total: number;
   costTotal: number;
   profitTotal: number;
@@ -209,7 +214,7 @@ export interface Refund {
   createdAt: string;
 }
 
-export type StockMovementType = 'sale' | 'purchase' | 'restock' | 'return' | 'adjustment' | 'damage' | 'vehicle_dispatch' | 'vehicle_return' | 'warehouse_transfer';
+export type StockMovementType = 'sale' | 'purchase' | 'restock' | 'return' | 'adjustment' | 'damage' | 'vehicle_dispatch' | 'vehicle_return' | 'warehouse_transfer' | 'in' | 'out';
 
 export type WholesaleWarehouseType = 'main_wholesale' | 'regional_hub' | 'distribution_hub' | 'buffer_depot' | 'cold_storage' | 'distribution_center';
 
@@ -897,6 +902,7 @@ export interface Supplier {
   commercialRecord?: string;
   taxNumber?: string;
   currentDebt: number; // المبلغ المستحق للمورد (دائن)
+  creditBalance?: number; // Compatibility alias
   totalPurchases: number;
   paymentTerms?: string;
   bankAccount?: string;
@@ -1037,24 +1043,30 @@ export interface CashShift {
 }
 
 // --- Smart Promotions & Combo Deals Types ---
-export type PromotionType = 'buy_x_get_y' | 'bundle_discount' | 'spend_threshold' | 'category_discount';
+export type PromotionType = 'buy_x_get_y' | 'bundle_discount' | 'spend_threshold' | 'category_discount' | 'percentage_discount' | 'fixed_discount';
 
 export interface PromotionDeal {
   id: string;
-  title: string;
+  title?: string;
+  nameAr?: string; // Compatibility alias
+  nameEn?: string; // Compatibility alias
   description: string;
-  dealType: PromotionType;
+  dealType?: PromotionType;
+  type?: PromotionType; // Compatibility alias
   isActive: boolean;
-  validFrom: string;
-  validTo: string;
-  badgeText: string;
+  validFrom?: string;
+  validTo?: string;
+  badgeText?: string;
+  badgeColor?: string; // Compatibility alias
   minOrderTotal?: number;
   discountPercent?: number;
   discountAmount?: number;
+  discountValue?: number; // Compatibility alias
   buyQuantity?: number;
   getQuantity?: number;
   targetProductIds?: string[];
   targetCategoryIds?: string[];
+  scope?: 'all' | 'category' | 'products' | string; // Compatibility alias
   usageCount: number;
 }
 

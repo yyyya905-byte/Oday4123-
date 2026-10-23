@@ -37,6 +37,7 @@ import { soundEffects } from '../../services/audio';
 import { StoreLogoUploader } from './StoreLogoUploader';
 import { ReceiptLayoutDragDropEditor } from './ReceiptLayoutDragDropEditor';
 import QRCode from 'qrcode';
+import { ReceiptPrinterUsage } from '../ui/Usage';
 
 interface ReceiptCustomizerPanelProps {
   onSaved?: () => void;
@@ -98,6 +99,7 @@ export const ReceiptCustomizerPanel: React.FC<ReceiptCustomizerPanelProps> = ({ 
   // Preview Scale and Rulers
   const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [showRulers, setShowRulers] = useState<boolean>(false);
+  const [isTactileSimulatorOpen, setIsTactileSimulatorOpen] = useState<boolean>(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
   // Sample items for realistic preview
@@ -952,6 +954,15 @@ export const ReceiptCustomizerPanel: React.FC<ReceiptCustomizerPanelProps> = ({ 
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                onClick={() => setIsTactileSimulatorOpen(true)}
+                className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 flex items-center gap-1 shadow-sm hover:from-amber-400 hover:to-amber-500 transition-all cursor-pointer mr-1"
+                title="فتح محاكي طابعة الفواتير التفاعلي ORD 2048"
+              >
+                <Printer className="w-3 h-3" />
+                <span>محاكي الطابعة (ORD 2048)</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowRulers(!showRulers)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
                   showRulers ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 border-slate-700 text-slate-300'
@@ -1334,6 +1345,27 @@ export const ReceiptCustomizerPanel: React.FC<ReceiptCustomizerPanelProps> = ({ 
         </div>
 
       </div>
+
+      {/* Tactile Receipt Printer Simulator Modal (ORD 2048) */}
+      {isTactileSimulatorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto bg-slate-100 dark:bg-slate-950 rounded-3xl border border-slate-300 dark:border-slate-800 shadow-2xl p-4 sm:p-6">
+            <button
+              type="button"
+              onClick={() => setIsTactileSimulatorOpen(false)}
+              className="absolute top-4 left-4 p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors z-20 cursor-pointer"
+            >
+              ✕
+            </button>
+            <ReceiptPrinterUsage
+              orderNumber="ORD-2048"
+              storeName={formData.storeNameAr || "كيان كاشير"}
+              storeNameEn={formData.storeNameEn || "KIAN CASHIER"}
+              onClose={() => setIsTactileSimulatorOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
