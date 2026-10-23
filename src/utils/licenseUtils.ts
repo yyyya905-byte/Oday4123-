@@ -24,13 +24,22 @@ export function isAuthorizedToGenerateCodes(email?: string | null): boolean {
   );
 }
 
+export interface SpecialCelebrationInfo {
+  benefactorNameAr: string;
+  messageTitleAr: string;
+  messageBodyAr: string;
+  heartAnimation: boolean;
+  highlightBadgeAr?: string;
+}
+
 export interface PredefinedLicenseCode {
   code: string;
-  duration: '1_year' | '1_month' | 'lifetime';
-  durationDays: number; // 365 for year, 30 for month
+  duration: '1_year' | '1_month' | '3_years' | 'lifetime';
+  durationDays: number; // 365 for year, 30 for month, 1095 for 3 years
   durationLabelAr: string;
   singleUse: boolean;
   notes: string;
+  specialCelebration?: SpecialCelebrationInfo;
 }
 
 /**
@@ -116,6 +125,23 @@ export const PREDEFINED_LICENSE_CODES: PredefinedLicenseCode[] = [
     durationLabelAr: 'اشتراك شهري (شهر كامل)',
     singleUse: true,
     notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
+  },
+
+  // --- كود الترخيص الخاص المميز لـ 3 سنوات كاملة (مهدى باسم خالي نزيه الغالي ❤️) ---
+  {
+    code: 'alastorh',
+    duration: '3_years',
+    durationDays: 1095, // 3 full calendar years (365 * 3)
+    durationLabelAr: 'اشتراك مميز لمدة 3 سنوات (1095 يوماً)',
+    singleUse: true,
+    notes: 'كود ترخيص خاص لمدة 3 سنوات مهدى باسم خالي نزيه الغالي — استخدام لمرة واحدة مرتبط ببصمة جهاز واحد',
+    specialCelebration: {
+      benefactorNameAr: 'خالي نزيه الغالي',
+      messageTitleAr: 'ترحيب وشكر خاص باسم خالي نزيه الغالي ❤️',
+      messageBodyAr: 'تم تفعيل ترخيص نظام كاشير كيان لمدة 3 سنوات كاملة بنجاح! نهديك هذا الترخيص مع خالص التقدير والمحبة.',
+      heartAnimation: true,
+      highlightBadgeAr: 'هدية خاصة 👑 اشتراك 3 سنوات'
+    }
   }
 ];
 
@@ -150,11 +176,12 @@ export const MASTER_ACTIVATION_CODES = PREDEFINED_LICENSE_CODES.map(c => c.code)
 
 /**
  * Calculate the exact expiration ISO date string based on subscription code duration
+ * - 3_years: 3 full years from startDate
  * - 1_year: 1 full year from startDate
  * - 1_month: 1 full month from startDate
  */
 export function calculateSubscriptionExpirationDate(
-  duration: '1_year' | '1_month' | 'lifetime',
+  duration: '1_year' | '1_month' | '3_years' | 'lifetime',
   startDate: Date = new Date()
 ): string | null {
   if (duration === 'lifetime') {
@@ -162,7 +189,9 @@ export function calculateSubscriptionExpirationDate(
   }
 
   const expDate = new Date(startDate.getTime());
-  if (duration === '1_year') {
+  if (duration === '3_years') {
+    expDate.setFullYear(expDate.getFullYear() + 3);
+  } else if (duration === '1_year') {
     expDate.setFullYear(expDate.getFullYear() + 1);
   } else if (duration === '1_month') {
     expDate.setMonth(expDate.getMonth() + 1);

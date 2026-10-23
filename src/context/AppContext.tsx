@@ -1738,7 +1738,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? new Date(licenseExpiresAt)
         : now;
 
-      if (matched.duration === '1_year' || matched.durationDays === 365) {
+      if (matched.duration === '3_years' || matched.durationDays === 1095) {
+        // 3 Years Subscription: 3 full calendar years
+        const expDate = new Date(baseTime.getTime());
+        expDate.setFullYear(expDate.getFullYear() + 3);
+        expiresAtIso = expDate.toISOString();
+      } else if (matched.duration === '1_year' || matched.durationDays === 365) {
         // 1 Year Subscription: 1 full calendar year
         const expDate = new Date(baseTime.getTime());
         expDate.setFullYear(expDate.getFullYear() + 1);
@@ -1814,6 +1819,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       licenseStatus: 'active',
       licenseType: matched.duration,
       licenseDurationLabel: matched.durationLabelAr,
+      benefactorNameAr: matched.specialCelebration?.benefactorNameAr,
+      hasSpecialCelebration: Boolean(matched.specialCelebration),
       purchasedAt: now.toISOString(),
       licenseExpiresAt: expiresAtIso,
       customerName: customerInfo?.name || settings.storeNameAr,
@@ -1965,11 +1972,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundEffects.playSuccess();
     setIsPurchaseModalOpen(false);
 
-    notify(
-      'تم تفعيل الاشتراك ومسح بيانات IndexedDB بالكامل! 👑',
-      `تم تفعيل (${matched.durationLabelAr}) ومسح جميع البيانات المخزنة محلياً في IndexedDB لضمان بداية جديدة ونظيفة للمشترك.`,
-      'success'
-    );
+    if (matched.specialCelebration) {
+      notify(
+        matched.specialCelebration.messageTitleAr,
+        `${matched.specialCelebration.messageBodyAr} (${matched.durationLabelAr})`,
+        'success'
+      );
+    } else {
+      notify(
+        'تم تفعيل الاشتراك ومسح بيانات IndexedDB بالكامل! 👑',
+        `تم تفعيل (${matched.durationLabelAr}) ومسح جميع البيانات المخزنة محلياً في IndexedDB لضمان بداية جديدة ونظيفة للمشترك.`,
+        'success'
+      );
+    }
 
     return {
       success: true,

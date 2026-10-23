@@ -468,8 +468,10 @@ export interface LicenseInfo {
   isPurchased: boolean;
   licenseKey?: string;
   licenseStatus: 'trial' | 'active' | 'expired';
-  licenseType?: '1_month' | '1_year' | 'lifetime';
+  licenseType?: '1_month' | '1_year' | '3_years' | 'lifetime';
   licenseDurationLabel?: string;
+  benefactorNameAr?: string;
+  hasSpecialCelebration?: boolean;
   trialStartDate?: string;
   trialExpiresAt?: string;
   purchasedAt?: string;

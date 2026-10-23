@@ -27,7 +27,8 @@ import {
   Database,
   ArrowLeftRight,
   Trash2,
-  HardDrive
+  HardDrive,
+  Heart
 } from 'lucide-react';
 import {
   validateLicenseCode,
@@ -472,6 +473,34 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </span>
                 </div>
               )}
+
+              {/* Special Benefactor Tribute for Uncle Nazih */}
+              {(licenseKey?.toLowerCase() === 'alastorh' || settings.licenseInfo?.benefactorNameAr) && (
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-500/20 via-pink-500/15 to-amber-500/20 border-2 border-rose-500/50 text-slate-900 dark:text-slate-100 space-y-2 relative overflow-hidden shadow-sm animate-in fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-600 to-pink-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                      <Heart className="w-6 h-6 text-white fill-white animate-pulse" />
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-black text-xs sm:text-sm text-rose-700 dark:text-rose-300">
+                          إهداء وترحيب خاص باسم خالي نزيه الغالي ❤️
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-600 text-white font-black text-[10px] shadow-xs">
+                          اشتراك ملكي 3 سنوات
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-700 dark:text-slate-200 font-medium leading-relaxed pt-0.5">
+                        هذا الترخيص مهدى إليك مع أطيب التمنيات بالتوفيق والبركة من خالي نزيه الغالي.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : isLicenseExpired ? (
             <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200 flex items-center gap-2.5 text-xs">
@@ -609,6 +638,39 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                   </span>
                 </div>
               </div>
+
+              {/* Plan 3: Special 3-Year License (alastorh) */}
+              <div className="relative p-3.5 rounded-2xl border-2 bg-gradient-to-b from-rose-500/10 via-pink-500/5 to-transparent border-rose-500/40 dark:border-rose-500/30 flex flex-col justify-between shadow-xs col-span-1 sm:col-span-2">
+                <div className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-600 to-pink-600 text-white text-[10px] font-black shadow-xs flex items-center gap-1">
+                  <Heart className="w-3 h-3 fill-white" />
+                  <span>ترخيص خاص معتمد 👑</span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-600 to-pink-500 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                      <Heart className="w-5 h-5 fill-white animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-xs text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                        <span>اشتراك 3 سنوات (إهداء خالي نزيه الغالي)</span>
+                        <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono font-bold bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded">
+                          alastorh
+                        </span>
+                      </h4>
+                      <span className="text-[10px] font-black text-rose-600 dark:text-rose-400 block">
+                        صلاحية 1095 يوماً (3 سنوات كاملة) — استخدام لمرة واحدة مرتبط ببصمة جهاز واحد
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-left sm:text-right shrink-0">
+                    <span className="text-[10px] font-bold text-rose-700 dark:text-rose-300 block">
+                      رسالة ترحيب وشكر خاصة ❤️
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -648,12 +710,42 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                 </div>
               </div>
 
+              {/* Uncle Nazih Special Celebratory Banner in Confirmation Dialog */}
+              {(pendingActivation.matchedCode.specialCelebration || pendingActivation.code.toLowerCase() === 'alastorh') && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/20 via-pink-500/15 to-amber-500/20 border-2 border-rose-500/70 text-slate-900 dark:text-slate-100 space-y-2 shadow-md">
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-600 to-pink-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-600/30">
+                      <Heart className="w-7 h-7 text-white fill-white animate-pulse" />
+                      <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-black text-xs sm:text-sm text-rose-700 dark:text-rose-300">
+                          ترحيب وشكر خاص باسم خالي نزيه الغالي ❤️
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-600 text-white font-black text-[10px] shadow-xs">
+                          اشتراك ملكي 3 سنوات
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 dark:text-slate-200 font-medium leading-relaxed pt-0.5">
+                        تم تفعيل ترخيص نظام كاشير كيان لمدة 3 سنوات كاملة بنجاح! نهديك هذا الترخيص مع خالص التقدير والمحبة من خالي نزيه الغالي.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Renewal / Transfer Breakdown Summary */}
               <div className="space-y-2.5 bg-white/90 dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 text-xs">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
                   <span className="text-slate-500 dark:text-slate-400 font-bold">نوع الاشتراك:</span>
                   <span className="font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                    {pendingActivation.matchedCode.duration === '1_year' ? (
+                    {pendingActivation.matchedCode.duration === '3_years' ? (
+                      <Heart className="w-4 h-4 text-rose-500 fill-rose-500 animate-pulse" />
+                    ) : pendingActivation.matchedCode.duration === '1_year' ? (
                       <Crown className="w-4 h-4 text-amber-500" />
                     ) : (
                       <Calendar className="w-4 h-4 text-blue-500" />
@@ -915,6 +1007,41 @@ export const AppPurchaseModal: React.FC<AppPurchaseModalProps> = ({ isOpen, onCl
                     </button>
                   </div>
                 </div>
+
+                {/* Prominent Live Celebratory Card for alastorh */}
+                {inputCode.trim().toLowerCase() === 'alastorh' && (
+                  <div className="p-4 rounded-3xl bg-gradient-to-br from-rose-500/20 via-pink-500/15 to-amber-500/20 border-2 border-rose-500 text-slate-900 dark:text-slate-100 shadow-xl space-y-2.5 animate-in zoom-in-95 duration-200">
+                    <div className="flex items-start gap-3.5">
+                      <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-600 via-pink-600 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-600/30">
+                        <Heart className="w-8 h-8 text-white fill-white animate-pulse" />
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500"></span>
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-black text-sm sm:text-base text-rose-700 dark:text-rose-300">
+                            ترحيب وشكر خاص باسم خالي نزيه الغالي ❤️
+                          </h4>
+                          <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] shadow-xs">
+                            اشتراك ملكي 3 سنوات 👑
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-700 dark:text-slate-200 font-medium leading-relaxed">
+                          أهلاً وسهلاً بك! تم التعرف على الكود الخاص <strong>(alastorh)</strong>. يمنحك هذا الكود ترخيصاً شاملاً لجميع مزايا كاشير كيان لمدة <strong>3 سنوات كاملة (1095 يوماً)</strong>.
+                        </p>
+                        <div className="flex items-center gap-2 pt-1 text-[11px] text-rose-800 dark:text-rose-300 font-bold flex-wrap">
+                          <span>✓ مهدى باسم: خالي نزيه الغالي</span>
+                          <span>•</span>
+                          <span>✓ المدة: 3 سنوات (1095 يوماً)</span>
+                          <span>•</span>
+                          <span>✓ حماية البصمة: جهاز واحد فقط</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Live Firebase Device Fingerprinting & Transfer Confirmation Result Card */}
                 {verificationResult && (
