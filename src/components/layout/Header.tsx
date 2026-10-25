@@ -23,7 +23,8 @@ import {
   Crown,
   Monitor,
   User,
-  Link2
+  Link2,
+  HelpCircle
 } from 'lucide-react';
 import { ExchangeBulletinModal } from '../currency/ExchangeBulletinModal';
 import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
@@ -64,7 +65,8 @@ export const Header: React.FC = () => {
     isSyncingOffline,
     syncOfflineQueueNow,
     isPowerSavingActive,
-    setIsPinModalOpen
+    setIsPinModalOpen,
+    startInteractiveTutorial
   } = useApp();
 
   const headerVisibility = settings.buttonLayout?.headerButtonsVisibility || {};
@@ -130,6 +132,7 @@ export const Header: React.FC = () => {
         {headerVisibility.operatingMode !== false && (
           <button
             id="btn-header-operating-mode"
+            data-tour="operating-mode"
             type="button"
             onClick={() => {
               soundEffects.playGlassPress();
@@ -251,6 +254,7 @@ export const Header: React.FC = () => {
         {headerVisibility.toolsHub !== false && (
           <button
             id="btn-header-tools-hub"
+            data-tour="header-tools"
             type="button"
             onClick={() => {
               soundEffects.playGlassPress();
@@ -266,6 +270,21 @@ export const Header: React.FC = () => {
             )}
           </button>
         )}
+
+        {/* Dedicated Interactive Tutorial Walkthrough Button */}
+        <button
+          id="btn-header-tutorial"
+          type="button"
+          onClick={() => {
+            soundEffects.playGlassPress();
+            startInteractiveTutorial();
+          }}
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-xs font-black transition-all active:scale-95 cursor-pointer whitespace-nowrap btn-tactile shadow-xs"
+          title={language === 'ar' ? 'بدء الجولة التعريفية التفاعلية للنظام' : 'Start Interactive Walkthrough'}
+        >
+          <HelpCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="hidden md:inline">{language === 'ar' ? 'الجولة التعريفية' : 'Tutorial'}</span>
+        </button>
 
         {/* Offline / Sync Status Indicator (Only shown when offline or pending sync) */}
         {(!isOnline || offlineQueueCount > 0) && (

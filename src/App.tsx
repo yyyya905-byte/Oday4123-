@@ -44,6 +44,7 @@ import { RestaurantQrMenuModal } from './components/modals/RestaurantQrMenuModal
 import { UrgentIncomingOrderModal } from './components/modals/UrgentIncomingOrderModal';
 import { CustomerQrMenuPage } from './components/menu/CustomerQrMenuPage';
 import { FloatingActionHub } from './components/common/FloatingActionHub';
+import { InteractiveSpotlightTutorial } from './components/common/InteractiveSpotlightTutorial';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LongPressProvider } from './components/common/LongPressTooltip';
 import { WifiOff, RefreshCw, ArrowLeftRight, Database, CheckCircle2, Leaf } from 'lucide-react';
@@ -264,6 +265,9 @@ const AppContent: React.FC = () => {
 
       {/* Button Layout & UI Customizer Modal */}
       <ButtonLayoutModal />
+
+      {/* Interactive Step-by-Step Spotlight Tutorial & Walkthrough System */}
+      <InteractiveSpotlightTutorial />
 
       {/* Floating Offline Sync & Storage Status Banner */}
       {(!isOnline || offlineQueueCount > 0) && (

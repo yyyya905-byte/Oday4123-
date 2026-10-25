@@ -741,6 +741,8 @@ export const POSView: React.FC = () => {
         return (
           <button
             key="customizeButtons"
+            id="btn-pos-customize-layout"
+            data-tour="customize-layout"
             type="button"
             onClick={() => {
               soundEffects.playGlassPress();
@@ -820,7 +822,7 @@ export const POSView: React.FC = () => {
         )}
 
         {/* ORGANIZED POS WORKSTATION COMMAND BAR: Search + Unified Action Cluster */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 max-w-full">
+        <div data-tour="pos-search" className="flex flex-col md:flex-row items-stretch md:items-center gap-2 max-w-full">
           {/* 1. Spacious High-Contrast Search Input with Auto-Focus & Barcode Readiness */}
           <div className="relative flex-1 min-w-0">
             <input
@@ -902,7 +904,7 @@ export const POSView: React.FC = () => {
           )}
 
           {/* 2. Unified Cashier Command Cluster */}
-          <div className="flex items-center gap-1.5 apple-glass-card p-1 rounded-2xl shrink-0 overflow-x-auto no-scrollbar">
+          <div data-tour="pos-actions" className="flex items-center gap-1.5 apple-glass-card p-1 rounded-2xl shrink-0 overflow-x-auto no-scrollbar">
             {posActionButtonsOrder.map((btnId) => {
               if (posActionButtonsVisibility[btnId] === false) return null;
               return renderCashierButton(btnId);
@@ -999,7 +1001,7 @@ export const POSView: React.FC = () => {
         </div>
 
         {/* Products Display Area - Mode Tailored */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1 pb-32 lg:pb-10 max-w-full overscroll-contain">
+        <div data-tour="pos-products" className="flex-1 min-h-0 overflow-y-auto pr-1 pb-32 lg:pb-10 max-w-full overscroll-contain">
           {filteredProducts.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-center p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-slate-400">
               <ShoppingBag className="w-12 h-12 text-slate-300 dark:text-slate-700 mb-2" />
@@ -1447,6 +1449,8 @@ export const POSView: React.FC = () => {
 
       {/* RIGHT: POS Register Cart & Checkout Panel (Side-by-side on Desktop & Mobile Landscape) */}
       <div
+        id="pos-cart-container"
+        data-tour="pos-cart"
         className={`pos-cart-panel w-full lg:w-96 xl:w-[410px] apple-glass border-slate-200/80 dark:border-white/[0.08] flex flex-col h-full z-30 transition-transform ${cartOrderClass} ${
           isMobileCartOpen ? 'fixed inset-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl' : 'hidden lg:flex'
         }`}

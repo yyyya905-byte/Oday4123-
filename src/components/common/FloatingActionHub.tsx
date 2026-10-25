@@ -22,7 +22,8 @@ import {
   Check,
   GripVertical,
   ArrowUpToLine,
-  LayoutDashboard
+  LayoutDashboard,
+  HelpCircle
 } from 'lucide-react';
 import { haptics } from '../../services/haptics';
 
@@ -53,6 +54,7 @@ export const DEFAULT_FLOATING_HUB_ORDER: string[] = [
   'themeToggle',
   'themeColor',
   'customizeButtons',
+  'tutorial',
   'about'
 ];
 
@@ -69,6 +71,7 @@ export const DEFAULT_FLOATING_HUB_VISIBILITY: Record<string, boolean> = {
   themeToggle: true,
   themeColor: true,
   customizeButtons: true,
+  tutorial: true,
   about: true
 };
 
@@ -85,7 +88,8 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
     language,
     notify,
     isMasterDevice,
-    currentDeviceAllowedPages
+    currentDeviceAllowedPages,
+    startInteractiveTutorial
   } = useApp();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -267,6 +271,18 @@ export const FloatingActionHub: React.FC<FloatingActionHubProps> = () => {
       onTrigger: () => {
         setIsOpen(false);
         setIsButtonCustomizerModalOpen(true);
+      }
+    },
+    tutorial: {
+      id: 'tutorial',
+      labelAr: 'الجولة التعريفية التفاعلية',
+      labelEn: 'Interactive Tutorial',
+      icon: HelpCircle,
+      badgeColorClass: 'bg-amber-500/20 text-amber-600 dark:text-amber-400',
+      titleAr: 'بدء الجولة التفاعلية الشاملة للتعرف على وظائف النظام',
+      onTrigger: () => {
+        setIsOpen(false);
+        startInteractiveTutorial();
       }
     },
     about: {

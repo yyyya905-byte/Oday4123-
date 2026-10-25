@@ -36,7 +36,8 @@ import {
   Package,
   BarChart3,
   Coins,
-  Palette
+  Palette,
+  HelpCircle
 } from 'lucide-react';
 import { ButtonLayoutConfig, ButtonLayoutPreset, POSCartPosition, POSPayButtonAlignment, FloatingActionPosition } from '../../types';
 import { DEFAULT_FLOATING_HUB_ORDER, DEFAULT_FLOATING_HUB_VISIBILITY } from '../common/FloatingActionHub';
@@ -188,6 +189,7 @@ const FLOATING_BUTTONS_CATALOG: Record<string, HeaderButtonMeta> = {
   themeToggle: { id: 'themeToggle', nameAr: 'الوضع الليلي / النهاري', nameEn: 'Dark / Light Mode', icon: Sun },
   themeColor: { id: 'themeColor', nameAr: 'ألوان المتجر والهوية', nameEn: 'Theme Color', icon: Palette },
   customizeButtons: { id: 'customizeButtons', nameAr: 'تخصيص مواقع الأزرار', nameEn: 'Customize Layout', icon: Sliders },
+  tutorial: { id: 'tutorial', nameAr: 'الجولة التعريفية التفاعلية', nameEn: 'Interactive Tutorial', icon: HelpCircle },
   about: { id: 'about', nameAr: 'سجل التحسينات والدليل', nameEn: "What's New", icon: Sparkles }
 };
 

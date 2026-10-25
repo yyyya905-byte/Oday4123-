@@ -269,6 +269,9 @@ interface AppContextType {
   setIsPinModalOpen: (open: boolean) => void;
   isIdleLocked: boolean;
   setIsIdleLocked: (locked: boolean) => void;
+  isTutorialOpen: boolean;
+  setIsTutorialOpen: (open: boolean) => void;
+  startInteractiveTutorial: () => void;
 
   // Mandatory First-Time Login & 1-Week Guest Trial Mode & Purchase Activation
   isFirstLoginCompleted: boolean;
@@ -733,6 +736,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isQuickSaleOpen, setIsQuickSaleOpen] = useState<boolean>(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState<boolean>(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
+
+  const startInteractiveTutorial = () => {
+    soundEffects.playBatchChime(1);
+    setIsTutorialOpen(true);
+  };
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -7737,6 +7746,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsPinModalOpen,
         isIdleLocked,
         setIsIdleLocked,
+        isTutorialOpen,
+        setIsTutorialOpen,
+        startInteractiveTutorial,
         isFirstLoginCompleted,
         isFirstLoginModalOpen,
         setIsFirstLoginModalOpen,
