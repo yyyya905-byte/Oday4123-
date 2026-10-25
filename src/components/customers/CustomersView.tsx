@@ -32,11 +32,13 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Filter,
-  Layers
+  Layers,
+  Crown
 } from 'lucide-react';
 import { soundEffects } from '../../services/audio';
 import { AccountStatementModal } from '../debts/AccountStatementModal';
 import { PrintableVoucherModal } from '../debts/PrintableVoucherModal';
+import { LoyaltyProgramDashboard } from './LoyaltyProgramDashboard';
 import {
   buildDebtPeriodicReminderMessage,
   sendWhatsAppDebtMessage,
@@ -63,6 +65,7 @@ export const CustomersView: React.FC = () => {
     notify
   } = useApp();
 
+  const [mainTab, setMainTab] = useState<'debts_customers' | 'loyalty_dashboard'>('debts_customers');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'debt_only' | 'zero_debt' | 'loyalty'>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -338,17 +341,62 @@ export const CustomersView: React.FC = () => {
 
   return (
     <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6 bg-slate-50/50 dark:bg-slate-950">
-      {/* Top Header & Loyalty System Quick Toggle */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-              {t('customerLoyaltyTitle')} والذمم المالية
-            </h2>
-            <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-0.5 rounded-full">
-              {customers.length} عميل
-            </span>
-          </div>
+      {/* Top Primary Navigation Tabs */}
+      <div className="flex items-center gap-2.5 overflow-x-auto pb-1 border-b border-slate-200/80 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={() => {
+            soundEffects.playClick();
+            setMainTab('debts_customers');
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+            mainTab === 'debts_customers'
+              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-md'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4 text-blue-500" />
+          <span>سجل العملاء والذمم المالية</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
+            {customers.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            soundEffects.playClick();
+            setMainTab('loyalty_dashboard');
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+            mainTab === 'loyalty_dashboard'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25 ring-2 ring-amber-400'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <Crown className="w-4 h-4 text-amber-500" />
+          <span>لوحة برنامج نقاط الولاء والمكافآت (Loyalty Program)</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300 font-mono font-black">
+            {stats.totalPoints.toLocaleString()} ⭐
+          </span>
+        </button>
+      </div>
+
+      {mainTab === 'loyalty_dashboard' ? (
+        <LoyaltyProgramDashboard onBackToCustomers={() => setMainTab('debts_customers')} />
+      ) : (
+        <>
+          {/* Top Header & Loyalty System Quick Toggle */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                  {t('customerLoyaltyTitle')} والذمم المالية
+                </h2>
+                <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-0.5 rounded-full">
+                  {customers.length} عميل
+                </span>
+              </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             متابعة ديون كل عميل على حدة، إصدار سندات القبض، كشوفات الحسابات، وبطاقات العضوية بالـ QR Code
           </p>
@@ -453,21 +501,28 @@ export const CustomersView: React.FC = () => {
         </div>
 
         {/* Loyalty System Status Card */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-amber-200/90 dark:border-amber-900/40 shadow-xs flex items-center justify-between">
+        <div
+          onClick={() => {
+            soundEffects.playClick();
+            setMainTab('loyalty_dashboard');
+          }}
+          className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-amber-200/90 dark:border-amber-900/40 shadow-xs flex items-center justify-between cursor-pointer hover:border-amber-400 hover:shadow-md transition-all group"
+          title="انقر لفتح لوحة برنامج نقاط الولاء والمكافآت"
+        >
           <div>
             <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>نظام نقاط الولاء</span>
+              <span>نظام نقاط الولاء والمكافآت</span>
             </span>
             <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
-              {settings.enableLoyaltyPoints !== false ? `${stats.totalPoints} نقطة` : 'متوقف'}
+              {settings.enableLoyaltyPoints !== false ? `${stats.totalPoints.toLocaleString()} نقطة` : 'متوقف'}
             </h3>
-            <span className="text-[10px] text-slate-400 block mt-0.5">
-              {settings.enableLoyaltyPoints !== false ? 'مفعل لكافة الفواتير' : 'معطل من الإعدادات'}
+            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold block mt-0.5 group-hover:underline">
+              فتح لوحة الولاء والمكافآت 👈
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-            <Star className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-amber-500/10 group-hover:bg-amber-500 group-hover:text-slate-950 text-amber-600 dark:text-amber-400 flex items-center justify-center transition-colors">
+            <Crown className="w-5 h-5" />
           </div>
         </div>
       </div>
@@ -853,7 +908,7 @@ export const CustomersView: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Adjust Points or Print Card */}
+                {/* Adjust Points, Loyalty Dashboard or Print Card */}
                 <div className="flex gap-2">
                   {settings.enableLoyaltyPoints !== false && (
                     <button
@@ -861,9 +916,21 @@ export const CustomersView: React.FC = () => {
                       className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Star className="w-3.5 h-3.5" />
-                      <span>تعديل رصيد النقاط</span>
+                      <span>تعديل النقاط</span>
                     </button>
                   )}
+
+                  <button
+                    onClick={() => {
+                      soundEffects.playClick();
+                      setMainTab('loyalty_dashboard');
+                    }}
+                    className="px-3 py-2.5 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl border border-purple-200 dark:border-purple-800 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    title="فتح لوحة برنامج نقاط الولاء والمكافآت"
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>لوحة الولاء</span>
+                  </button>
 
                   <button
                     onClick={() => window.print()}
@@ -945,6 +1012,8 @@ export const CustomersView: React.FC = () => {
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* MODAL 1: Add New Customer */}
       {isAddModalOpen && (

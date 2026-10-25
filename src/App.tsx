@@ -41,6 +41,7 @@ import { StorageProactiveAlertToast } from './components/common/StorageProactive
 import { ShiftHandoverModal } from './components/modals/ShiftHandoverModal';
 import { PromotionsModal } from './components/modals/PromotionsModal';
 import { RestaurantQrMenuModal } from './components/modals/RestaurantQrMenuModal';
+import { UrgentIncomingOrderModal } from './components/modals/UrgentIncomingOrderModal';
 import { CustomerQrMenuPage } from './components/menu/CustomerQrMenuPage';
 import { FloatingActionHub } from './components/common/FloatingActionHub';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -95,13 +96,23 @@ const AppContent: React.FC = () => {
 
   // If this device was paired or selected as a dedicated terminal
   if (dedicatedDeviceRole === 'kitchen_display' && businessMode === 'restaurant') {
-    return <KitchenDisplayView onBackToMain={exitSubDeviceMode} />;
+    return (
+      <>
+        <KitchenDisplayView onBackToMain={exitSubDeviceMode} />
+        <UrgentIncomingOrderModal />
+      </>
+    );
   }
   if (dedicatedDeviceRole === 'customer_display') {
     return <CustomerFacingDisplayView onBackToMain={exitSubDeviceMode} />;
   }
   if (dedicatedDeviceRole === 'waiter_mobile' && businessMode === 'restaurant') {
-    return <MobileWaiterView onBackToMain={exitSubDeviceMode} />;
+    return (
+      <>
+        <MobileWaiterView onBackToMain={exitSubDeviceMode} />
+        <UrgentIncomingOrderModal />
+      </>
+    );
   }
   if (dedicatedDeviceRole === 'stock_scanner' && (!currentDeviceAllowedPages || !currentDeviceAllowedPages.includes(activeTab))) {
     return <MobileStockScannerView onBackToMain={exitSubDeviceMode} />;
@@ -240,6 +251,9 @@ const AppContent: React.FC = () => {
           onClose={() => setIsRestaurantQrModalOpen(false)}
         />
       )}
+
+      {/* Instant Interactive Urgent Alert Popup for Cashier & Waiter */}
+      <UrgentIncomingOrderModal />
 
       {/* App Purchase Code Activation Modal */}
       <AppPurchaseModal

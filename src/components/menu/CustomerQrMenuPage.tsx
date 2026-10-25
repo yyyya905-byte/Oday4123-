@@ -790,6 +790,11 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   const [editTargetStationName, setEditTargetStationName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Fast Aquatic Ripple & Instant Floating Feedback State
+  const [activeRippleId, setActiveRippleId] = useState<string | null>(null);
+  const [floatingBadgeItem, setFloatingBadgeItem] = useState<{ id: string; name: string } | null>(null);
+  const [fastToastMessage, setFastToastMessage] = useState<string | null>(null);
+
   const formatMoney = (amount: number) => {
     const num = Number(amount) || 0;
     const sym = activeSettings?.currency?.symbolNative || activeSettings?.currency?.symbol || 'ل.س';
@@ -859,7 +864,32 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   const getCartItem = (productId: string) => customerCart.find(c => c.product.id === productId);
 
   const handleAddItem = (product: Product) => {
+    // 1. Instant tactile haptic response
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(22);
+      } catch {}
+    }
     soundEffects.playClick();
+
+    // 2. Trigger fast aquatic ripple and floating badge feedback
+    setActiveRippleId(product.id);
+    setFloatingBadgeItem({ id: product.id, name: product.nameAr });
+    setFastToastMessage(`تمت الإضافة: ${product.nameAr} 💧`);
+
+    setTimeout(() => {
+      setActiveRippleId(null);
+    }, 450);
+
+    setTimeout(() => {
+      setFloatingBadgeItem(null);
+    }, 650);
+
+    setTimeout(() => {
+      setFastToastMessage(null);
+    }, 1200);
+
+    // 3. Instant optimistic cart counter update
     setCustomerCart(prev => {
       const existing = prev.find(c => c.product.id === product.id);
       if (existing) {
@@ -870,6 +900,11 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
   };
 
   const handleUpdateQty = (productId: string, newQty: number) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(15);
+      } catch {}
+    }
     soundEffects.playClick();
     if (newQty <= 0) {
       setCustomerCart(prev => prev.filter(c => c.product.id !== productId));
@@ -1093,12 +1128,13 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
       } catch {}
 
       if (appCtx?.addKitchenOrder) {
-        // Trigger local notification if not already added via SSE
+        // Trigger local notification & urgent popup if in preview or shared instance
         appCtx.notify?.(
           `📱 طلب زبون جديد (${createdOrder.tableName}) — وصل للكاشير والنادل`,
           `رقم الطلب: ${createdOrder.orderNumber} • الإجمالي: ${formatMoney(totalCartPrice)}`,
           'warning'
         );
+        appCtx.setUrgentIncomingOrder?.(createdOrder);
       }
 
       // Broadcast via BroadcastChannel for instant local tabs
@@ -2214,7 +2250,15 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                           </div>
 
                           {/* Add to Cart / Quantity Controls (Styled with activeTheme.primaryColor) */}
-                          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+                          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 relative">
+                            {/* Floating +1 Micro-badge Feedback */}
+                            {floatingBadgeItem?.id === product.id && (
+                              <span className="animate-float-badge absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-2 py-0.5 rounded-full bg-cyan-500 text-white font-black font-mono text-[11px] shadow-lg flex items-center gap-0.5 border border-white/40">
+                                <span>+1</span>
+                                <span className="text-[10px]">💧</span>
+                              </span>
+                            )}
+
                             {!cartItem ? (
                               <button
                                 type="button"
@@ -2223,9 +2267,12 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                                   backgroundColor: activeTheme.primaryColor,
                                   color: activeTheme.buttonTextColor,
                                 }}
-                                className="w-full py-2.5 px-4 rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
+                                className="relative overflow-hidden w-full py-2.5 px-4 rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:opacity-95 active:scale-95 transition-all duration-75 cursor-pointer"
                               >
-                                <Plus className="w-4 h-4" />
+                                {activeRippleId === product.id && (
+                                  <span className="animate-water-ripple absolute inset-0 rounded-2xl bg-cyan-300/40 pointer-events-none" />
+                                )}
+                                <Plus className="w-4 h-4 transition-transform active:rotate-90 duration-75" />
                                 <span>إضافة إلى الطلب</span>
                               </button>
                             ) : (
@@ -2235,7 +2282,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateQty(product.id, cartItem.quantity - 1)}
-                                      className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-2xs active:scale-90 cursor-pointer"
+                                      className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-2xs active:scale-85 transition-transform duration-75 cursor-pointer"
                                     >
                                       <Minus className="w-4 h-4" />
                                     </button>
@@ -2249,8 +2296,11 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                                         backgroundColor: activeTheme.primaryColor,
                                         color: activeTheme.buttonTextColor,
                                       }}
-                                      className="w-8 h-8 rounded-xl flex items-center justify-center shadow-2xs active:scale-90 cursor-pointer"
+                                      className="relative overflow-hidden w-8 h-8 rounded-xl flex items-center justify-center shadow-2xs active:scale-85 transition-transform duration-75 cursor-pointer"
                                     >
+                                      {activeRippleId === product.id && (
+                                        <span className="animate-water-ripple absolute inset-0 rounded-xl bg-cyan-300/50 pointer-events-none" />
+                                      )}
                                       <Plus className="w-4 h-4" />
                                     </button>
                                   </div>
@@ -2316,6 +2366,19 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
         )}
       </main>
 
+      {/* Fast Aquatic Micro Toast for Quick Add-to-Cart Confirmation */}
+      {fastToastMessage && (
+        <div className="fixed top-20 inset-x-0 z-50 flex justify-center pointer-events-none px-4 animate-in slide-in-from-top-3 fade-in duration-150">
+          <div className="bg-slate-900/90 dark:bg-slate-950/95 backdrop-blur-md text-white border border-cyan-500/40 px-4 py-2 rounded-full shadow-2xl flex items-center gap-2.5 text-xs font-black ring-2 ring-cyan-500/20">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
+            </span>
+            <span>{fastToastMessage}</span>
+          </div>
+        </div>
+      )}
+
       {/* Sticky Bottom Customer Order Cart Bar */}
       {totalCartCount > 0 && (
         <div className="fixed bottom-0 inset-x-0 z-40 p-3 sm:p-4 bg-gradient-to-t from-slate-950/80 via-slate-950/40 to-transparent pointer-events-none">
@@ -2330,7 +2393,13 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
               className="w-full p-3.5 sm:p-4 rounded-3xl shadow-2xl flex items-center justify-between gap-3 transition-all active:scale-98 cursor-pointer border-2 border-white/25"
             >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-slate-950 text-white flex items-center justify-center font-black font-mono text-base shadow-md">
+                <div
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black font-mono text-base shadow-md transition-all duration-200 ${
+                    floatingBadgeItem
+                      ? 'scale-120 bg-cyan-500 text-white ring-4 ring-cyan-300/50'
+                      : 'bg-slate-950 text-white'
+                  }`}
+                >
                   {totalCartCount}
                 </div>
                 <div className="text-start">
@@ -2349,7 +2418,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-950 text-white px-4 py-2.5 rounded-2xl font-extrabold text-xs sm:text-sm shadow-md">
+              <div className="flex items-center gap-2 bg-slate-950 text-white px-4 py-2.5 rounded-2xl font-extrabold text-xs sm:text-sm shadow-md active:scale-95 transition-transform duration-75">
                 <span>تأكيد وإرسال الطلب</span>
                 <Send className="w-4 h-4 text-amber-400" />
               </div>
@@ -2545,7 +2614,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                       <button
                         type="button"
                         onClick={() => handleUpdateQty(item.product.id, item.quantity - 1)}
-                        className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer"
+                        className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center active:scale-85 transition-transform duration-75 cursor-pointer shadow-2xs"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
@@ -2559,7 +2628,7 @@ export const CustomerQrMenuPage: React.FC<CustomerQrMenuPageProps> = ({
                           backgroundColor: activeTheme.primaryColor,
                           color: activeTheme.buttonTextColor,
                         }}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-85 transition-transform duration-75 cursor-pointer shadow-2xs"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>

@@ -61,6 +61,7 @@ import { testWhatsAppCloudApiConnection } from '../../services/debtCollectionSer
 import { isAuthorizedToGenerateCodes } from '../../utils/licenseUtils';
 import { StoreLogoUploader } from './StoreLogoUploader';
 import { ReceiptHeaderFooterSettings } from './ReceiptHeaderFooterSettings';
+import { MultiCurrencyManagerPanel } from './MultiCurrencyManagerPanel';
 
 interface ContrastLevelConfig {
   id: DarkContrastLevel;
@@ -662,9 +663,12 @@ export const SettingsView: React.FC = () => {
         </button>
       </div>
 
-      {/* TAB 0: Currency & Exchange Rate Bulletin */}
+      {/* TAB 0: Currency & Exchange Rate Bulletin & Multi-Currency */}
       {activeSubTab === 'currency' && (
-        <div className="space-y-6 max-w-4xl animate-in fade-in">
+        <div className="space-y-6 max-w-5xl animate-in fade-in">
+          {/* Multi-Currency Support & Live Currency Converter */}
+          <MultiCurrencyManagerPanel />
+
           {/* Base Currency Switcher & Conversion Card */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">

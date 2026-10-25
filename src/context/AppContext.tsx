@@ -633,6 +633,10 @@ interface AppContextType {
   tableServiceRequests: TableServiceRequest[];
   submitTableServiceRequest: (req: Omit<TableServiceRequest, 'id' | 'createdAt' | 'status'>) => Promise<TableServiceRequest>;
   acknowledgeTableServiceRequest: (requestId: string, status?: TableServiceRequest['status']) => void;
+  urgentIncomingOrder: KitchenOrder | null;
+  setUrgentIncomingOrder: React.Dispatch<React.SetStateAction<KitchenOrder | null>>;
+  urgentTableRequest: TableServiceRequest | null;
+  setUrgentTableRequest: React.Dispatch<React.SetStateAction<TableServiceRequest | null>>;
   restaurantTables: RestaurantTableInfo[];
   updateRestaurantTables: (tables: RestaurantTableInfo[]) => void;
   updateQrMenuTheme: (themeUpdates: Partial<QrMenuThemeConfig>) => void;
@@ -6344,6 +6348,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   };
 
+  // Urgent Live Incoming Order & Table Call State for Instant Cashier/Waiter Alert
+  const [urgentIncomingOrder, setUrgentIncomingOrder] = useState<KitchenOrder | null>(null);
+  const [urgentTableRequest, setUrgentTableRequest] = useState<TableServiceRequest | null>(null);
+
   // Table Service Requests (Call Waiter / Request Bill / Water & Napkins)
   const [tableServiceRequests, setTableServiceRequests] = useState<TableServiceRequest[]>(() => {
     try {
@@ -7026,6 +7034,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const exists = prev.some(o => o.id === payload.order.id);
                 return exists ? prev : [payload.order, ...prev];
               });
+              setUrgentIncomingOrder(payload.order);
               const itemsSummary = (payload.order.items || [])
                 .map((i: any) => `${i.quantity}× ${i.nameAr}`)
                 .join('، ');
@@ -7042,6 +7051,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const exists = prev.some(r => r.id === payload.request.id);
                 return exists ? prev : [payload.request, ...prev];
               });
+              setUrgentTableRequest(payload.request);
               soundEffects.saleSuccess();
               notify(
                 `🔔 طلب خدمة من (${payload.request.tableName})`,
@@ -7393,6 +7403,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const exists = prev.some(o => o.id === data.order.id);
               return exists ? prev : [data.order, ...prev];
             });
+            setUrgentIncomingOrder(data.order);
             const itemsSummary = (data.order.items || [])
               .map((i: any) => `${i.quantity}× ${i.nameAr}`)
               .join('، ');
@@ -7414,6 +7425,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const exists = prev.some(r => r.id === data.request.id);
               return exists ? prev : [data.request, ...prev];
             });
+            setUrgentTableRequest(data.request);
             soundEffects.saleSuccess();
             notify(
               `🔔 نداء طاولة وارد (${data.request.tableName})`,
@@ -7948,6 +7960,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         tableServiceRequests,
         submitTableServiceRequest,
         acknowledgeTableServiceRequest,
+        urgentIncomingOrder,
+        setUrgentIncomingOrder,
+        urgentTableRequest,
+        setUrgentTableRequest,
         restaurantTables,
         updateRestaurantTables,
         updateQrMenuTheme,

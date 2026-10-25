@@ -374,6 +374,24 @@ export interface CurrencyConfig {
   decimals: number;
 }
 
+export interface SecondaryCurrencyConfig {
+  id: string;
+  code: string; // e.g. 'USD', 'EUR', 'TRY', 'SAR', 'AED', 'LBP'
+  nameAr: string;
+  nameEn: string;
+  symbol: string;
+  symbolNative: string;
+  decimals: number;
+  exchangeRateToBase: number; // e.g. 1 USD = 14800 Base Units (or Base per 1 Unit)
+  rateType: 'multiplier' | 'divisor'; // how to convert: 1 Secondary = exchangeRateToBase Base
+  branchName?: string; // e.g. "فرع دبي", "فرع إسطنبول", "الفرع الدولي", "حوالات وتصدير"
+  isEnabled: boolean;
+  displayInPos?: boolean;
+  displayInInvoices?: boolean;
+  autoSyncWithBulletin?: boolean;
+  updatedAt: string;
+}
+
 export interface ExchangeRateBulletin {
   usdBuyRate: number; // e.g. 14800 Base Currency per 1 USD
   usdSellRate: number; // e.g. 14950 Base Currency per 1 USD
@@ -570,6 +588,7 @@ export interface StoreSettings {
   taxNumber: string;
   commercialRecord: string;
   currency: CurrencyConfig;
+  secondaryCurrencies?: SecondaryCurrencyConfig[];
   exchangeBulletin?: ExchangeRateBulletin;
   buttonLayout?: ButtonLayoutConfig;
   // Theme Color & Store Brand Identity
