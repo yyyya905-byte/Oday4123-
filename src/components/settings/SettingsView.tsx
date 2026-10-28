@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Settings,
@@ -22,6 +22,9 @@ import {
   FileSpreadsheet,
   Coins,
   ArrowRightLeft,
+  ArrowRight,
+  Search,
+  LayoutGrid,
   Calculator,
   RefreshCw,
   Info,
@@ -127,6 +130,394 @@ const CONTRAST_LEVELS: readonly ContrastLevelConfig[] = [
   },
 ];
 
+export type SettingsSubTab =
+  | 'hub'
+  | 'general'
+  | 'currency'
+  | 'receipt_design'
+  | 'receipt_header_footer'
+  | 'printer'
+  | 'theme_color'
+  | 'appearance'
+  | 'buttons_layout'
+  | 'retail_pos'
+  | 'wholesale_depot'
+  | 'debt_whatsapp'
+  | 'google_drive'
+  | 'indexeddb_autobackup'
+  | 'license';
+
+export interface DeepSearchOption {
+  id: string;
+  cardId: SettingsSubTab;
+  categoryLabel: string;
+  titleAr: string;
+  titleEn: string;
+  descAr: string;
+  keywords: string[];
+  icon: React.ElementType;
+  elementAnchorId?: string;
+}
+
+const SETTINGS_DEEP_OPTIONS: DeepSearchOption[] = [
+  // 1. General & Brand
+  {
+    id: 'store_name_ar',
+    cardId: 'general',
+    categoryLabel: 'الهوية والبيانات',
+    titleAr: 'اسم المتجر بالعربية والإنجليزية',
+    titleEn: 'Store Arabic & English Name',
+    descAr: 'الاسم التجاري للمنشأة الذي يظهر على واجهة الكاشير ورأس الفواتير.',
+    keywords: ['اسم', 'متجر', 'محل', 'شركة', 'عربي', 'تسمية', 'عنوان', 'ماركة'],
+    icon: Store,
+    elementAnchorId: 'setting-anchor-store-name'
+  },
+  {
+    id: 'store_logo',
+    cardId: 'general',
+    categoryLabel: 'الهوية والبيانات',
+    titleAr: 'شعار المتجر (اللوغو)',
+    titleEn: 'Store Brand Logo',
+    descAr: 'رفع وتعديل الشعار الصوري المطبوع في الإيصالات والتقارير.',
+    keywords: ['شعار', 'لوغو', 'لوجو', 'صورة', 'رمز', 'علامة', 'لوقو'],
+    icon: Store,
+    elementAnchorId: 'setting-anchor-store-logo'
+  },
+  {
+    id: 'store_phones',
+    cardId: 'general',
+    categoryLabel: 'الهوية والبيانات',
+    titleAr: 'أرقام هواتف وتواصل المنشأة',
+    titleEn: 'Store Phone Numbers',
+    descAr: 'أرقام الهاتف الثابت والجوال المطبوعة على ترويسة الفاتورة.',
+    keywords: ['هاتف', 'جوال', 'موبايل', 'تلفون', 'اتصال', 'رقم', 'واتس'],
+    icon: Store,
+    elementAnchorId: 'setting-anchor-store-phone'
+  },
+  {
+    id: 'commercial_tax_records',
+    cardId: 'general',
+    categoryLabel: 'الهوية والبيانات',
+    titleAr: 'السجل التجاري والرقم الضريبي',
+    titleEn: 'Commercial Record & Tax ID',
+    descAr: 'بيانات التسجيل القانوني والضريبي للمنشأة والفروع.',
+    keywords: ['سجل', 'تجاري', 'رقم', 'ضريبي', 'ترخيص', 'شركة', 'قانوني'],
+    icon: Store,
+    elementAnchorId: 'setting-anchor-store-tax'
+  },
+
+  // 2. Currencies & Exchange
+  {
+    id: 'base_currency',
+    cardId: 'currency',
+    categoryLabel: 'العملات والصرف',
+    titleAr: 'العملة الأساسية للنظام',
+    titleEn: 'Primary Base Currency',
+    descAr: 'تغيير العملة الأساسية للمبيعات وحسابات المنتجات.',
+    keywords: ['عملة', 'اساسية', 'دينار', 'ليرة', 'دولار', 'ريال', 'درهم', 'سعر'],
+    icon: Coins,
+    elementAnchorId: 'setting-anchor-base-currency'
+  },
+  {
+    id: 'multi_currencies',
+    cardId: 'currency',
+    categoryLabel: 'العملات والصرف',
+    titleAr: 'العملات الثانوية ومحول الصرف اللحظي',
+    titleEn: 'Multi-Currency & Conversion',
+    descAr: 'إضافة عملات دولية إضافية وتحويل الأسعار فورياً بين العملات.',
+    keywords: ['عملات', 'ثانوية', 'تحويل', 'محول', 'سعر صرف', 'دولار', 'يورو', 'حاسبة'],
+    icon: Coins,
+    elementAnchorId: 'setting-anchor-multi-currency'
+  },
+  {
+    id: 'lebanese_lira',
+    cardId: 'currency',
+    categoryLabel: 'العملات والصرف',
+    titleAr: 'خيار العملة اللبنانية (LBP / ل.ل)',
+    titleEn: 'Lebanese Pound Dual Pricing',
+    descAr: 'تفعيل تسعير الليرة اللبنانية مع نشرة الصرف والدفع المزدوج بالدولار.',
+    keywords: ['لبنان', 'ليرة', 'لبنانية', 'بيروت', 'LBP', 'دولار', 'صرف', 'مزدوج'],
+    icon: Coins,
+    elementAnchorId: 'setting-anchor-lebanese-currency'
+  },
+  {
+    id: 'exchange_rates_bulletin',
+    cardId: 'currency',
+    categoryLabel: 'العملات والصرف',
+    titleAr: 'نشرة أسعار الصرف الحية والذهب',
+    titleEn: 'Live Exchange Bulletin',
+    descAr: 'متابعة وتحديث سعر شراء ومبيع الدولار واليورو وغرام الذهب 21.',
+    keywords: ['نشرة', 'صرف', 'ذهب', 'دولار', 'يورو', 'مركزي', 'شراء', 'مبيع', 'اسعار'],
+    icon: Coins,
+    elementAnchorId: 'setting-anchor-exchange-bulletin'
+  },
+
+  // 3. Printing & Receipts
+  {
+    id: 'receipt_layout_designer',
+    cardId: 'receipt_design',
+    categoryLabel: 'الفواتير والطباعة',
+    titleAr: 'محرر تخطيط الفاتورة (سحب وإفلات)',
+    titleEn: 'Visual Receipt Designer',
+    descAr: 'إعادة ترتيب حقول الفاتورة، الباركود، والضريبة بالسحب والإفلات.',
+    keywords: ['تصميم', 'فاتورة', 'سحب', 'إفلات', 'حقول', 'ترتيب', 'معاينة', 'ايصال'],
+    icon: Receipt,
+    elementAnchorId: 'setting-anchor-receipt-designer'
+  },
+  {
+    id: 'receipt_header_footer',
+    cardId: 'receipt_header_footer',
+    categoryLabel: 'الفواتير والطباعة',
+    titleAr: 'ترويسة وتذييل الفاتورة وشروط الاسترجاع',
+    titleEn: 'Receipt Header, Footer & Policy',
+    descAr: 'نصوص الشكر، سياسة التبديل والضمان، ورسائل أسفل الفاتورة.',
+    keywords: ['ترويسة', 'تذييل', 'شكر', 'سياسة', 'استرجاع', 'تبديل', 'فوتر', 'هيدر', 'رسالة'],
+    icon: FileSpreadsheet,
+    elementAnchorId: 'setting-anchor-receipt-header-footer'
+  },
+  {
+    id: 'printer_paper_size',
+    cardId: 'printer',
+    categoryLabel: 'الفواتير والطباعة',
+    titleAr: 'مقاس ورق الطباعة الحرارية (80mm / 58mm / A4)',
+    titleEn: 'Receipt Paper Size & Width',
+    descAr: 'تحديد عرض رول الورق الحراري أو صفحة A4 الرسمية.',
+    keywords: ['مقاس', 'ورق', 'طابعة', 'عرض', 'رول', '80mm', '58mm', 'A4', 'حراري'],
+    icon: Printer,
+    elementAnchorId: 'setting-anchor-paper-size'
+  },
+  {
+    id: 'printer_auto_print',
+    cardId: 'printer',
+    categoryLabel: 'الفواتير والطباعة',
+    titleAr: 'الطباعة التلقائية عند إتمام البيع',
+    titleEn: 'Auto-Print on Checkout',
+    descAr: 'طباعة الإيصال فوراً بمجرد الضغط على زر الدفع دون تأكيد.',
+    keywords: ['طباعة', 'تلقائي', 'فوري', 'دفع', 'بيع', 'كاشير'],
+    icon: Printer,
+    elementAnchorId: 'setting-anchor-auto-print'
+  },
+  {
+    id: 'printer_auto_cutter',
+    cardId: 'printer',
+    categoryLabel: 'الفواتير والطباعة',
+    titleAr: 'قاطع الورق التلقائي (Auto Cutter)',
+    titleEn: 'Automatic Paper Cutter',
+    descAr: 'إرسال أمر قطع الورق الميكانيكي بعد انتهاء طباعة الإيصال.',
+    keywords: ['قاطع', 'قطع', 'سكين', 'ورق', 'ميكانيكي', 'cutter'],
+    icon: Printer,
+    elementAnchorId: 'setting-anchor-auto-cutter'
+  },
+  {
+    id: 'printer_margins_feed',
+    cardId: 'printer',
+    categoryLabel: 'الفواتير والطباعة',
+    titleAr: 'معايرة هوامش الطباعة وتغذية الورق',
+    titleEn: 'Thermal Margins & Paper Feed',
+    descAr: 'ضبط المسافات بالمليمتر لمنع قطع الباركود أو التواريخ.',
+    keywords: ['هوامش', 'تغذية', 'مليمتر', 'مسافة', 'معايرة', 'حافة', 'قطع'],
+    icon: Printer,
+    elementAnchorId: 'setting-anchor-margins-feed'
+  },
+
+  // 4. Appearance & Themes
+  {
+    id: 'store_theme_color',
+    cardId: 'theme_color',
+    categoryLabel: 'المظهر والواجهة',
+    titleAr: 'ألوان المتجر والهوية البصرية',
+    titleEn: 'Store Brand Primary Color',
+    descAr: 'تخصيص اللون الأساسي لأزرار وبطاقات النظام (عنبر، زمردي، أزرق، وردي).',
+    keywords: ['لون', 'الوان', 'هوية', 'ثيم', 'عنبر', 'ازرق', 'اخضر', 'وردي', 'ستايل'],
+    icon: Palette,
+    elementAnchorId: 'setting-anchor-theme-color'
+  },
+  {
+    id: 'dark_mode_theme',
+    cardId: 'appearance',
+    categoryLabel: 'المظهر والواجهة',
+    titleAr: 'الوضع الليلي والنهاري (Dark / Light Mode)',
+    titleEn: 'Theme Light / Dark Mode',
+    descAr: 'التبديل بين المظهر الداكن والنهاري للشاشة.',
+    keywords: ['ليلي', 'داكن', 'نهاري', 'فاتح', 'مظهر', 'شاشة', 'اسود', 'ابيض'],
+    icon: Moon,
+    elementAnchorId: 'setting-anchor-theme-mode'
+  },
+  {
+    id: 'dark_contrast_level',
+    cardId: 'appearance',
+    categoryLabel: 'المظهر والواجهة',
+    titleAr: 'مستويات تباين الشاشة المظلمة (Soft/Normal/High/OLED)',
+    titleEn: 'Dark Display Contrast Level',
+    descAr: 'ضبط حدة التباين والسواد المطلق لشاشات OLED وبيئات العمل الخافتة.',
+    keywords: ['تباين', 'سواد', 'OLED', 'راحة', 'عين', 'خافت', 'مظلم', 'شاشة'],
+    icon: Contrast,
+    elementAnchorId: 'setting-anchor-contrast-level'
+  },
+  {
+    id: 'night_mode_schedule',
+    cardId: 'appearance',
+    categoryLabel: 'المظهر والواجهة',
+    titleAr: 'جدولة الوضع الليلي التلقائي حسب ساعات العمل',
+    titleEn: 'Automatic Night Mode Schedule',
+    descAr: 'تحديد وقت بدء ونهاية الوضع الليلي لتفعيله تلقائياً مساءً.',
+    keywords: ['جدولة', 'توقيت', 'ساعة', 'مساء', 'صباح', 'تلقائي', 'وقت'],
+    icon: Clock,
+    elementAnchorId: 'setting-anchor-night-schedule'
+  },
+  {
+    id: 'buttons_customizer',
+    cardId: 'buttons_layout',
+    categoryLabel: 'المظهر والواجهة',
+    titleAr: 'تخصيص وترتيب مواقع أزرار الكاشير',
+    titleEn: 'POS Action Buttons Customizer',
+    descAr: 'إعادة ترتيب أزرار الكاشير (الآلة الحاسبة، الباركود، الولاء، المفضلة).',
+    keywords: ['ازرار', 'ترتيب', 'تخصيص', 'مواقع', 'كاشير', 'لوحة', 'حاسبة'],
+    icon: Sliders,
+    elementAnchorId: 'setting-anchor-buttons-layout'
+  },
+  {
+    id: 'pos_cart_position',
+    cardId: 'buttons_layout',
+    categoryLabel: 'المظهر والواجهة',
+    titleAr: 'موقع سلة الفاتورة (يمين أو يسار للأعسر)',
+    titleEn: 'Cart Position (Right / Left Handed)',
+    descAr: 'نقل سلة المبيعات لليسار لتسهيل العمل لمستخدمي اليد اليسرى.',
+    keywords: ['سلة', 'يمين', 'يسار', 'اعسر', 'موقع', 'فاتورة', 'مكان'],
+    icon: Sliders,
+    elementAnchorId: 'setting-anchor-cart-position'
+  },
+
+  // 5. Retail POS & Loyalty
+  {
+    id: 'enable_tax',
+    cardId: 'retail_pos',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'تفعيل ضريبة المبيعات والنسبة الافتراضية',
+    titleEn: 'Sales Tax & Default Rate',
+    descAr: 'تطبيق ضريبة القيمة المضافة واحتساب نسبتها على الفواتير.',
+    keywords: ['ضريبة', 'قيمة مضافة', 'نسبة', 'مبيعات', 'tax', 'فاتورة'],
+    icon: ShoppingBag,
+    elementAnchorId: 'setting-anchor-tax'
+  },
+  {
+    id: 'enable_discounts',
+    cardId: 'retail_pos',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'تفعيل الخصومات على الفواتير',
+    titleEn: 'Invoice Discounts Permission',
+    descAr: 'السماح للكاشير بتطبيق خصم نقدي أو مئوي على إجمالي الفاتورة.',
+    keywords: ['خصم', 'تخفيض', 'تنزيلات', 'نسبة', 'مبلغ', 'حسم'],
+    icon: ShoppingBag,
+    elementAnchorId: 'setting-anchor-discounts'
+  },
+  {
+    id: 'loyalty_program',
+    cardId: 'retail_pos',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'نظام نقاط ولاء ومكافآت الزبائن',
+    titleEn: 'Customer Loyalty & Reward Points',
+    descAr: 'تفعيل نقاط المكافآت عند الشراء واستبدالها برصيد مالي للزبائن.',
+    keywords: ['ولاء', 'نقاط', 'مكافآت', 'زبائن', 'عملاء', 'استبدال', 'كسب'],
+    icon: Sparkles,
+    elementAnchorId: 'setting-anchor-loyalty'
+  },
+  {
+    id: 'sound_effects',
+    cardId: 'retail_pos',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'المؤثرات الصوتية للأزرار والمبيعات',
+    titleEn: 'System Sound Effects & Chimes',
+    descAr: 'تشغيل أو كتم نغمات نقرات الكاشير، فتح الدرج، واستلام النقد.',
+    keywords: ['صوت', 'نغمة', 'مؤثرات', 'صامت', 'جرس', 'كاش'],
+    icon: Volume2,
+    elementAnchorId: 'setting-anchor-sound-effects'
+  },
+  {
+    id: 'low_stock_threshold',
+    cardId: 'retail_pos',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'حد تنبيه انخفاض المخزون (نواقص البضاعة)',
+    titleEn: 'Low Stock Alert Threshold',
+    descAr: 'الحد الأدنى لكمية المنتج لإطلاق تنبيه النواقص وإعادة الطلب.',
+    keywords: ['مخزون', 'نواقص', 'تنبيه', 'حد ادنى', 'كمية', 'بضاعة', 'مستودع'],
+    icon: ShoppingBag,
+    elementAnchorId: 'setting-anchor-low-stock'
+  },
+
+  // 6. Wholesale & Warehouses
+  {
+    id: 'wholesale_credit_limit',
+    cardId: 'wholesale_depot',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'سقف الائتمان والديون لكبار تجار الجملة',
+    titleEn: 'Wholesale Credit Limit',
+    descAr: 'أعلى سقف مسموح به للمبيعات الآجلة قبل طلب سداد الدفعات.',
+    keywords: ['جملة', 'ائتمان', 'سقف', 'دين', 'تجار', 'آجل', 'ذمم'],
+    icon: Building2,
+    elementAnchorId: 'setting-anchor-wholesale-credit'
+  },
+  {
+    id: 'wholesale_warehouses_vehicles',
+    cardId: 'wholesale_depot',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'مستودعات التوزيع وأسطول شاحنات التوصيل',
+    titleEn: 'Distribution Hubs & Delivery Vans',
+    descAr: 'إدارة المستودعات الإقليمية وسيارات التوزيع والمانيفست اليومي.',
+    keywords: ['مستودع', 'شاحنة', 'توزيع', 'سيارة', 'توصيل', 'سائق', 'مانيفست'],
+    icon: Truck,
+    elementAnchorId: 'setting-anchor-wholesale-warehouses'
+  },
+
+  // 7. WhatsApp Automation
+  {
+    id: 'whatsapp_cloud_api',
+    cardId: 'debt_whatsapp',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'تحصيل الديون الآلي عبر WhatsApp Cloud API',
+    titleEn: 'Meta WhatsApp Automation',
+    descAr: 'ربط مفتاح API ورقم الهاتف لإرسال تذكيرات الديون وكشوف الحسابات.',
+    keywords: ['واتساب', 'whatsapp', 'رسائل', 'ديون', 'تحصيل', 'تذكير', 'api', 'كشف'],
+    icon: MessageSquareShare,
+    elementAnchorId: 'setting-anchor-whatsapp'
+  },
+
+  // 8. Backup & Security
+  {
+    id: 'google_drive_backup',
+    cardId: 'google_drive',
+    categoryLabel: 'النسخ والترخيص',
+    titleAr: 'النسخ الاحتياطي السحابي (Google Drive)',
+    titleEn: 'Google Drive Cloud Auto-Sync',
+    descAr: 'مزامنة وحفظ نسخ احتياطية مشفرة تلقائياً في السحاب.',
+    keywords: ['نسخ', 'سحابي', 'قوقل', 'درايف', 'google', 'drive', 'سحابة', 'باك اب'],
+    icon: Cloud,
+    elementAnchorId: 'setting-anchor-google-drive'
+  },
+  {
+    id: 'indexeddb_auto_backup',
+    cardId: 'indexeddb_autobackup',
+    categoryLabel: 'النسخ والترخيص',
+    titleAr: 'النسخ الاحتياطي الذاتي واستعادة IndexedDB (JSON)',
+    titleEn: 'IndexedDB Local Auto-Backup & Restore',
+    descAr: 'تصدير واستيراد قواعد بيانات النظام بالكامل بصيغة JSON آمنة.',
+    keywords: ['نسخ محلي', 'تخزين', 'indexeddb', 'json', 'تصدير', 'استيراد', 'استعادة'],
+    icon: HardDrive,
+    elementAnchorId: 'setting-anchor-indexeddb'
+  },
+  {
+    id: 'app_license_key',
+    cardId: 'license',
+    categoryLabel: 'النسخ والترخيص',
+    titleAr: 'ترخيص وتفعيل التطبيق وإدارة الأجهزة التابعة',
+    titleEn: 'Software License & Multi-Device Pairing',
+    descAr: 'إدخال مفتاح التفعيل الدائم ومتابعة الأجهزة التابعة وربط الكاشيرات.',
+    keywords: ['ترخيص', 'تفعيل', 'كود', 'مفتاح', 'سيريال', 'شراء', 'جهاز', 'اجهزة'],
+    icon: KeyRound,
+    elementAnchorId: 'setting-anchor-license'
+  }
+];
+
 export const SettingsView: React.FC = () => {
   const {
     settings,
@@ -182,9 +573,41 @@ export const SettingsView: React.FC = () => {
 
   const isAuthorizedToGenerate = isAuthorizedToGenerateCodes(activeEmail);
 
-  const [activeSubTab, setActiveSubTab] = useState<'indexeddb_autobackup' | 'theme_color' | 'receipt_header_footer' | 'appearance' | 'receipt_design' | 'printer' | 'currency' | 'google_drive' | 'general' | 'retail_pos' | 'wholesale_depot' | 'debt_whatsapp' | 'license' | 'buttons_layout'>('receipt_design');
+  const [activeSubTab, setActiveSubTab] = useState<SettingsSubTab>('hub');
+  const [hubSearchQuery, setHubSearchQuery] = useState<string>('');
+  const [hubCategoryFilter, setHubCategoryFilter] = useState<'all' | 'financial' | 'printing' | 'appearance' | 'operations' | 'security'>('all');
+  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState<boolean>(false);
+  const [highlightedOptionId, setHighlightedOptionId] = useState<string | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-Save State & Inline Checkmarks
+  const [recentlySavedKeys, setRecentlySavedKeys] = useState<Record<string, boolean>>({});
+  const [lastSavedTimestamp, setLastSavedTimestamp] = useState<string | null>(null);
+  const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
+  const debounceTimersRef = useRef<Record<string, any>>({});
+
   const [formData, setFormData] = useState({ ...settings });
   const [fileInputKey, setFileInputKey] = useState(Date.now());
+
+  // Close search dropdown on click outside or Escape
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setIsSearchDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSearchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Synchronize local form data whenever settings change globally
   useEffect(() => {
@@ -222,6 +645,292 @@ export const SettingsView: React.FC = () => {
     displayInReceipts: settings.exchangeBulletin?.displayInReceipts !== false,
     preferredDisplay: settings.exchangeBulletin?.preferredDisplay || 'BOTH'
   });
+
+  const settingsCards = useMemo(() => [
+    {
+      id: 'general' as const,
+      category: 'financial' as const,
+      categoryLabel: 'الهوية والعملات',
+      titleAr: 'بيانات وشعار المنشأة',
+      titleEn: 'Business Profile & Logo',
+      descAr: 'اسم المتجر بالعربية والإنجليزية، شعار العلامة التجارية، السجل التجاري، الرقم الضريبي، وأرقام التواصل.',
+      icon: Store,
+      gradientClass: 'bg-gradient-to-br from-blue-500 to-indigo-600',
+      badge: settings.storeNameAr || 'بيانات المنشأة',
+      badgeColorClass: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20'
+    },
+    {
+      id: 'currency' as const,
+      category: 'financial' as const,
+      categoryLabel: 'الهوية والعملات',
+      titleAr: 'العملات وأسعار الصرف اللحظية',
+      titleEn: 'Currencies & Exchange Rates',
+      descAr: 'تحديد العملة الأساسية، إدارة العملات الثانوية، حاسبة الصرف المباشرة، ونشرة أسعار الليرة والدولار.',
+      icon: Coins,
+      gradientClass: 'bg-gradient-to-br from-emerald-500 to-teal-600',
+      badge: `${settings.currency.symbol} (${settings.currency.code})`,
+      badgeColorClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+    },
+    {
+      id: 'receipt_design' as const,
+      category: 'printing' as const,
+      categoryLabel: 'الفواتير والطباعة',
+      titleAr: 'محرر تصميم الفاتورة (سحب وإفلات)',
+      titleEn: 'Receipt Drag & Drop Designer',
+      descAr: 'تخصيص ترتيب الحقول، إخفاء وإظهار الباركود والـ QR وكود الفاتورة والضريبة مع شاشة معاينة حية فورية.',
+      icon: Receipt,
+      gradientClass: 'bg-gradient-to-br from-amber-500 to-orange-600',
+      badge: 'محرر مرئي تفاعلي',
+      badgeColorClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20'
+    },
+    {
+      id: 'receipt_header_footer' as const,
+      category: 'printing' as const,
+      categoryLabel: 'الفواتير والطباعة',
+      titleAr: 'ترويسة وتذييل الفاتورة والشعار',
+      titleEn: 'Receipt Header & Footer',
+      descAr: 'نصوص الترحيب، سياسة الاستبدال والاسترجاع، رسائل الشكر، ومعلومات الاتصال المطبوعة أسفل الفاتورة.',
+      icon: FileSpreadsheet,
+      gradientClass: 'bg-gradient-to-br from-sky-500 to-blue-600',
+      badge: 'نصوص مخصصة',
+      badgeColorClass: 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/20'
+    },
+    {
+      id: 'printer' as const,
+      category: 'printing' as const,
+      categoryLabel: 'الفواتير والطباعة',
+      titleAr: 'الطباعة ومعايرة الملصقات الحرارية',
+      titleEn: 'Printer & Paper Calibration',
+      descAr: 'تحديد مقاس الورق (80mm / 58mm / A4)، هوامش التغذية، قاطع الورق الآلي، وملصقات الباركود.',
+      icon: Printer,
+      gradientClass: 'bg-gradient-to-br from-slate-600 to-slate-800',
+      badge: formData.printPaperSize || '80mm',
+      badgeColorClass: 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/20'
+    },
+    {
+      id: 'theme_color' as const,
+      category: 'appearance' as const,
+      categoryLabel: 'المظهر والواجهة',
+      titleAr: 'نظام الألوان وهوية المتجر',
+      titleEn: 'Store Brand & Theme Colors',
+      descAr: 'اختيار اللون الأساسي لأزرار وبطاقات النظام (عنبر، زمردي، أزرق، وردي، وغيرها) وتطبيقه فورياً.',
+      icon: Palette,
+      gradientClass: 'bg-gradient-to-br from-pink-500 to-rose-600',
+      badge: activeThemeColor,
+      badgeColorClass: 'bg-pink-500/15 text-pink-700 dark:text-pink-300 border border-pink-500/20'
+    },
+    {
+      id: 'appearance' as const,
+      category: 'appearance' as const,
+      categoryLabel: 'المظهر والواجهة',
+      titleAr: 'المظهر والوضع الليلي لراحة العين',
+      titleEn: 'Theme Mode & Dark Contrast',
+      descAr: 'التبديل بين الوضع النهاري والليلي، مستويات التباين العالي، وجدولة الوضع الليلي حسب ساعات العمل.',
+      icon: Moon,
+      gradientClass: 'bg-gradient-to-br from-indigo-500 to-purple-600',
+      badge: themeMode === 'auto_time' ? 'تلقائي ذكي' : theme === 'dark' ? 'داكن' : 'فاتح',
+      badgeColorClass: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20'
+    },
+    {
+      id: 'buttons_layout' as const,
+      category: 'appearance' as const,
+      categoryLabel: 'المظهر والواجهة',
+      titleAr: 'تخصيص وترتيب مواقع الأزرار',
+      titleEn: 'Button Layout & Order Customizer',
+      descAr: 'إعادة ترتيب أزرار الكاشير السريعة، موضع سلة المبيعات (يمين أو يسار للأعسر)، وشريط الأدوات.',
+      icon: Sliders,
+      gradientClass: 'bg-gradient-to-br from-amber-500 to-yellow-600',
+      badge: settings.buttonLayout?.posCartPosition === 'left' ? 'سلة يسار' : 'سلة يمين',
+      badgeColorClass: 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/20'
+    },
+    {
+      id: 'retail_pos' as const,
+      category: 'operations' as const,
+      categoryLabel: 'المبيعات والعمليات',
+      titleAr: 'إعدادات قسم التجزئة ونقاط الولاء',
+      titleEn: 'Retail POS & Loyalty Points',
+      descAr: 'تفعيل الضرائب، نسب الخصومات، سياسات الإرجاع، ونظام احتساب واستبدال نقاط مكافآت الزبائن.',
+      icon: ShoppingBag,
+      gradientClass: 'bg-gradient-to-br from-emerald-500 to-green-600',
+      badge: formData.enableLoyaltyPoints !== false ? 'الولاء مفعّل' : 'الولاء معطّل',
+      badgeColorClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+    },
+    {
+      id: 'wholesale_depot' as const,
+      category: 'operations' as const,
+      categoryLabel: 'المبيعات والعمليات',
+      titleAr: 'إعدادات قسم الجملة والمستودعات',
+      titleEn: 'Wholesale & Warehouses Hub',
+      descAr: 'حدود الائتمان لكبار التجار، مستودعات التوزيع، وتعيين أسطول الشاحنات ومسارات التوصيل.',
+      icon: Building2,
+      gradientClass: 'bg-gradient-to-br from-orange-500 to-amber-600',
+      badge: 'مستودعات وتوزيع',
+      badgeColorClass: 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/20'
+    },
+    {
+      id: 'debt_whatsapp' as const,
+      category: 'operations' as const,
+      categoryLabel: 'المبيعات والعمليات',
+      titleAr: 'تحصيل الديون الآلي (WhatsApp API)',
+      titleEn: 'Automated WhatsApp Collections',
+      descAr: 'ربط WhatsApp Cloud API لإرسال إشعارات وتنبيهات سداد الديون وكشوف الحسابات للعملاء تلقائياً.',
+      icon: MessageSquareShare,
+      gradientClass: 'bg-gradient-to-br from-emerald-600 to-teal-700',
+      badge: formData.whatsappApiKey ? 'API متصل' : 'بحاجة لربط',
+      badgeColorClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+    },
+    {
+      id: 'google_drive' as const,
+      category: 'security' as const,
+      categoryLabel: 'النسخ والترخيص',
+      titleAr: 'النسخ الاحتياطي السحابي (Google Drive)',
+      titleEn: 'Google Drive Cloud Backup',
+      descAr: 'حفظ ومزامنة نسخ احتياطية مشفرة على سحابة Google Drive لضمان حماية بيانات المنشأة.',
+      icon: Cloud,
+      gradientClass: 'bg-gradient-to-br from-blue-600 to-indigo-700',
+      badge: settings.googleDriveConnected ? 'سحابي متصل' : 'غير متصل',
+      badgeColorClass: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20'
+    },
+    {
+      id: 'indexeddb_autobackup' as const,
+      category: 'security' as const,
+      categoryLabel: 'النسخ والترخيص',
+      titleAr: 'النسخ الذاتي واستعادة IndexedDB',
+      titleEn: 'IndexedDB Auto-Backup & Recovery',
+      descAr: 'حفظ آلي يومي محلي في المتصفح، وتصدير واستيراد قواعد البيانات الكاملة بصيغة JSON آمنة.',
+      icon: HardDrive,
+      gradientClass: 'bg-gradient-to-br from-teal-500 to-emerald-600',
+      badge: 'نسخ محلي تلقائي',
+      badgeColorClass: 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/20'
+    },
+    {
+      id: 'license' as const,
+      category: 'security' as const,
+      categoryLabel: 'النسخ والترخيص',
+      titleAr: 'شراء وترخيص التطبيق وإدارة الأجهزة',
+      titleEn: 'License & Device Activation',
+      descAr: 'إدخال كود التفعيل الدائم، متابعة ترخيص الأجهزة التابعة، ومراقبة أيام الفترة التجريبية.',
+      icon: KeyRound,
+      gradientClass: 'bg-gradient-to-br from-amber-500 to-rose-600',
+      badge: isAppPurchased ? 'مرخص دائم' : isTrialExpired ? 'منتهي' : `تجريبي (${trialDaysRemaining} أيام)`,
+      badgeColorClass: isAppPurchased
+        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/20'
+    }
+  ], [settings, formData, activeThemeColor, themeMode, theme, isAppPurchased, isTrialExpired, trialDaysRemaining]);
+
+  const filteredCards = useMemo(() => {
+    return settingsCards.filter(card => {
+      const matchesCategory = hubCategoryFilter === 'all' || card.category === hubCategoryFilter;
+      const q = hubSearchQuery.trim().toLowerCase();
+      const matchesSearch = !q ||
+        card.titleAr.toLowerCase().includes(q) ||
+        card.titleEn.toLowerCase().includes(q) ||
+        card.descAr.toLowerCase().includes(q) ||
+        card.categoryLabel.toLowerCase().includes(q);
+      return matchesCategory && matchesSearch;
+    });
+  }, [settingsCards, hubCategoryFilter, hubSearchQuery]);
+
+  // Deep search matching individual settings across the system catalog
+  const matchingDeepOptions = useMemo(() => {
+    const q = hubSearchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return SETTINGS_DEEP_OPTIONS.filter(opt => {
+      return (
+        opt.titleAr.toLowerCase().includes(q) ||
+        opt.titleEn.toLowerCase().includes(q) ||
+        opt.descAr.toLowerCase().includes(q) ||
+        opt.categoryLabel.toLowerCase().includes(q) ||
+        opt.keywords.some(k => k.toLowerCase().includes(q))
+      );
+    });
+  }, [hubSearchQuery]);
+
+  // Instant 1-click jump to specific option inside its card tab
+  const handleJumpToOption = (option: DeepSearchOption) => {
+    soundEffects.playGlassPress();
+    setActiveSubTab(option.cardId);
+    setIsSearchDropdownOpen(false);
+    setHighlightedOptionId(option.id);
+
+    // Smooth scroll to the option element anchor after rendering
+    setTimeout(() => {
+      const el = document.getElementById(option.elementAnchorId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-4', 'ring-amber-500', 'ring-offset-2', 'rounded-2xl', 'transition-all', 'duration-500');
+        setTimeout(() => {
+          el.classList.remove('ring-4', 'ring-amber-500', 'ring-offset-2');
+        }, 3200);
+      }
+    }, 150);
+
+    setTimeout(() => {
+      setHighlightedOptionId(null);
+    }, 3500);
+  };
+
+  // Immediate or Debounced Auto-Save Engine for all settings controls
+  const autoSaveSetting = (field: string, value: any, immediate = true) => {
+    // 1. Reactive state update for immediate UI reflection
+    setFormData(prev => ({ ...prev, [field]: value }));
+
+    const commitSave = (valToCommit: any) => {
+      setIsAutoSaving(true);
+      // 2. Persist to AppContext settings (which syncs to localStorage)
+      updateSettings({ [field]: valToCommit });
+      soundEffects.playGlassTap();
+
+      // 3. Mark key as saved for inline checkmark indicator
+      setRecentlySavedKeys(prev => ({ ...prev, [field]: true }));
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString(language === 'ar' ? 'ar-SY' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      setLastSavedTimestamp(timeStr);
+      setIsAutoSaving(false);
+
+      // 4. Auto-hide inline checkmark after 2.8s
+      setTimeout(() => {
+        setRecentlySavedKeys(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+      }, 2800);
+    };
+
+    if (immediate) {
+      if (debounceTimersRef.current[field]) {
+        clearTimeout(debounceTimersRef.current[field]);
+        delete debounceTimersRef.current[field];
+      }
+      commitSave(value);
+    } else {
+      // Debounce text/number inputs by 400ms
+      if (debounceTimersRef.current[field]) {
+        clearTimeout(debounceTimersRef.current[field]);
+      }
+      debounceTimersRef.current[field] = setTimeout(() => {
+        commitSave(value);
+        delete debounceTimersRef.current[field];
+      }, 400);
+    }
+  };
+
+  // Inline Auto-Save Checkmark Component
+  const renderSavedIndicator = (key: string) => {
+    if (!recentlySavedKeys[key]) return null;
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-lg animate-in fade-in zoom-in-95 duration-200 shrink-0">
+        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 animate-bounce" />
+        <span>تم الحفظ تلقائياً</span>
+      </span>
+    );
+  };
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -404,273 +1113,424 @@ export const SettingsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-xs">
+              <Settings className="w-4 h-4" />
+            </div>
             <span>{t('settingsTitle')}</span>
-            <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-0.5 rounded-full">
-              النسخ الاحتياطي وإعدادات الأقسام
+            <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-0.5 rounded-full border border-amber-500/20">
+              {activeSubTab === 'hub' ? 'لوحة البطاقات الذكية' : 'تعديل الإعدادات'}
             </span>
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            النسخ السحابي عبر Google Drive، تخصيص قسم المفرق والكاشير، وإعدادات قسم الجملة والمستودعات
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {activeSubTab === 'hub'
+              ? 'تخصيص الفواتير، أسعار الصرف، الهوية والطباعة، النسخ الاحتياطي وإدارة الأقسام عبر بطاقات منظمة'
+              : 'قم بضبط الخيارات المطلوبة حيث يتم حفظ التعديلات تلقائياً فور تغييرها'}
           </p>
+        </div>
+
+        {/* Global Auto-Save Status Badge & Back to Hub Button */}
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+          <div
+            id="settings-header-autosave-badge"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white dark:bg-slate-900 text-xs font-bold border border-slate-200/90 dark:border-slate-800 shadow-xs"
+            title="يتم حفظ جميع التبديلات والخيارات تلقائياً في النظام فور تغييرها"
+          >
+            {isAutoSaving ? (
+              <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                <span>جاري الحفظ تلقائياً...</span>
+              </span>
+            ) : lastSavedTimestamp ? (
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 animate-in fade-in">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span>تم الحفظ تلقائياً ({lastSavedTimestamp})</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span>الحفظ التلقائي مفعّل</span>
+              </span>
+            )}
+          </div>
+
+          {activeSubTab !== 'hub' && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playGlassTap();
+                setActiveSubTab('hub');
+              }}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all active:scale-95 cursor-pointer shadow-sm shadow-amber-500/20"
+            >
+              <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+              <span>عرض جميع البطاقات (14)</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Sub Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('receipt_design')}
-          id="btn-settings-subtab-receipt-layout-top"
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'receipt_design'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Receipt className="w-4 h-4 text-amber-500" />
-          <span>محرر تخطيط الفاتورة (سحب وإفلات) 🧾</span>
-          <span className="px-1.5 py-0.2 rounded-md text-[10px] bg-slate-900 text-amber-400 font-mono font-bold">
-            Drag & Drop
-          </span>
-        </button>
+      {/* ======================================================== */}
+      {/* 1. CARDS HUB VIEW (عرض الإعدادات على شكل بطاقات منظمة)   */}
+      {/* ======================================================== */}
+      {activeSubTab === 'hub' && (
+        <div className="space-y-6 max-w-7xl animate-in fade-in duration-200">
+          {/* Search Bar with Instant Deep-Search Dropdown & Category Filter Bar */}
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div ref={searchContainerRef} className="relative flex-1 max-w-xl">
+                <Search className="w-4 h-4 text-slate-400 absolute start-3.5 top-3.5 pointer-events-none" />
+                <input
+                  type="text"
+                  value={hubSearchQuery}
+                  onFocus={() => setIsSearchDropdownOpen(true)}
+                  onChange={(e) => {
+                    setHubSearchQuery(e.target.value);
+                    setIsSearchDropdownOpen(true);
+                  }}
+                  placeholder="ابحث مباشرة عن أي خيار أو إعداد (مثلاً: ورق، طابعة، ضريبة، تباين، سلة، ليرة)..."
+                  className="w-full ps-10 pe-9 py-2.5 bg-slate-50 dark:bg-slate-800/80 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all shadow-inner"
+                />
+                {hubSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHubSearchQuery('');
+                      setIsSearchDropdownOpen(false);
+                    }}
+                    className="absolute end-3 top-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('indexeddb_autobackup')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'indexeddb_autobackup'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <HardDrive className="w-4 h-4 text-emerald-500" />
-          <span>النسخ الاحتياطي الذاتي واستعادة IndexedDB (JSON)</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-600 text-white font-mono font-bold">
-            Auto-Backup
-          </span>
-        </button>
+                {/* Instant Deep Option Search Dropdown */}
+                {isSearchDropdownOpen && hubSearchQuery.trim().length > 0 && (
+                  <div className="absolute start-0 end-0 top-full mt-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-amber-500/30 dark:border-amber-500/20 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3.5 py-2 bg-amber-500/10 flex items-center justify-between text-[11px] font-black text-amber-900 dark:text-amber-200">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        <span>نتائج البحث المباشر في الخيارات ({matchingDeepOptions.length} إعداد)</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">انقر للوصول المباشر للخيار</span>
+                    </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('theme_color')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'theme_color'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Palette className="w-4 h-4 text-amber-500" />
-          <span>نظام الألوان وهوية المتجر 🎨</span>
-          <span
-            className="w-3 h-3 rounded-full border border-white shadow-xs"
-            style={{ backgroundColor: activePrimaryHex || '#f59e0b' }}
-          />
-        </button>
+                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 no-scrollbar">
+                      {matchingDeepOptions.length > 0 ? (
+                        matchingDeepOptions.map(opt => {
+                          const IconComponent = opt.icon || Sliders;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => handleJumpToOption(opt)}
+                              className="w-full p-3 text-start hover:bg-amber-500/10 dark:hover:bg-slate-800 transition-all flex items-start justify-between gap-3 group cursor-pointer"
+                            >
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-110 transition-transform">
+                                  <IconComponent className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-black text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                                      {opt.titleAr}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60">
+                                      {opt.categoryLabel}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                                    {opt.descAr}
+                                  </p>
+                                  <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                                    {opt.titleEn}
+                                  </span>
+                                </div>
+                              </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('receipt_header_footer')}
-          id="btn-settings-subtab-header-footer"
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'receipt_header_footer'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Store className="w-4 h-4 text-amber-500" />
-          <span>شعار وترويسة وتذييل الفاتورة 🧾</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold border border-amber-500/30">
-            مطبوع
-          </span>
-        </button>
+                              <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20 group-hover:bg-amber-500 group-hover:text-slate-950 transition-all">
+                                <span>انتقال</span>
+                                <ArrowRight className="w-3 h-3 rtl:rotate-0 ltr:rotate-180" />
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-center space-y-1">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            لم يتم العثور على خيار إعداد مباشر يطابق "{hubSearchQuery}"
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            يمكنك تجربة البحث عن: طابعة، ضريبة، عملة، باركود، ألوان، سلة، واتساب، ليرة...
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('appearance')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'appearance'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Moon className="w-4 h-4 text-amber-500" />
-          <span>المظهر والوضع الليلي لراحة الكاشير</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-500 text-white font-mono font-bold">
-            {themeMode === 'auto_time' ? 'تلقائي ذكي' : theme === 'dark' ? 'داكن' : 'فاتح'}
-          </span>
-        </button>
+              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                <LayoutGrid className="w-4 h-4 text-amber-500" />
+                <span>
+                  عرض {filteredCards.length} من أصل {settingsCards.length} بطاقة
+                </span>
+              </div>
+            </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('buttons_layout')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'buttons_layout'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Sliders className="w-4 h-4 text-amber-500" />
-          <span>تخصيص وترتيب مواقع الأزرار 🎛️</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300 font-mono font-bold">
-            {settings.buttonLayout?.posCartPosition === 'left' ? 'سلة يسار' : 'سلة يمين'}
-          </span>
-        </button>
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+              {[
+                { id: 'all', label: 'جميع البطاقات (14)' },
+                { id: 'financial', label: 'الهوية والعملات (2)' },
+                { id: 'printing', label: 'الفواتير والطباعة (3)' },
+                { id: 'appearance', label: 'المظهر والواجهة (3)' },
+                { id: 'operations', label: 'المبيعات والعمليات (3)' },
+                { id: 'security', label: 'النسخ والترخيص (3)' }
+              ].map(cat => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playCategorySwitch();
+                    setHubCategoryFilter(cat.id as any);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
+                    hubCategoryFilter === cat.id
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('currency')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'currency'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Coins className="w-4 h-4" />
-          <span>العملة الأساسية ونشرة أسعار الصرف</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white font-mono font-bold">
-            {settings.currency.symbol}
-          </span>
-        </button>
+          {/* Cards Grid */}
+          {filteredCards.length === 0 ? (
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 space-y-3">
+              <Search className="w-10 h-10 text-slate-400 mx-auto" />
+              <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                لم يتم العثور على أي بطاقة إعدادات مطابقة لبحثك
+              </h4>
+              <p className="text-xs text-slate-400">
+                جرب كتابة كلمة أخرى مثل: عملة، فاتورة، طابعة، ألوان، واتساب، نسخ احتياطي
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setHubSearchQuery('');
+                  setHubCategoryFilter('all');
+                }}
+                className="px-4 py-2 bg-amber-500 text-slate-950 text-xs font-black rounded-xl hover:bg-amber-400 cursor-pointer"
+              >
+                إعادة ضبط تصفية البطاقات
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+              {filteredCards.map(card => {
+                const IconComponent = card.icon;
+                return (
+                  <div
+                    key={card.id}
+                    id={`settings-card-${card.id}`}
+                    onClick={() => {
+                      soundEffects.playGlassPress();
+                      setActiveSubTab(card.id);
+                    }}
+                    className="apple-glass-card rounded-3xl p-5 border border-slate-200/90 dark:border-white/[0.08] hover:border-amber-500/80 dark:hover:border-amber-400/80 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 cursor-pointer group flex flex-col justify-between relative overflow-hidden select-none"
+                  >
+                    {/* Top Row: Icon + Status Badge */}
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-3.5">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-white shadow-sm transition-transform duration-200 group-hover:scale-110 shrink-0 ${card.gradientClass}`}>
+                          <IconComponent className="w-5 h-5" />
+                        </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('google_drive')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'google_drive'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Cloud className="w-4 h-4" />
-          <span>النسخ السحابي (Google Drive)</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-950 text-amber-400 font-mono font-bold">
-            Google
-          </span>
-        </button>
+                        {card.badge && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono max-w-[140px] truncate shrink-0 ${card.badgeColorClass}`}>
+                            {card.badge}
+                          </span>
+                        )}
+                      </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('retail_pos')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'retail_pos'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <ShoppingBag className="w-4 h-4" />
-          <span>إعدادات قسم المفرق والتجزئة (POS)</span>
-        </button>
+                      {/* Title & Subtitle */}
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        {card.titleAr}
+                      </h4>
+                      <p className="text-[11px] font-medium text-slate-400 font-mono tracking-tight mt-0.5">
+                        {card.titleEn}
+                      </p>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('receipt_design')}
-          id="btn-settings-subtab-receipt-design"
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'receipt_design'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Receipt className="w-4 h-4 text-amber-500" />
-          <span>تخصيص شكل وقالب الفاتورة</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold border border-amber-500/30">
-            معاينة حية
-          </span>
-        </button>
+                      {/* Description */}
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-2.5 line-clamp-2">
+                        {card.descAr}
+                      </p>
+                    </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('printer')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'printer'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Printer className="w-4 h-4 text-amber-500" />
-          <span>الطباعة ومعايرة الملصقات</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono font-bold">
-            {formData.printPaperSize || '80mm'}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('wholesale_depot')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'wholesale_depot'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Building2 className="w-4 h-4" />
-          <span>إعدادات قسم الجملة والمستودعات</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('debt_whatsapp')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'debt_whatsapp'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <MessageSquareShare className="w-4 h-4 text-emerald-500" />
-          <span>تحصيل الديون الآلي (WhatsApp)</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-600 text-white font-mono font-bold">
-            آلي
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('general')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'general'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Store className="w-4 h-4" />
-          <span>شعار المتجر وبيانات المنشأة</span>
-          {settings.logo && (
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    {/* Bottom Action Row */}
+                    <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                      <span className="text-[11px] font-bold text-slate-400">
+                        {card.categoryLabel}
+                      </span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 flex items-center gap-1 group-hover:-translate-x-1 transition-transform">
+                        <span>فتح القسم</span>
+                        <ArrowRight className="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180" />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </button>
+        </div>
+      )}
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('license')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-            activeSubTab === 'license'
-              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <KeyRound className="w-4 h-4 text-amber-500" />
-          <span>شراء وترخيص التطبيق</span>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-            isAppPurchased
-              ? 'bg-emerald-600 text-white'
-              : isTrialExpired
-              ? 'bg-rose-600 text-white'
-              : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
-          }`}>
-            {isAppPurchased ? 'مرخص دائم' : isTrialExpired ? 'منتهي' : `ضيف (${trialDaysRemaining} أيام)`}
-          </span>
-        </button>
-      </div>
+      {/* ======================================================== */}
+      {/* 2. SUBTAB ACTIVE BREADCRUMB & SWITCHER HEADER             */}
+      {/* ======================================================== */}
+      {activeSubTab !== 'hub' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs max-w-5xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              id="btn-settings-back-to-hub"
+              onClick={() => {
+                soundEffects.playGlassTap();
+                setActiveSubTab('hub');
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 font-black text-xs transition-all active:scale-95 cursor-pointer shrink-0 border border-slate-200 dark:border-slate-700 hover:border-amber-500"
+              title="العودة لجميع بطاقات الإعدادات"
+            >
+              <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+              <span>بطاقات الإعدادات</span>
+            </button>
+
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block shrink-0" />
+
+            <div className="min-w-0 truncate">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                  {settingsCards.find(c => c.id === activeSubTab)?.titleAr}
+                </span>
+                {settingsCards.find(c => c.id === activeSubTab)?.badge && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold font-mono hidden md:inline-block ${settingsCards.find(c => c.id === activeSubTab)?.badgeColorClass}`}>
+                    {settingsCards.find(c => c.id === activeSubTab)?.badge}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 hidden sm:block truncate">
+                {settingsCards.find(c => c.id === activeSubTab)?.descAr}
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Search & Quick Jump Selector */}
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute start-2.5 top-2.5 pointer-events-none" />
+              <input
+                type="text"
+                value={hubSearchQuery}
+                onFocus={() => setIsSearchDropdownOpen(true)}
+                onChange={(e) => {
+                  setHubSearchQuery(e.target.value);
+                  setIsSearchDropdownOpen(true);
+                }}
+                placeholder="بحث مباشر في الخيارات..."
+                className="w-36 sm:w-48 ps-8 pe-6 py-1.5 bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
+              />
+              {hubSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHubSearchQuery('');
+                    setIsSearchDropdownOpen(false);
+                  }}
+                  className="absolute end-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-[10px] font-bold"
+                >
+                  ✕
+                </button>
+              )}
+
+              {/* Floating Deep Search Dropdown */}
+              {isSearchDropdownOpen && hubSearchQuery.trim().length > 0 && (
+                <div className="absolute end-0 top-full mt-2 w-72 sm:w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-amber-500/30 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-1.5 bg-amber-500/10 flex items-center justify-between text-[11px] font-black text-amber-900 dark:text-amber-200">
+                    <span>نتائج الخيارات المباشرة ({matchingDeepOptions.length})</span>
+                    <span className="text-[10px] text-slate-400">انتقال سريع</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 no-scrollbar">
+                    {matchingDeepOptions.length > 0 ? (
+                      matchingDeepOptions.map(opt => {
+                        const IconComponent = opt.icon || Sliders;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handleJumpToOption(opt)}
+                            className="w-full p-2.5 text-start hover:bg-amber-500/10 dark:hover:bg-slate-800 transition-all flex items-center justify-between gap-2 group cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <IconComponent className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                                  {opt.titleAr}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block truncate">
+                                  {opt.categoryLabel}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 shrink-0">
+                              انتقال ↵
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 text-center text-xs text-slate-400">
+                        لا توجد خيارات مطابقة
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <select
+              value={activeSubTab}
+              onChange={(e) => {
+                soundEffects.playGlassPress();
+                setActiveSubTab(e.target.value as any);
+              }}
+              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer focus:outline-none"
+            >
+              <option value="hub">← جميع البطاقات (14)</option>
+              {settingsCards.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.titleAr}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* TAB 0: Currency & Exchange Rate Bulletin & Multi-Currency */}
       {activeSubTab === 'currency' && (
         <div className="space-y-6 max-w-5xl animate-in fade-in">
           {/* Multi-Currency Support & Live Currency Converter */}
-          <MultiCurrencyManagerPanel />
+          <div id="setting-anchor-multi-currency" className="transition-all">
+            <MultiCurrencyManagerPanel />
+          </div>
 
           {/* Base Currency Switcher & Conversion Card */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+          <div id="setting-anchor-base-currency" className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5 transition-all">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
@@ -692,7 +1552,7 @@ export const SettingsView: React.FC = () => {
             </div>
 
             {/* DEDICATED LEBANESE CURRENCY OPTION CARD (خيار العملة اللبنانية) */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-amber-500/5 to-rose-500/10 border-2 border-emerald-500/30 dark:border-emerald-500/20 space-y-4">
+            <div id="setting-anchor-lebanese-currency" className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-amber-500/5 to-rose-500/10 border-2 border-emerald-500/30 dark:border-emerald-500/20 space-y-4 transition-all">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 shadow-md flex items-center justify-center text-2xl border border-emerald-300 dark:border-emerald-800">
@@ -928,7 +1788,7 @@ export const SettingsView: React.FC = () => {
           </div>
 
           {/* Daily Exchange Bulletin Management Card */}
-          <form onSubmit={handleSaveBulletin} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+          <form id="setting-anchor-exchange-bulletin" onSubmit={handleSaveBulletin} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5 transition-all">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
@@ -1240,13 +2100,16 @@ export const SettingsView: React.FC = () => {
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  مقاس ورق الطابعة الحرارية والملصقات
-                </label>
+              <div id="setting-anchor-paper-size" className="p-2 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    مقاس ورق الطابعة الحرارية والملصقات
+                  </label>
+                  {renderSavedIndicator('printPaperSize')}
+                </div>
                 <select
                   value={formData.printPaperSize}
-                  onChange={e => setFormData({ ...formData, printPaperSize: e.target.value as any })}
+                  onChange={e => autoSaveSetting('printPaperSize', e.target.value as any)}
                   className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 >
                   <option value="80mm">طابعة حرارية عريضة (80mm - كاشير قياسي)</option>
@@ -1261,32 +2124,38 @@ export const SettingsView: React.FC = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  الطباعة التلقائية عند إتمام البيع
-                </label>
+              <div id="setting-anchor-auto-print" className="p-2 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    الطباعة التلقائية عند إتمام البيع
+                  </label>
+                  {renderSavedIndicator('autoPrintOnSale')}
+                </div>
                 <div className="flex items-center gap-2 pt-2">
                   <input
                     type="checkbox"
                     id="auto-print-toggle"
                     checked={formData.autoPrintOnSale}
-                    onChange={e => setFormData({ ...formData, autoPrintOnSale: e.target.checked })}
-                    className="w-4 h-4 accent-amber-500 rounded"
+                    onChange={e => autoSaveSetting('autoPrintOnSale', e.target.checked)}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
                   />
-                  <label htmlFor="auto-print-toggle" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <label htmlFor="auto-print-toggle" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
                     طباعة الإيصال فوراً بمجرد الضغط على دفع
                   </label>
                 </div>
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  رسالة تذييل الإيصال الحراري
-                </label>
+              <div id="setting-anchor-receipt-footer" className="sm:col-span-2 p-2 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    رسالة تذييل الإيصال الحراري
+                  </label>
+                  {renderSavedIndicator('receiptFooter')}
+                </div>
                 <input
                   type="text"
                   value={formData.receiptFooter}
-                  onChange={e => setFormData({ ...formData, receiptFooter: e.target.value })}
+                  onChange={e => autoSaveSetting('receiptFooter', e.target.value, false)}
                   placeholder="شكراً لزيارتكم • البضاعة المباعة ترد وتستبدل خلال 3 أيام"
                   className="w-full text-xs px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
@@ -1315,14 +2184,14 @@ export const SettingsView: React.FC = () => {
           </div>
 
           {/* Loyalty Points for Retail Customers */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+          <div id="setting-anchor-loyalty" className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4 transition-all">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                     <span>نظام نقاط ولاء ومكافآت الزبائن (Loyalty System)</span>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                       formData.enableLoyaltyPoints !== false
@@ -1331,6 +2200,7 @@ export const SettingsView: React.FC = () => {
                     }`}>
                       {formData.enableLoyaltyPoints !== false ? 'مُفعّل ونشط' : 'مُعطّل (متوقف)'}
                     </span>
+                    {renderSavedIndicator('enableLoyaltyPoints')}
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     يمكنك تشغيل أو إيقاف احتساب واستبدال نقاط الولاء في شاشات الكاشير وفواتير المفرق
@@ -1343,7 +2213,7 @@ export const SettingsView: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={formData.enableLoyaltyPoints !== false}
-                  onChange={e => setFormData({ ...formData, enableLoyaltyPoints: e.target.checked })}
+                  onChange={e => autoSaveSetting('enableLoyaltyPoints', e.target.checked)}
                   className="sr-only peer"
                 />
                 <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] peer-checked:after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
@@ -1356,14 +2226,17 @@ export const SettingsView: React.FC = () => {
             {formData.enableLoyaltyPoints !== false ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    المبلغ المطلوب لكسب نقطة واحدة ({formData.currency.symbol})
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      المبلغ المطلوب لكسب نقطة واحدة ({formData.currency.symbol})
+                    </label>
+                    {renderSavedIndicator('pointsSpendRatio')}
+                  </div>
                   <input
                     type="number"
                     min={100}
                     value={formData.pointsSpendRatio || 1000}
-                    onChange={e => setFormData({ ...formData, pointsSpendRatio: Number(e.target.value) })}
+                    onChange={e => autoSaveSetting('pointsSpendRatio', Number(e.target.value), false)}
                     className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                   />
                   <span className="text-[10px] text-slate-400 mt-0.5 block">
@@ -1372,14 +2245,17 @@ export const SettingsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    قيمة النقطة عند الاستبدال ({formData.currency.symbol})
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      قيمة النقطة عند الاستبدال ({formData.currency.symbol})
+                    </label>
+                    {renderSavedIndicator('pointsRedeemRatio')}
+                  </div>
                   <input
                     type="number"
                     min={1}
                     value={formData.pointsRedeemRatio || 100}
-                    onChange={e => setFormData({ ...formData, pointsRedeemRatio: Number(e.target.value) })}
+                    onChange={e => autoSaveSetting('pointsRedeemRatio', Number(e.target.value), false)}
                     className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                   />
                   <span className="text-[10px] text-slate-400 mt-0.5 block">
@@ -1397,7 +2273,11 @@ export const SettingsView: React.FC = () => {
             )}
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-slate-400 flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <span>يتم حفظ جميع التعديلات تلقائياً في النظام</span>
+            </span>
             <button
               type="submit"
               className="flex items-center gap-2 px-8 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-2xl shadow-md shadow-amber-500/20 transition-all cursor-pointer"
@@ -1539,63 +2419,78 @@ export const SettingsView: React.FC = () => {
               </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  اسم المنشأة (بالعربية) *
-                </label>
+              <div id="setting-anchor-store-name" className="p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    اسم المنشأة (بالعربية) *
+                  </label>
+                  {renderSavedIndicator('storeNameAr')}
+                </div>
                 <input
                   type="text"
                   required
                   value={formData.storeNameAr}
-                  onChange={e => setFormData({ ...formData, storeNameAr: e.target.value })}
+                  onChange={e => autoSaveSetting('storeNameAr', e.target.value, false)}
                   className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  اسم المنشأة (بالإنجليزية)
-                </label>
+              <div className="p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    اسم المنشأة (بالإنجليزية)
+                  </label>
+                  {renderSavedIndicator('storeNameEn')}
+                </div>
                 <input
                   type="text"
                   value={formData.storeNameEn}
-                  onChange={e => setFormData({ ...formData, storeNameEn: e.target.value })}
+                  onChange={e => autoSaveSetting('storeNameEn', e.target.value, false)}
                   className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  رقم الهاتف للتواصل
-                </label>
+              <div className="p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    رقم الهاتف للتواصل
+                  </label>
+                  {renderSavedIndicator('phone')}
+                </div>
                 <input
                   type="tel"
                   value={formData.phone}
-                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={e => autoSaveSetting('phone', e.target.value, false)}
                   className="w-full text-xs font-mono px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  الرقم الضريبي / السجل التجاري
-                </label>
+              <div className="p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    الرقم الضريبي / السجل التجاري
+                  </label>
+                  {renderSavedIndicator('taxNumber')}
+                </div>
                 <input
                   type="text"
                   value={formData.taxNumber}
-                  onChange={e => setFormData({ ...formData, taxNumber: e.target.value })}
+                  onChange={e => autoSaveSetting('taxNumber', e.target.value, false)}
                   className="w-full text-xs font-mono px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  العنوان والمدينة
-                </label>
+              <div className="sm:col-span-2 p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    العنوان والمدينة
+                  </label>
+                  {renderSavedIndicator('address')}
+                </div>
                 <input
                   type="text"
                   value={formData.address}
-                  onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  onChange={e => autoSaveSetting('address', e.target.value, false)}
                   className="w-full text-xs px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
               </div>
@@ -1620,14 +2515,17 @@ export const SettingsView: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  ترويسة الفاتورة — نص الترحيب أعلى الفاتورة المطبوعة
-                </label>
+              <div className="p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    ترويسة الفاتورة — نص الترحيب أعلى الفاتورة المطبوعة
+                  </label>
+                  {renderSavedIndicator('receiptHeader')}
+                </div>
                 <input
                   type="text"
                   value={formData.receiptHeader || ''}
-                  onChange={e => setFormData({ ...formData, receiptHeader: e.target.value })}
+                  onChange={e => autoSaveSetting('receiptHeader', e.target.value, false)}
                   placeholder="مثال: أهلاً بكم في متجرنا — نسعد بخدمتكم دائماً"
                   className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
                 />
@@ -1636,14 +2534,17 @@ export const SettingsView: React.FC = () => {
                 </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  تذييل الفاتورة — نص الشكر والملاحظات وشروط الإرجاع أسفل الفاتورة
-                </label>
+              <div className="p-1 rounded-2xl transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    تذييل الفاتورة — نص الشكر والملاحظات وشروط الإرجاع أسفل الفاتورة
+                  </label>
+                  {renderSavedIndicator('receiptFooter')}
+                </div>
                 <textarea
                   rows={2}
                   value={formData.receiptFooter || ''}
-                  onChange={e => setFormData({ ...formData, receiptFooter: e.target.value })}
+                  onChange={e => autoSaveSetting('receiptFooter', e.target.value, false)}
                   placeholder="مثال: شكراً لزيارتكم وتسوقكم معنا! يرجى الاحتفاظ بالفاتورة لضمان حق الاسترجاع والاستبدال خلال 3 أيام."
                   className="w-full text-xs font-bold px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500 resize-none"
                 />
@@ -1657,39 +2558,39 @@ export const SettingsView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={formData.receiptShowLogo ?? formData.printStoreLogo ?? true}
-                    onChange={e => setFormData({
-                      ...formData,
-                      receiptShowLogo: e.target.checked,
-                      printStoreLogo: e.target.checked
-                    })}
-                    className="w-4 h-4 accent-amber-500 rounded"
+                    onChange={e => {
+                      autoSaveSetting('receiptShowLogo', e.target.checked);
+                      autoSaveSetting('printStoreLogo', e.target.checked);
+                    }}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
                   />
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     طباعة شعار المتجر أعلى الفاتورة
                   </span>
+                  {renderSavedIndicator('receiptShowLogo')}
                 </label>
 
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={formData.printTaxDetails ?? true}
-                    onChange={e => setFormData({
-                      ...formData,
-                      printTaxDetails: e.target.checked,
-                      receiptShowTaxNumber: e.target.checked
-                    })}
-                    className="w-4 h-4 accent-amber-500 rounded"
+                    onChange={e => {
+                      autoSaveSetting('printTaxDetails', e.target.checked);
+                      autoSaveSetting('receiptShowTaxNumber', e.target.checked);
+                    }}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
                   />
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     إظهار الرقم الضريبي والسجل التجاري في الفاتورة
                   </span>
+                  {renderSavedIndicator('printTaxDetails')}
                 </label>
               </div>
             </div>
           </div>
 
           {/* Currency and Tax Section */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+          <div id="setting-anchor-tax" className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4 transition-all">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <DollarSign className="w-4 h-4 text-amber-500" />
               <span>العملة والضرائب</span>
@@ -1703,7 +2604,11 @@ export const SettingsView: React.FC = () => {
                 <input
                   type="text"
                   value={formData.currency.symbol}
-                  onChange={e => setFormData({ ...formData, currency: { ...formData.currency, symbol: e.target.value } })}
+                  onChange={e => {
+                    const newCurr = { ...formData.currency, symbol: e.target.value };
+                    setFormData({ ...formData, currency: newCurr });
+                    autoSaveSetting('currency', newCurr, false);
+                  }}
                   className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
               </div>
@@ -1715,41 +2620,55 @@ export const SettingsView: React.FC = () => {
                 <input
                   type="text"
                   value={formData.currency.code}
-                  onChange={e => setFormData({ ...formData, currency: { ...formData.currency, code: e.target.value } })}
+                  onChange={e => {
+                    const newCurr = { ...formData.currency, code: e.target.value };
+                    setFormData({ ...formData, currency: newCurr });
+                    autoSaveSetting('currency', newCurr, false);
+                  }}
                   className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  نسبة الضريبة الافتراضية (%)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    نسبة الضريبة الافتراضية (%)
+                  </label>
+                  {renderSavedIndicator('defaultTaxRate')}
+                </div>
                 <input
                   type="number"
                   min={0}
                   max={100}
                   value={formData.defaultTaxRate}
-                  onChange={e => setFormData({ ...formData, defaultTaxRate: Number(e.target.value) })}
+                  onChange={e => autoSaveSetting('defaultTaxRate', Number(e.target.value), false)}
                   className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-2">
-              <input
-                type="checkbox"
-                id="tax-toggle"
-                checked={formData.enableTax}
-                onChange={e => setFormData({ ...formData, enableTax: e.target.checked })}
-                className="w-4 h-4 accent-amber-500 rounded"
-              />
-              <label htmlFor="tax-toggle" className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                تفعيل احتساب الضريبة المضافة على الفواتير
-              </label>
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="tax-toggle"
+                  checked={formData.enableTax}
+                  onChange={e => autoSaveSetting('enableTax', e.target.checked)}
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                />
+                <label htmlFor="tax-toggle" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                  تفعيل احتساب الضريبة المضافة على الفواتير
+                </label>
+                {renderSavedIndicator('enableTax')}
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-slate-400 flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <span>يتم حفظ جميع التعديلات تلقائياً في النظام</span>
+            </span>
             <button
               type="submit"
               className="flex items-center gap-2 px-8 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-2xl shadow-md shadow-amber-500/20 transition-all cursor-pointer"
@@ -1874,12 +2793,26 @@ export const SettingsView: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Cart Side */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">موضع لوحة السلة والمحاسبة:</span>
+              <div id="setting-anchor-cart-position" className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">موضع لوحة السلة والمحاسبة:</span>
+                  {renderSavedIndicator('posCartPosition')}
+                </div>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => updateButtonLayout({ posCartPosition: 'right' })}
+                    onClick={() => {
+                      updateButtonLayout({ posCartPosition: 'right' });
+                      soundEffects.playGlassTap();
+                      setRecentlySavedKeys(prev => ({ ...prev, posCartPosition: true }));
+                      setTimeout(() => {
+                        setRecentlySavedKeys(prev => {
+                          const n = { ...prev };
+                          delete n.posCartPosition;
+                          return n;
+                        });
+                      }, 2500);
+                    }}
                     className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       settings.buttonLayout?.posCartPosition === 'right'
                         ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
@@ -1890,7 +2823,18 @@ export const SettingsView: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => updateButtonLayout({ posCartPosition: 'left' })}
+                    onClick={() => {
+                      updateButtonLayout({ posCartPosition: 'left' });
+                      soundEffects.playGlassTap();
+                      setRecentlySavedKeys(prev => ({ ...prev, posCartPosition: true }));
+                      setTimeout(() => {
+                        setRecentlySavedKeys(prev => {
+                          const n = { ...prev };
+                          delete n.posCartPosition;
+                          return n;
+                        });
+                      }, 2500);
+                    }}
                     className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       settings.buttonLayout?.posCartPosition === 'left'
                         ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
@@ -2539,18 +3483,21 @@ export const SettingsView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    ساعة بدء الوضع الليلي مساءً (نظام 24 ساعة)
-                  </label>
+              <div id="setting-anchor-night-mode" className="grid grid-cols-1 sm:grid-cols-2 gap-4 transition-all">
+                <div className="p-1 rounded-2xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      ساعة بدء الوضع الليلي مساءً (نظام 24 ساعة)
+                    </label>
+                    {renderSavedIndicator('nightModeStartHour')}
+                  </div>
                   <div className="relative">
                     <input
                       type="number"
                       min={0}
                       max={23}
                       value={formData.nightModeStartHour ?? 18}
-                      onChange={e => setFormData({ ...formData, nightModeStartHour: Number(e.target.value) })}
+                      onChange={e => autoSaveSetting('nightModeStartHour', Number(e.target.value), false)}
                       className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                     />
                     <span className="absolute end-3 top-2.5 text-xs text-slate-400 font-mono">
@@ -2564,17 +3511,20 @@ export const SettingsView: React.FC = () => {
                   </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    ساعة انتهاء الوضع الليلي صباحاً (نظام 24 ساعة)
-                  </label>
+                <div className="p-1 rounded-2xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      ساعة انتهاء الوضع الليلي صباحاً (نظام 24 ساعة)
+                    </label>
+                    {renderSavedIndicator('nightModeEndHour')}
+                  </div>
                   <div className="relative">
                     <input
                       type="number"
                       min={0}
                       max={23}
                       value={formData.nightModeEndHour ?? 6}
-                      onChange={e => setFormData({ ...formData, nightModeEndHour: Number(e.target.value) })}
+                      onChange={e => autoSaveSetting('nightModeEndHour', Number(e.target.value), false)}
                       className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
                     />
                     <span className="absolute end-3 top-2.5 text-xs text-slate-400 font-mono">
@@ -2590,15 +3540,18 @@ export const SettingsView: React.FC = () => {
               </div>
 
               {/* Eye Comfort Feature Toggle */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-start justify-between gap-4">
+              <div id="setting-anchor-eye-comfort" className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-start justify-between gap-4 transition-all">
                 <div className="flex items-start gap-3">
                   <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mt-0.5">
                     <Eye className="w-4 h-4" />
                   </div>
                   <div>
-                    <label htmlFor="eye-comfort-toggle" className="text-xs font-black text-slate-900 dark:text-white cursor-pointer block">
-                      تفعيل ميزة راحة عين الكاشير (Eye-Comfort Soft Glow Reduction)
-                    </label>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="eye-comfort-toggle" className="text-xs font-black text-slate-900 dark:text-white cursor-pointer block">
+                        تفعيل ميزة راحة عين الكاشير (Eye-Comfort Soft Glow Reduction)
+                      </label>
+                      {renderSavedIndicator('cashierEyeComfort')}
+                    </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       يضبط مستويات التباين والألوان المشبعة لتقليل إجهاد النظر وجفاف العين أثناء الجلوس المطول أمام الشاشة.
                     </p>
@@ -2610,7 +3563,7 @@ export const SettingsView: React.FC = () => {
                     type="checkbox"
                     id="eye-comfort-toggle"
                     checked={formData.cashierEyeComfort !== false}
-                    onChange={e => setFormData({ ...formData, cashierEyeComfort: e.target.checked })}
+                    onChange={e => autoSaveSetting('cashierEyeComfort', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] peer-checked:after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
@@ -2618,15 +3571,18 @@ export const SettingsView: React.FC = () => {
               </div>
 
               {/* Inactivity Auto-Lock PIN Setting */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div id="setting-anchor-idle-lock" className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
                 <div className="flex items-start sm:items-center gap-3">
                   <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mt-0.5 sm:mt-0">
                     <KeyRound className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                      قفل الكاشير التلقائي برمز PIN عند عدم النشاط (Idle Auto-Lock)
-                    </h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                        قفل الكاشير التلقائي برمز PIN عند عدم النشاط (Idle Auto-Lock)
+                      </h4>
+                      {renderSavedIndicator('idleAutoLockMinutes')}
+                    </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                       يقوم بقفل الشاشة والمطالبة بـ PIN تلقائياً عند ترك الجهاز دون نشاط للمحافظة على أمان المتجر.
                     </p>
@@ -2636,7 +3592,7 @@ export const SettingsView: React.FC = () => {
                 <div className="w-full sm:w-48 shrink-0">
                   <select
                     value={formData.idleAutoLockMinutes ?? 15}
-                    onChange={e => setFormData({ ...formData, idleAutoLockMinutes: Number(e.target.value) })}
+                    onChange={e => autoSaveSetting('idleAutoLockMinutes', Number(e.target.value))}
                     className="w-full text-xs font-bold px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
                   >
                     <option value={5}>بعد 5 دقائق</option>
@@ -2651,7 +3607,7 @@ export const SettingsView: React.FC = () => {
             </div>
 
             {/* Battery & Eco Power-Saving Mode Card */}
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+            <div id="setting-anchor-power-saving" className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5 transition-all">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -2894,17 +3850,23 @@ export const SettingsView: React.FC = () => {
 
       {/* TAB: Store Logo, Receipt Header & Footer Settings */}
       {activeSubTab === 'receipt_header_footer' && (
-        <ReceiptHeaderFooterSettings />
+        <div id="setting-anchor-receipt-header-footer" className="transition-all">
+          <ReceiptHeaderFooterSettings />
+        </div>
       )}
 
       {/* TAB: Receipt Customization Studio (Real-Time Live Preview) */}
       {activeSubTab === 'receipt_design' && (
-        <ReceiptCustomizerPanel />
+        <div id="setting-anchor-receipt-designer" className="transition-all">
+          <ReceiptCustomizerPanel />
+        </div>
       )}
 
       {/* TAB: Printer & Label Alignment Studio */}
       {activeSubTab === 'printer' && (
-        <PrintSettingsPanel />
+        <div id="setting-anchor-margins-feed" className="transition-all">
+          <PrintSettingsPanel />
+        </div>
       )}
 
       {/* TAB: License & App Purchase */}
