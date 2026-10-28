@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for Settings deep options instant search dropdown with one-click direct jump, along with instant auto-save functionality for switches and inputs with inline and header visual checkmark indicators.",
-  "updatedAt":  "2026-10-28T20:56:03.551511369Z",
+  "summary":  "Implementation plan for an interactive unified onboarding tour using the existing spotlight system. Covers seamless automated transitions between POS layout and Inventory management, highlighting stock tracking, low stock alerts, and quick adjustments with tactile audio and manual replay support.",
+  "updatedAt":  "2026-10-28T21:49:34.769729788Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

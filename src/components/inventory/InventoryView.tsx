@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { StockMovementType, Product } from '../../types';
 import {
@@ -61,6 +61,19 @@ export const InventoryView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     'low_stock_alerts' | 'fleet_dispatch' | 'stock_levels' | 'wholesale_depots' | 'audit_ledger'
   >('low_stock_alerts');
+
+  // Automated tab switching listener for onboarding spotlight tour
+  useEffect(() => {
+    const handleTutorialTabSwitch = (e: any) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('tutorial-switch-inventory-tab', handleTutorialTabSwitch as EventListener);
+    return () => {
+      window.removeEventListener('tutorial-switch-inventory-tab', handleTutorialTabSwitch as EventListener);
+    };
+  }, []);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -163,10 +176,99 @@ export const InventoryView: React.FC = () => {
         </div>
       </div>
 
+      {/* Top Inventory Valuation & Health Metrics Overview */}
+      <div
+        id="inventory-valuation-overview"
+        data-tour="inventory-valuation"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5"
+      >
+        {/* Inventory Value at Cost */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-1.5">
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+            {t('inventoryValue')} (بسعر التكلفة)
+          </span>
+          <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono">
+            {formatCurrency(totalValuationCost)}
+          </h3>
+          <p className="text-[11px] text-slate-400 font-semibold">
+            القيمة بسعر البيع المتوقع: {formatCurrency(totalValuationRetail)}
+          </p>
+        </div>
+
+        {/* Total Stock Units */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-1.5">
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+            إجمالي القطع في المستودع
+          </span>
+          <h3 className="text-lg sm:text-xl font-black text-amber-600 dark:text-amber-400 font-mono">
+            {products.reduce((acc, p) => acc + p.stock, 0)} قطعة
+          </h3>
+          <p className="text-[11px] text-slate-400 font-semibold">
+            عبر {products.length} صنف مسجل
+          </p>
+        </div>
+
+        {/* Low Stock count */}
+        <div
+          onClick={() => {
+            setActiveTab('stock_levels');
+            setStockFilter('low_stock');
+          }}
+          className={`p-4 rounded-3xl border shadow-xs space-y-1.5 cursor-pointer transition-all ${
+            activeTab === 'stock_levels' && stockFilter === 'low_stock'
+              ? 'bg-amber-100/80 dark:bg-amber-950/70 border-amber-500 ring-2 ring-amber-500'
+              : 'bg-white dark:bg-slate-900 border-amber-300 dark:border-amber-800 hover:bg-amber-50/50'
+          }`}
+          title="تصفية الأصناف الحرجة"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-bounce" />
+              <span>أصناف منخفضة (تحت الطلب)</span>
+            </span>
+          </div>
+          <h3 className="text-lg sm:text-xl font-black text-amber-600 dark:text-amber-400 font-mono">
+            {lowStockCount} <span className="text-xs font-bold">أصناف حرجة</span>
+          </h3>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+            تحتاج لتوريد عاجل لتفادي نفادها
+          </p>
+        </div>
+
+        {/* Out of Stock */}
+        <div
+          onClick={() => {
+            setActiveTab('stock_levels');
+            setStockFilter('out_of_stock');
+          }}
+          className={`p-4 rounded-3xl border shadow-xs space-y-1.5 cursor-pointer transition-all ${
+            activeTab === 'stock_levels' && stockFilter === 'out_of_stock'
+              ? 'bg-rose-100/80 dark:bg-rose-950/70 border-rose-500 ring-2 ring-rose-500'
+              : 'bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-800 hover:bg-rose-50/50'
+          }`}
+          title="تصفية الأصناف النافذة"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+              <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400 animate-pulse" />
+              <span>أصناف نافذة (مخزون صفر)</span>
+            </span>
+          </div>
+          <h3 className="text-lg sm:text-xl font-black text-rose-600 dark:text-rose-400 font-mono">
+            {outOfStockCount} <span className="text-xs font-bold">أصناف نافذة</span>
+          </h3>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+            غير متوفرة للبيع حالياً
+          </p>
+        </div>
+      </div>
+
       {/* Main Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
         {/* TAB 1: LOW STOCK ALERTS CENTER */}
         <button
+          id="tab-inventory-low-stock"
+          data-tour="inventory-low-stock-tab"
           type="button"
           onClick={() => setActiveTab('low_stock_alerts')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer ${
@@ -358,7 +460,11 @@ export const InventoryView: React.FC = () => {
           </div>
 
           {/* Stock Table & Alert Control Bar */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div
+            id="inventory-stock-table-card"
+            data-tour="inventory-stock-table"
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-hidden"
+          >
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/40 dark:bg-slate-800/30">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">

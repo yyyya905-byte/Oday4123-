@@ -16,6 +16,11 @@ import {
   Compass,
   ArrowRight,
   RotateCcw,
+  DollarSign,
+  TrendingUp,
+  BellRing,
+  Package,
+  Boxes,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { soundEffects } from '../../services/audio';
@@ -28,22 +33,26 @@ export interface TutorialStep {
   icon: React.ElementType;
   badgeAr: string;
   preferredPlacement?: 'top' | 'bottom' | 'left' | 'right' | 'auto';
+  targetView?: 'pos' | 'inventory';
+  onEnter?: () => void;
 }
 
 const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'operating-mode',
     targetSelector: '[data-tour="operating-mode"]',
+    targetView: 'pos',
     titleAr: 'أوضاع التشغيل المتخصصة (مطاعم / جملة / تجزئة)',
     descriptionAr:
       'اختر وضع العمل الملائم لنشاطك التجاري بنقرة واحدة. يوفر وضع المطاعم إدارة الطاولات والمنيو الرقمي والمطبخ، ووضع الجملة يدعم الكراتين والطرود والأسعار المتعددة، ووضع التجزئة مخصص للبيع السريع والباركود.',
     icon: Layers,
-    badgeAr: 'بيئة العمل',
+    badgeAr: 'بيئة العمل المخصصة',
     preferredPlacement: 'bottom',
   },
   {
     id: 'pos-search',
     targetSelector: '[data-tour="pos-search"]',
+    targetView: 'pos',
     titleAr: 'البحث الذكي، قارئ الباركود، وتصفية الأقسام',
     descriptionAr:
       'ابحث بالاسم أو الكود، أو امسح الباركود مباشرة بكاميرا الجهاز أو القارئ الليزري. يمكنك تصفية المنتجات عبر شريط التصنيفات السريع لعرض الأصناف المطلوبة فوراً.',
@@ -54,6 +63,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'pos-products',
     targetSelector: '[data-tour="pos-products"]',
+    targetView: 'pos',
     titleAr: 'كتالوج المنتجات والإضافة السريعة بنقرة واحدة',
     descriptionAr:
       'انقر على أي منتج لإضافته فورياً إلى الفاتورة الحالية مع مؤثرات استجابة سريعة. يظهر رصيد المخزون المتبقي وسعر البيع بشكل مباشر وواضح.',
@@ -64,9 +74,10 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'pos-cart',
     targetSelector: '[data-tour="pos-cart"]',
+    targetView: 'pos',
     titleAr: 'سلة الفاتورة الحالية والتحكم بالكميات والخصومات',
     descriptionAr:
-      'راجع أصناف الزبون، عدل الكميات عبر لوحة الأرقام أو أزرار الزيادة والنقصان، طبق خصماً مالياً أو مئفياً، أو علق الفاتورة لاستئنافها في أي وقت لاحق.',
+      'راجع أصناف الزبون، عدل الكميات عبر لوحة الأرقام أو أزرار الزيادة والنقصان، طبق خصماً مالياً أو مئوياً، أو علق الفاتورة لاستئنافها في أي وقت لاحق.',
     icon: Receipt,
     badgeAr: 'سلة المبيعات',
     preferredPlacement: 'left',
@@ -74,6 +85,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'pos-actions',
     targetSelector: '[data-tour="pos-actions"]',
+    targetView: 'pos',
     titleAr: 'أزرار المحاسبة والدفع الفوري وطباعة الفاتورة',
     descriptionAr:
       'أتمم عملية البيع بضغطة زر واحدة عبر الدفع النقدي مع احتساب الباقي تلقائياً، الدفع بالبطاقة، تسجيل ذمة العميل، أو إصدار الفاتورة وطباعتها حرارياً.',
@@ -84,21 +96,62 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'customize-layout',
     targetSelector: '[data-tour="customize-layout"]',
+    targetView: 'pos',
     titleAr: 'تخصيص وترتيب مواقع الأزرار حسب رغبة الكاشير',
     descriptionAr:
-      'تستطيع تخصيص ترتيب مواقع أزرار الكاشير السريعة وشريط الأدوات العائمة حسب راحة يدك (يمين أو يسار) لزيادة سرعة وسلاسة البيع اليومي.',
+      'تستطيع تخصيص ترتيب مواقع أزرار الكاشير السريعة وشريط الأدوات العائمة وموقع السلة (يمين أو يسار) حسب راحة يدك لزيادة سرعة وسلاسة البيع اليومي.',
     icon: Sliders,
     badgeAr: 'تخصيص الأزرار',
     preferredPlacement: 'top',
   },
   {
+    id: 'inventory-valuation',
+    targetSelector: '[data-tour="inventory-valuation"]',
+    targetView: 'inventory',
+    titleAr: 'إجمالي تقييم المخزون والسيولة والقطع المتوفرة',
+    descriptionAr:
+      'لوحة فورية تعرض القيمة الإجمالية لبضاعة المستودع بسعر التكلفة وسعر البيع المتوقع، مع عدد القطع المتوفرة في المستودع ونسبة الأصناف السليمة والحرجة.',
+    icon: DollarSign,
+    badgeAr: 'تقييم المخزون',
+    preferredPlacement: 'bottom',
+  },
+  {
+    id: 'inventory-low-stock-tab',
+    targetSelector: '[data-tour="inventory-low-stock-tab"]',
+    targetView: 'inventory',
+    titleAr: 'مركز الإنذار المبكر والتنبيه التلقائي للنواقص',
+    descriptionAr:
+      'نظام ذكي يرصد فورياً الأصناف التي بلغت حد الطلب الأدنى أو نفدت تماماً، ويتيح لك إصدار بوالص شراء وتوريد فوري من الشركات والموردين بنقرة زر واحدة.',
+    icon: BellRing,
+    badgeAr: 'تنبيهات النواقص',
+    preferredPlacement: 'bottom',
+    onEnter: () => {
+      window.dispatchEvent(new CustomEvent('tutorial-switch-inventory-tab', { detail: { tab: 'low_stock_alerts' } }));
+    },
+  },
+  {
+    id: 'inventory-stock-table',
+    targetSelector: '[data-tour="inventory-stock-table"]',
+    targetView: 'inventory',
+    titleAr: 'جدول مستويات المخزون والتعديل السريع (+ / -)',
+    descriptionAr:
+      'تتبع كميات كل صنف في المستودع بدقة عالية، مع إمكانية زيادة أو تنقيص المخزون فورياً عبر أزرار (+ / -) السريعة، وتصفية الأصناف الحرجة أو النافذة بنقرة واحدة.',
+    icon: Package,
+    badgeAr: 'إدارة وتعديل المخزون',
+    preferredPlacement: 'top',
+    onEnter: () => {
+      window.dispatchEvent(new CustomEvent('tutorial-switch-inventory-tab', { detail: { tab: 'stock_levels' } }));
+    },
+  },
+  {
     id: 'header-tools',
     targetSelector: '[data-tour="header-tools"]',
-    titleAr: 'الأدوات الذكية، نشرة الصرف، وبرنامج نقاط الولاء',
+    targetView: 'pos',
+    titleAr: 'الأدوات الذكية وإعادة تشغيل الجولة التعريفية',
     descriptionAr:
-      'تابع أسعار العملات الدولية ومحول الصرف المباشر، رصيد نقاط مكافآت العملاء، النسخ الاحتياطي السحابي، وتبديل ورديات الموظفين بكل أمان وسهولة.',
+      'تابع أسعار العملات الدولية ومحول الصرف المباشر، رصيد نقاط مكافآت العملاء، النسخ الاحتياطي السحابي، ويمكنك إعادة تشغيل هذه الجولة التعريفية في أي وقت بالضغط على زر "الجولة التعريفية".',
     icon: Sparkles,
-    badgeAr: 'أدوات المنشأة',
+    badgeAr: 'أدوات المنشأة والجولة',
     preferredPlacement: 'bottom',
   },
 ];
@@ -128,12 +181,29 @@ export const InteractiveSpotlightTutorial: React.FC = () => {
 
   const currentStep = TUTORIAL_STEPS[currentStepIndex];
 
-  // Ensure user is on POS tab during the tour steps so elements are visible
+  // Reset to step 0 and start view whenever tutorial is opened
   useEffect(() => {
-    if (isTutorialOpen && activeTab !== 'pos') {
-      setActiveTab('pos');
+    if (isTutorialOpen) {
+      setCurrentStepIndex(0);
+      const firstStep = TUTORIAL_STEPS[0];
+      if (firstStep?.targetView && activeTab !== firstStep.targetView) {
+        setActiveTab(firstStep.targetView);
+      }
     }
-  }, [isTutorialOpen, activeTab, setActiveTab]);
+  }, [isTutorialOpen]);
+
+  // Synchronize target view and onEnter hook when step changes
+  useEffect(() => {
+    if (!isTutorialOpen || !currentStep) return;
+
+    if (currentStep.targetView && activeTab !== currentStep.targetView) {
+      setActiveTab(currentStep.targetView);
+    }
+
+    if (currentStep.onEnter) {
+      currentStep.onEnter();
+    }
+  }, [currentStepIndex, isTutorialOpen, currentStep, activeTab, setActiveTab]);
 
   // Locate the DOM rect of current target element
   const updateTargetRect = useCallback(() => {
@@ -145,16 +215,24 @@ export const InteractiveSpotlightTutorial: React.FC = () => {
     const el = document.querySelector(currentStep.targetSelector) as HTMLElement | null;
     if (el) {
       const rect = el.getBoundingClientRect();
-      setTargetRect(rect);
-      // Ensure target element is scrolled into view smoothly if needed
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-    } else {
-      setTargetRect(null);
+      if (rect.width > 0 && rect.height > 0) {
+        setTargetRect(rect);
+        // Ensure target element is scrolled into view smoothly if needed
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        return;
+      }
     }
+    setTargetRect(null);
   }, [isTutorialOpen, currentStep]);
 
   useEffect(() => {
+    if (!isTutorialOpen) return;
+
     updateTargetRect();
+    const t1 = setTimeout(updateTargetRect, 80);
+    const t2 = setTimeout(updateTargetRect, 220);
+    const t3 = setTimeout(updateTargetRect, 500);
+
     const handleResize = () => updateTargetRect();
     window.addEventListener('resize', handleResize);
     window.addEventListener('scroll', handleResize, true);
@@ -162,11 +240,14 @@ export const InteractiveSpotlightTutorial: React.FC = () => {
     const checkInterval = setInterval(updateTargetRect, 600);
 
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('scroll', handleResize, true);
       clearInterval(checkInterval);
     };
-  }, [updateTargetRect, currentStepIndex]);
+  }, [updateTargetRect, currentStepIndex, isTutorialOpen, activeTab]);
 
   if (!isTutorialOpen) {
     return null;

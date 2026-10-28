@@ -1,92 +1,100 @@
-# Settings Deep Options Instant Search & Auto-Save System
+# Interactive Onboarding Tour (POS & Inventory Spotlight Walkthrough)
 
-An enhanced workstation configuration experience providing deep options search with instant one-click navigation to granular settings, accompanied by automatic persistence on control interaction and tactile visual checkmark confirmations.
+An end-to-end interactive onboarding tour that guides new and returning cashiers and store managers through the POS selling interface and Inventory Management system using the existing high-visibility spotlight architecture, with automated seamless view transitions and instant replay.
 
-### User Review & Critical Decisions
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following specifications were confirmed during the Phase 1 clarification interview:
-> - **Search Results Presentation**: Instant floating dropdown menu directly beneath the quick search field showing matching individual settings options, their parent category, current status, and a one-click direct jump.
-> - **Auto-Save Confirmation Indicators**: Dual visual confirmation—a subtle green checkmark ("تم الحفظ تلقائياً ✓") rendered inline immediately adjacent to the interacted control, paired with a synchronized status badge in the Settings header.
+> The following specifications were confirmed through the clarification interview and govern the tour design:
+
+- **Unified Continuous Tour**: The tour will automatically navigate from the POS view to the Inventory view and back without forcing the user to manually switch tabs.
+- **Inventory Spotlight Highlights**: Focus on stock tracking, proactive low stock alerts center, and quick inventory adjustments (+/-).
+- **Auto-Trigger & Manual Replay**: Automatically triggers once on first launch for new users (persisted in `localStorage`), with a dedicated replay button in the header toolbar (`HelpCircle` icon / "الجولة التعريفية").
 
 ---
 
-### 1. Overview & Core Concept
+## 1. Overview & Core Concept
 
-- **What It Does**:
-  1. **Deep Settings Options Search**: Upgrades the search field in Settings to query a rich catalog of 40+ granular options (e.g. tax rate, loyalty redeem ratio, receipt paper width, WhatsApp API key, dark mode schedule, base currency, cart alignment) rather than merely card headers. Clicking any result immediately opens the relevant card and smoothly scrolls/highlights the target control with a temporary golden glow.
-  2. **Zero-Click Auto-Save**: Automatically commits setting changes to global application state and local storage upon toggling switches, changing dropdowns, or modifying input values (with debouncing for text fields), eliminating the need to search for a "Save" button at the bottom of the page.
-  3. **Visual Checkmark Confirmation**: Displays a clean, reassuring checkmark indicator (`CheckCircle2`) next to the modified control and in the settings header, auto-dismissing after 2 seconds.
-- **Target Audience / Persona**: Cashiers, administrators, and store owners who need frictionless, immediate control over store parameters without cognitive friction or lost modifications.
-- **Key Value**: Drastically reduces navigation time across complex configuration panels and provides reassurance that every toggle is immediately and safely committed.
+- **What It Does**: Renders a high-contrast spotlight overlay that clips an illuminated viewport around key interactive elements, accompanied by an Apple-glass style directional popover card with step counters, badges, contextual descriptions, tactile sound effects, and forward/backward/skip controls.
+- **Target Audience**: Store cashiers, supermarket operators, depot supervisors, and restaurant staff onboarding onto the Kian Cashier system.
+- **Key Value**: Drastically reduces initial cognitive load, prevents checkout errors, and familiarizes users with both front-of-house sales (POS) and back-of-house stock replenishment (Inventory).
 
 ---
 
-### 2. User Experience & Visual Design
+## 2. User Experience & Visual Design
 
-#### Key User Flows
-1. **Direct Option Search & Instant Jump**:
-   - The user enters Settings and types e.g. "ضريبة" or "ورق" or "واتساب".
-   - An instant floating glass dropdown appears listing matching options, showing:
-     - Parent category badge (e.g., `المبيعات والعمليات` or `الفواتير والطباعة`)
-     - Option title & description
-     - Current state (e.g., `مفعّل`, `80mm`, `15%`)
-   - Clicking an item instantly opens that specific card, highlights the setting control with an animated pulse ring, and focuses it.
-2. **Auto-Saving with Checkmark Feedback**:
-   - When the user toggles any switch (e.g., "تفعيل نقاط الولاء" or "الوضع الليلي"), the change is saved immediately.
-   - An inline animated checkmark badge (`تم الحفظ ✓` in emerald green) fades in smoothly adjacent to the toggle.
-   - Concurrently, the header badge updates from "جاهز" to "تم الحفظ تلقائياً ✓" with a gentle tactile audio tap.
+### Step Sequence & Navigation Flow
 
-#### Visual Identity & Theme
-- **Search Dropdown**: Glassmorphic panel (`apple-glass-card border-slate-200/90 dark:border-white/[0.08] shadow-2xl rounded-2xl overflow-hidden max-h-96`) with keyboard navigation readiness (Escape to dismiss).
-- **Checkmark Indicator**:
-  - Inline: `flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg animate-in fade-in zoom-in-95`.
-  - Header Status: Compact indicator pill in the top-right bar displaying live sync state (`تم الحفظ بنجاح ✓`).
-- **Target Highlight**: Temporary pulse effect (`ring-2 ring-amber-500/60 bg-amber-500/5 transition-all duration-700`) that draws the eye directly to the searched option upon jumping.
+1. **POS Section (Front-of-House)**:
+   - **Step 1 — Operating Mode (`data-tour="operating-mode"`)**: Switching between Retail, Wholesale, and Restaurant modes.
+   - **Step 2 — Smart Search & Barcode (`data-tour="pos-search"`)**: Barcode laser/camera scanning, search field, and quick category pills.
+   - **Step 3 — Product Catalog (`data-tour="pos-products"`)**: One-tap product cards with instant stock counters.
+   - **Step 4 — Sales Cart (`data-tour="pos-cart"`)**: Quantity steppers, discount adjustments, and holding tickets.
+   - **Step 5 — Checkout & Fast Pay (`data-tour="pos-actions"`)**: Cash balance calculator, card payment, debt recording, and thermal printing.
+   - **Step 6 — Layout Customizer (`data-tour="customize-layout"`)**: Right/left hand cart repositioning and floating toolbar reordering.
 
----
+2. **Automated Transition to Inventory**:
+   - The spotlight system dispatches `setActiveTab('inventory')` with a 200ms view transition lock to let the inventory DOM layout stabilize.
 
-### 3. Key Product Decisions & Trade-Offs
+3. **Inventory Section (Back-of-House)**:
+   - **Step 7 — Valuation & Stock Metrics (`data-tour="inventory-valuation"`)**: Total inventory valuation at cost & retail, healthy stock vs. low stock indicators.
+   - **Step 8 — Proactive Low Stock Alerts Center (`data-tour="inventory-low-stock-tab"`)**: Real-time notifications for items below minimum thresholds with supplier reorder triggers.
+   - **Step 9 — Stock Levels & Quick Adjustments (`data-tour="inventory-stock-table"`)**: Live product stock table, searching, and quick +/- stock adjustments modal.
+   - **Step 10 — Header Tools & Manual Replay (`data-tour="header-tools"`)**: Global tools hub, exchange bulletin, cloud backup, and the manual walkthrough replay button.
 
-- **Decision 1: Deep Options Catalog vs Dynamic DOM Scanning**
-  - *Chosen Approach*: Maintain a curated declarative options catalog mapping each setting key to its parent card tab, element anchor ID, keywords, title, and current value accessor.
-  - *Why*: Guarantees instant search performance ($< 5\text{ms}$), comprehensive Arabic keyword coverage (synonyms like "سفلي", "تذييل", "فوتر", "طابعة", "عرض"), and reliable deep linking even if the target subtab is not currently mounted in the DOM.
-  - *Alternatives Considered*: Querying live DOM text, which fails because inactive tabs are unmounted and cannot be queried.
-
-- **Decision 2: Immediate Save for Toggles + Debounced Save for Inputs**
-  - *Chosen Approach*: Instant persistence for booleans, selects, and color swatches; 350ms debounce for text fields and numerical amounts.
-  - *Why*: Eliminates database/storage thrashing while typing numbers, yet provides snappy instant feedback for switch toggles.
+### Visual Styling & Glassmorphic Card
+- **Spotlight Mask**: SVG radial-gradient overlay with dynamic box-shadow (`box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.78)`), gold perimeter glow (`ring-4 ring-amber-500/80`), and smooth coordinate transitions.
+- **Tooltip Card**: Apple glass card with backdrop blur, rounded-3xl corners, amber badge, progress step dots (`● ○ ○`), and tactile button feedback (`active:scale-95`).
 
 ---
 
-### 4. Technical Architecture & Data Strategy
+## 3. Key Technical Decisions & Trade-Offs
+
+- **Automated View Switching (`targetView`)**:
+  - *Chosen Approach*: Add `targetView: 'pos' | 'inventory'` and optional `onEnterStep?: () => void` to each `TutorialStep`. If `activeTab !== step.targetView`, the tour automatically calls `setActiveTab(step.targetView)`, waits for the DOM node to mount, and computes the `DOMRect`.
+  - *Why*: Seamless single-flow onboarding without requiring user manual intervention.
+- **DOM Selector Anchoring**:
+  - *Chosen Approach*: Use explicit `data-tour="..."` attributes on key containers in `POSView.tsx` and `InventoryView.tsx`.
+  - *Why*: Immune to Tailwind class refactoring or dynamic element ID changes.
+
+---
+
+## 4. Technical Architecture & System Diagram
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                    SettingsView Component                     │
-│  - hubSearchQuery: string                                     │
-│  - isSearchDropdownOpen: boolean                              │
-│  - deepSearchOptionsCatalog: SettingOptionItem[]              │
-│  - recentlySavedKeys: Set<string>                             │
-│  - headerSaveStatus: 'idle' | 'saving' | 'saved'              │
-└───────────────────────────────┬───────────────────────────────┘
-                                │
-        ┌───────────────────────┴───────────────────────┐
-        ▼                                               ▼
-┌───────────────────────────────┐       ┌───────────────────────────────┐
-│  Deep Search Dropdown Engine  │       │     Auto-Save Engine          │
-│  - Matches query on title,    │       │  - autoSave(key, val, now)    │
-│    keywords, desc, & category │       │  - updateSettings(...)        │
-│  - Direct Jump Handler:       │       │  - Trigger inline checkmark   │
-│    1. setActiveSubTab(cardId) │       │  - Trigger header checkmark   │
-│    2. scrollIntoView(elemId)  │       │  - Audio tap confirmation     │
-│    3. apply temporary ring    │       └───────────────────────────────┘
-└───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                       AppContext                            │
+│  - isTutorialOpen / setIsTutorialOpen                       │
+│  - startInteractiveTutorial()                               │
+│  - activeTab / setActiveTab('pos' | 'inventory')            │
+└──────────────┬──────────────────────────────┬───────────────┘
+               │                              │
+               ▼                              ▼
+┌──────────────────────────────┐ ┌────────────────────────────┐
+│         Header.tsx           │ │InteractiveSpotlightTutorial│
+│ - btn-header-tutorial        │ │ - Target DOMRect tracker   │
+│ - Triggers start tutorial    │ │ - View switcher hook       │
+│ - data-tour="header-tools"   │ │ - SVG cut-out spotlight    │
+└──────────────────────────────┘ └─────────────┬──────────────┘
+                                               │
+               ┌───────────────────────────────┴──────────────────────────────┐
+               ▼                                                              ▼
+┌──────────────────────────────┐                               ┌──────────────────────────────┐
+│          POSView             │                               │        InventoryView         │
+│ - [data-tour="pos-search"]   │                               │ - [data-tour="inventory-     │
+│ - [data-tour="pos-products"] │                               │     valuation"]              │
+│ - [data-tour="pos-cart"]     │                               │ - [data-tour="inventory-     │
+│ - [data-tour="pos-actions"]  │                               │     low-stock-tab"]          │
+│ - [data-tour="customize-     │                               │ - [data-tour="inventory-     │
+│     layout"]                 │                               │     stock-table"]            │
+└──────────────────────────────┘                               └──────────────────────────────┘
 ```
 
-#### Components & Files to Enhance
-- `src/components/settings/SettingsView.tsx`:
-  - Integrate `SETTINGS_DEEP_OPTIONS` catalog with 40+ specific searchable settings.
-  - Render floating search results dropdown with instant one-click jump handler.
-  - Implement unified `handleAutoSave(field, value)` and connect all setting inputs/toggles to it.
-  - Render dual checkmark confirmation indicators (inline next to controls + header badge).
+---
+
+## 5. Verification Plan
+
+1. **Compilation Check**: Run `lint_applet` (`tsc --noEmit`) and `compile_applet`.
+2. **First-Time Trigger**: Clear `localStorage.getItem('kian_pos_tutorial_completed_v1')` to verify automated launch on clean profile.
+3. **Transition Flow**: Step through 1 to 6 on POS, verify automatic tab switch to Inventory for steps 7 to 9, and verify return to header for step 10.
+4. **Manual Replay**: Click the "الجولة التعريفية" button in the header toolbar and verify restarting from Step 1.

@@ -1800,7 +1800,7 @@ export const POSView: React.FC = () => {
         </div>
 
         {/* Cart Bottom Summary & Checkout */}
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+        <div data-tour="pos-actions" className="p-3.5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
           {/* Order Discount Option */}
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span className="flex items-center gap-1 font-bold">
