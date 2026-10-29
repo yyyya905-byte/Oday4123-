@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { soundEffects } from '../../services/audio';
 import { haptics } from '../../services/haptics';
-import { parsePriceInput } from '../../utils/currencyUtils';
+import { parsePriceInput, sanitizePriceInputString } from '../../utils/currencyUtils';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
 
 export type AdjustmentReasonCode =
@@ -397,7 +397,7 @@ export const QuickStockAdjustmentModal: React.FC<QuickStockAdjustmentModalProps>
               required
               inputMode="decimal"
               value={quantityInput}
-              onChange={e => setQuantityInput(e.target.value)}
+              onChange={e => setQuantityInput(sanitizePriceInputString(e.target.value))}
               placeholder="0"
               className="w-full text-xl sm:text-2xl font-black font-mono text-center py-3 px-4 bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 focus:outline-none shadow-inner"
             />

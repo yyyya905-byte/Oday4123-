@@ -22,6 +22,7 @@ import {
   Users,
   ShoppingBag
 } from 'lucide-react';
+import { parsePriceInput, sanitizePriceInputString } from '../../utils/currencyUtils';
 
 export interface PurchaseLineItemDraft {
   id: string;
@@ -82,9 +83,9 @@ export const SupplierPurchaseModal: React.FC<SupplierPurchaseModalProps> = ({
   const [draftUnit, setDraftUnit] = useState<string>('قطعة');
   const [draftMinStock, setDraftMinStock] = useState<number>(5);
   const [draftQuantity, setDraftQuantity] = useState<number>(10);
-  const [draftCostPrice, setDraftCostPrice] = useState<number | ''>('');
-  const [draftWholesalePrice, setDraftWholesalePrice] = useState<number | ''>('');
-  const [draftRetailPrice, setDraftRetailPrice] = useState<number | ''>('');
+  const [draftCostPrice, setDraftCostPrice] = useState<string>('');
+  const [draftWholesalePrice, setDraftWholesalePrice] = useState<string>('');
+  const [draftRetailPrice, setDraftRetailPrice] = useState<string>('');
 
   // 3. Invoice Line Items List
   const [invoiceItems, setInvoiceItems] = useState<PurchaseLineItemDraft[]>([]);
@@ -164,18 +165,22 @@ export const SupplierPurchaseModal: React.FC<SupplierPurchaseModalProps> = ({
       setDraftUnit(prod.unit || 'قطعة');
       setDraftMinStock(prod.minStock || 5);
       setDraftQuantity(Math.max(10, (prod.minStock || 5) * 2 - (prod.stock || 0)));
-      setDraftCostPrice(prod.costPrice || 0);
-      setDraftWholesalePrice(prod.wholesalePrice || Math.round((prod.price || 0) * 0.85));
-      setDraftRetailPrice(prod.price || 0);
+      setDraftCostPrice(prod.costPrice != null ? String(prod.costPrice) : '0');
+      setDraftWholesalePrice(
+        prod.wholesalePrice != null
+          ? String(prod.wholesalePrice)
+          : String(Math.round((prod.price || 0) * 0.85))
+      );
+      setDraftRetailPrice(prod.price != null ? String(prod.price) : '0');
     }
   };
 
   // Add current draft item (existing or new) to invoiceItems
   const handleAddDraftItemToInvoice = () => {
     const qty = Math.max(1, Number(draftQuantity) || 1);
-    const cost = Math.max(0, Number(draftCostPrice) || 0);
-    const wholesale = Math.max(0, Number(draftWholesalePrice) || cost);
-    const retail = Math.max(0, Number(draftRetailPrice) || wholesale || cost);
+    const cost = Math.max(0, parsePriceInput(draftCostPrice));
+    const wholesale = Math.max(0, parsePriceInput(draftWholesalePrice) || cost);
+    const retail = Math.max(0, parsePriceInput(draftRetailPrice) || wholesale || cost);
 
     if (itemEntryMode === 'existing') {
       const prod = products.find(p => p.id === selectedExistingProductId);
@@ -770,19 +775,19 @@ export const SupplierPurchaseModal: React.FC<SupplierPurchaseModalProps> = ({
                   سعر الشراء (التكلفة) ({settings.currency.symbol}):
                 </label>
                 <input
-                  type="number"
-                  min={0}
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   value={draftCostPrice}
                   onChange={e => {
-                    const val = e.target.value === '' ? '' : Number(e.target.value);
+                    const val = sanitizePriceInputString(e.target.value);
                     setDraftCostPrice(val);
-                    if (typeof val === 'number' && val > 0) {
-                      if (!draftWholesalePrice) setDraftWholesalePrice(Math.round(val * 1.15));
-                      if (!draftRetailPrice) setDraftRetailPrice(Math.round(val * 1.35));
+                    const num = parsePriceInput(val);
+                    if (num > 0) {
+                      if (!draftWholesalePrice) setDraftWholesalePrice(String(Math.round(num * 1.15)));
+                      if (!draftRetailPrice) setDraftRetailPrice(String(Math.round(num * 1.35)));
                     }
                   }}
-                  placeholder="0"
+                  placeholder="0.00"
                   className="w-full py-2 px-3 font-mono font-black text-sm rounded-xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800 text-slate-900 dark:text-white focus:outline-none focus:border-rose-500"
                 />
               </div>
@@ -793,12 +798,11 @@ export const SupplierPurchaseModal: React.FC<SupplierPurchaseModalProps> = ({
                   سعر البيع بالجملة ({settings.currency.symbol}):
                 </label>
                 <input
-                  type="number"
-                  min={0}
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   value={draftWholesalePrice}
-                  onChange={e => setDraftWholesalePrice(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0"
+                  onChange={e => setDraftWholesalePrice(sanitizePriceInputString(e.target.value))}
+                  placeholder="0.00"
                   className="w-full py-2 px-3 font-mono font-black text-sm rounded-xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800 text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -809,12 +813,11 @@ export const SupplierPurchaseModal: React.FC<SupplierPurchaseModalProps> = ({
                   سعر البيع بالمفرق ({settings.currency.symbol}):
                 </label>
                 <input
-                  type="number"
-                  min={0}
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   value={draftRetailPrice}
-                  onChange={e => setDraftRetailPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0"
+                  onChange={e => setDraftRetailPrice(sanitizePriceInputString(e.target.value))}
+                  placeholder="0.00"
                   className="w-full py-2 px-3 font-mono font-black text-sm rounded-xl bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>

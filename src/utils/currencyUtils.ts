@@ -32,6 +32,9 @@ export function parsePriceInput(val: string | number | null | undefined): number
     str = str.replace(new RegExp(arabicNumerals[i], 'g'), String(i));
   }
 
+  // Replace Arabic decimal mark (٫)
+  str = str.replace(/٫/g, '.');
+
   // Replace Arabic comma (،) and normal comma (,) with decimal period (.)
   if (str.includes(',') && str.includes('.')) {
     // If comma comes before dot (e.g. 1,000.50), comma is thousand separator
@@ -57,6 +60,41 @@ export function parsePriceInput(val: string | number | null | undefined): number
 
   const parsed = parseFloat(str);
   return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Normalizes live price input strings while typing in real time.
+ * Preserves trailing dots (e.g. "8." or "0.") and commas converted to dots,
+ * converts Arabic numerals to western (٠-٩ -> 0-9), and prevents multiple dots.
+ */
+export function sanitizePriceInputString(val: string | number | null | undefined): string {
+  if (val === null || val === undefined) return '';
+  let str = String(val);
+
+  // Convert Arabic-Indic numerals (٠-٩) to Latin (0-9)
+  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  for (let i = 0; i < 10; i++) {
+    str = str.replace(new RegExp(arabicNumerals[i], 'g'), String(i));
+  }
+
+  // Replace Arabic decimal mark (٫), Arabic comma (،), or comma (,) with period (.)
+  str = str.replace(/[،,٫]/g, '.');
+
+  // Strip anything that is not digits or dot
+  str = str.replace(/[^0-9.]/g, '');
+
+  // If user started typing with dot (e.g. "."), prepend "0" -> "0."
+  if (str === '.') {
+    return '0.';
+  }
+
+  // Ensure only one decimal dot exists
+  const parts = str.split('.');
+  if (parts.length > 2) {
+    str = parts[0] + '.' + parts.slice(1).join('');
+  }
+
+  return str;
 }
 
 /**

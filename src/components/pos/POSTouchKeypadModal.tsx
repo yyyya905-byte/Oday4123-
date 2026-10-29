@@ -22,7 +22,7 @@ import {
 import { soundEffects } from '../../services/audio';
 import { haptics } from '../../services/haptics';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
-import { parsePriceInput } from '../../utils/currencyUtils';
+import { parsePriceInput, sanitizePriceInputString } from '../../utils/currencyUtils';
 
 export type KeypadMode = 'quantity' | 'price' | 'discount';
 
@@ -384,7 +384,7 @@ export const POSTouchKeypadModal: React.FC<POSTouchKeypadModalProps> = ({
                 type="text"
                 inputMode="decimal"
                 value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
+                onChange={e => setInputValue(sanitizePriceInputString(e.target.value))}
                 className="w-full bg-transparent text-white font-mono font-black text-3xl sm:text-4xl tracking-tight focus:outline-none select-all"
                 placeholder="0"
               />

@@ -38,7 +38,7 @@ import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
 import { ProductBarcodeScannerModal } from './ProductBarcodeScannerModal';
 import { SupplierPurchaseModal } from '../debts/SupplierPurchaseModal';
 import { generateBarcodeSvg, generateRandomEan13 } from '../../utils/barcodeUtils';
-import { parsePriceInput } from '../../utils/currencyUtils';
+import { parsePriceInput, sanitizePriceInputString } from '../../utils/currencyUtils';
 import { HoldToConfirmButton } from '../ui/HoldToConfirmButton';
 import { CheckIcon } from '@phosphor-icons/react/dist/ssr';
 import { soundEffects } from '../../services/audio';
@@ -95,9 +95,9 @@ export const ProductsView: React.FC = () => {
   const [categoryId, setCategoryId] = useState('');
   const [barcode, setBarcode] = useState('');
   const [sku, setSku] = useState('');
-  const [price, setPrice] = useState<number>(10000);
-  const [costPrice, setCostPrice] = useState<number>(7000);
-  const [wholesalePrice, setWholesalePrice] = useState<number>(8500);
+  const [price, setPrice] = useState<string>('10000');
+  const [costPrice, setCostPrice] = useState<string>('7000');
+  const [wholesalePrice, setWholesalePrice] = useState<string>('8500');
   const [wholesaleMinQty, setWholesaleMinQty] = useState<number>(12);
   const [wholesaleUnit, setWholesaleUnit] = useState<string>('كرتونة');
   const [wholesaleUnitMultiplier, setWholesaleUnitMultiplier] = useState<number>(12);
@@ -123,8 +123,10 @@ export const ProductsView: React.FC = () => {
   const currencyCode = settings.currency.code;
 
   // Live profit calculation
-  const profitAmount = Math.max(0, price - costPrice);
-  const profitMarginPercent = costPrice > 0 ? ((profitAmount / costPrice) * 100).toFixed(1) : '100';
+  const numericPrice = parsePriceInput(price);
+  const numericCostPrice = parsePriceInput(costPrice);
+  const profitAmount = Math.max(0, numericPrice - numericCostPrice);
+  const profitMarginPercent = numericCostPrice > 0 ? ((profitAmount / numericCostPrice) * 100).toFixed(1) : '100';
 
   // LOW STOCK ALERT SYSTEM COMPUTATIONS (Products where stock <= minStock)
   const lowStockAlertProducts = useMemo(() => {
@@ -196,9 +198,9 @@ export const ProductsView: React.FC = () => {
     setCategoryId(categories[1]?.id || categories[0]?.id || 'cat_all');
     setBarcode(initialBarcode || `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`);
     setSku(`SKU-${Math.floor(100 + Math.random() * 900)}`);
-    setPrice(10000);
-    setCostPrice(7000);
-    setWholesalePrice(8500);
+    setPrice('10000');
+    setCostPrice('7000');
+    setWholesalePrice('8500');
     setWholesaleMinQty(12);
     setWholesaleUnit('كرتونة');
     setWholesaleUnitMultiplier(12);
@@ -225,9 +227,13 @@ export const ProductsView: React.FC = () => {
     setCategoryId(product.categoryId);
     setBarcode(product.barcode);
     setSku(product.sku);
-    setPrice(product.price);
-    setCostPrice(product.costPrice || 0);
-    setWholesalePrice(product.wholesalePrice || Math.round(product.price * 0.85));
+    setPrice(product.price != null ? String(product.price) : '');
+    setCostPrice(product.costPrice != null ? String(product.costPrice) : '0');
+    setWholesalePrice(
+      product.wholesalePrice != null
+        ? String(product.wholesalePrice)
+        : String(Math.round(product.price * 0.85))
+    );
     setWholesaleMinQty(product.wholesaleMinQty || 12);
     setWholesaleUnit(product.wholesaleUnit || 'كرتونة');
     setWholesaleUnitMultiplier(product.wholesaleUnitMultiplier || 12);
@@ -249,7 +255,11 @@ export const ProductsView: React.FC = () => {
 
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameAr.trim() || price <= 0) {
+    const parsedPrice = parsePriceInput(price);
+    const parsedCost = parsePriceInput(costPrice);
+    const parsedWholesale = parsePriceInput(wholesalePrice);
+
+    if (!nameAr.trim() || parsedPrice <= 0) {
       notify('تنبيه', 'يرجى إدخال اسم المنتج وسعر البيع بالعملة المحددة', 'warning');
       return;
     }
@@ -260,9 +270,9 @@ export const ProductsView: React.FC = () => {
       categoryId,
       barcode,
       sku,
-      price: Number(price),
-      costPrice: Number(costPrice) || 0,
-      wholesalePrice: Number(wholesalePrice) || Number(price),
+      price: parsedPrice,
+      costPrice: parsedCost,
+      wholesalePrice: parsedWholesale || parsedPrice,
       wholesaleMinQty: Number(wholesaleMinQty) || 1,
       wholesaleUnit: wholesaleUnit || 'كرتونة',
       wholesaleUnitMultiplier: Number(wholesaleUnitMultiplier) || 1,
@@ -281,10 +291,10 @@ export const ProductsView: React.FC = () => {
 
     if (editingProduct) {
       updateProduct(editingProduct.id, payload);
-      notify('تم بنجاح', `تم تحديث بيانات المنتج (${nameAr}) بسعر ${formatCurrency(price)}`, 'success');
+      notify('تم بنجاح', `تم تحديث بيانات المنتج (${nameAr}) بسعر ${formatCurrency(parsedPrice)}`, 'success');
     } else {
       addProduct(payload);
-      notify('تم بنجاح', `تم إضافة المنتج الجديد (${nameAr}) بسعر ${formatCurrency(price)}`, 'success');
+      notify('تم بنجاح', `تم إضافة المنتج الجديد (${nameAr}) بسعر ${formatCurrency(parsedPrice)}`, 'success');
     }
 
     setIsProductModalOpen(false);
@@ -1158,8 +1168,8 @@ export const ProductsView: React.FC = () => {
                       <input
                         type="text"
                         inputMode="decimal"
-                        value={costPrice ?? ''}
-                        onChange={e => setCostPrice(parsePriceInput(e.target.value))}
+                        value={costPrice}
+                        onChange={e => setCostPrice(sanitizePriceInputString(e.target.value))}
                         placeholder="0.00"
                         className="w-full text-sm font-bold font-mono py-2 px-2.5 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-300 dark:border-slate-600 focus:outline-none focus:border-amber-500"
                       />
@@ -1179,8 +1189,8 @@ export const ProductsView: React.FC = () => {
                         type="text"
                         required
                         inputMode="decimal"
-                        value={price ?? ''}
-                        onChange={e => setPrice(parsePriceInput(e.target.value))}
+                        value={price}
+                        onChange={e => setPrice(sanitizePriceInputString(e.target.value))}
                         placeholder="0.00"
                         className="w-full text-sm font-black font-mono py-2 px-2.5 bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 rounded-xl border-2 border-blue-400 dark:border-blue-600 focus:outline-none"
                       />
@@ -1199,8 +1209,8 @@ export const ProductsView: React.FC = () => {
                       <input
                         type="text"
                         inputMode="decimal"
-                        value={wholesalePrice ?? ''}
-                        onChange={e => setWholesalePrice(parsePriceInput(e.target.value))}
+                        value={wholesalePrice}
+                        onChange={e => setWholesalePrice(sanitizePriceInputString(e.target.value))}
                         placeholder="0.00"
                         className="w-full text-sm font-bold font-mono py-2 px-2.5 bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 rounded-xl border border-amber-300 dark:border-amber-700 focus:outline-none"
                       />

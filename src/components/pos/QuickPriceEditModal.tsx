@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { soundEffects } from '../../services/audio';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
+import { parsePriceInput, sanitizePriceInputString } from '../../utils/currencyUtils';
 
 interface QuickPriceEditModalProps {
   isOpen: boolean;
@@ -79,7 +80,7 @@ export const QuickPriceEditModal: React.FC<QuickPriceEditModalProps> = ({
 
   if (!isOpen || !product) return null;
 
-  const numericPrice = parseFloat(priceInput) || 0;
+  const numericPrice = parsePriceInput(priceInput);
   const originalPrice = product.price;
   const costPrice = product.costPrice || 0;
   const isLoss = costPrice > 0 && numericPrice < costPrice;
@@ -126,6 +127,11 @@ export const QuickPriceEditModal: React.FC<QuickPriceEditModalProps> = ({
       setPriceInput(prev => (prev.length > 1 ? prev.slice(0, -1) : '0'));
     } else if (val === '00') {
       setPriceInput(prev => (prev === '0' || prev === '' ? '0' : prev + '00'));
+    } else if (val === '.' || val === ',') {
+      setPriceInput(prev => {
+        if (prev.includes('.')) return prev;
+        return (prev === '' ? '0' : prev) + '.';
+      });
     } else {
       setPriceInput(prev => (prev === '0' || prev === '' ? val : prev + val));
     }
@@ -209,13 +215,12 @@ export const QuickPriceEditModal: React.FC<QuickPriceEditModalProps> = ({
               <input
                 id="quick-price-input"
                 ref={inputRef}
-                type="number"
-                min="0"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 value={priceInput}
-                onChange={e => setPriceInput(e.target.value)}
+                onChange={e => setPriceInput(sanitizePriceInputString(e.target.value))}
                 className="w-full ps-4 pe-20 py-3 text-2xl font-black font-mono text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 border-2 border-amber-500/60 focus:border-amber-500 rounded-2xl outline-none shadow-inner transition-all text-start"
-                placeholder="0"
+                placeholder="0.00"
               />
               <span className="absolute end-4 text-xs font-black font-mono px-2 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 pointer-events-none">
                 {settings.currency.symbol}
