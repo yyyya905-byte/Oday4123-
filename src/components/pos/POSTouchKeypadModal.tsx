@@ -22,6 +22,7 @@ import {
 import { soundEffects } from '../../services/audio';
 import { haptics } from '../../services/haptics';
 import { DraggableModalWrapper } from '../common/DraggableModalWrapper';
+import { parsePriceInput } from '../../utils/currencyUtils';
 
 export type KeypadMode = 'quantity' | 'price' | 'discount';
 
@@ -121,7 +122,7 @@ export const POSTouchKeypadModal: React.FC<POSTouchKeypadModalProps> = ({
 
   if (!isOpen) return null;
 
-  const numericValue = parseFloat(inputValue) || 0;
+  const numericValue = parsePriceInput(inputValue);
 
   // Numpad touch operations
   const handleNumpadPress = (val: string) => {
@@ -136,11 +137,11 @@ export const POSTouchKeypadModal: React.FC<POSTouchKeypadModalProps> = ({
         if (prev.length <= 1) return '0';
         return prev.slice(0, -1);
       });
-    } else if (val === '.') {
+    } else if (val === '.' || val === ',') {
       haptics.tap();
       soundEffects.playClick();
       setInputValue(prev => {
-        if (prev.includes('.')) return prev;
+        if (prev.includes('.') || prev.includes(',')) return prev;
         return (prev === '' ? '0' : prev) + '.';
       });
     } else if (val === '00') {

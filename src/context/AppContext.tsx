@@ -2168,15 +2168,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPowerSavingActive(!isPowerSavingActive);
   };
 
-  // Currency Formatter
+  // Currency Formatter with Full Decimal & Cents Support
   const formatCurrency = (amount: number): string => {
     const num = Number(amount) || 0;
-    const formattedNum = new Intl.NumberFormat(language === 'ar' ? 'ar-SY' : 'en-US', {
-      minimumFractionDigits: settings.currency.decimals || 0,
-      maximumFractionDigits: settings.currency.decimals || 0,
+    const hasDecimals = !Number.isInteger(num) || (num > 0 && num < 1);
+    const decimals = settings.currency.decimals !== undefined && settings.currency.decimals !== null && settings.currency.decimals > 0
+      ? settings.currency.decimals
+      : (hasDecimals ? 2 : (settings.currency.code === 'USD' || settings.currency.code === 'EUR' ? 2 : 0));
+
+    const formattedNum = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: hasDecimals ? 2 : decimals,
+      maximumFractionDigits: Math.max(decimals, hasDecimals ? 2 : 0),
     }).format(num);
 
-    const symbol = language === 'ar' ? settings.currency.symbolNative || settings.currency.symbol : settings.currency.symbol;
+    const symbol = language === 'ar' ? (settings.currency.symbolNative || settings.currency.symbol) : settings.currency.symbol;
     return language === 'ar' ? `${formattedNum} ${symbol}` : `${symbol} ${formattedNum}`;
   };
 

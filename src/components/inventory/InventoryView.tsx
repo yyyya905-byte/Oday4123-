@@ -28,12 +28,16 @@ import {
   Printer,
   TrendingUp,
   TrendingDown,
-  RefreshCw
+  RefreshCw,
+  Camera,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { VehicleDispatchTab } from './VehicleDispatchTab';
 import { WholesaleWarehousesTab } from './WholesaleWarehousesTab';
 import { LowStockAlertsCenter } from './LowStockAlertsCenter';
 import { SupplierPurchaseModal } from '../debts/SupplierPurchaseModal';
+import { QuickStockAdjustmentModal, AdjustmentReasonCode } from './QuickStockAdjustmentModal';
+import { InventorySmartScannerModal } from './InventorySmartScannerModal';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import {
   CivilDateRange,
@@ -76,11 +80,11 @@ export const InventoryView: React.FC = () => {
   }, []);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [quickAdjustProduct, setQuickAdjustProduct] = useState<Product | null>(null);
+  const [quickAdjustReason, setQuickAdjustReason] = useState<AdjustmentReasonCode>('adjustment');
+  const [isQuickAdjustOpen, setIsQuickAdjustOpen] = useState(false);
+  const [isSmartScanOpen, setIsSmartScanOpen] = useState(false);
   const [isSupplierPurchaseModalOpen, setIsSupplierPurchaseModalOpen] = useState(false);
-  const [movementType, setMovementType] = useState<StockMovementType>('purchase');
-  const [quantity, setQuantity] = useState<number>(10);
-  const [reason, setReason] = useState<string>('');
 
   // Table filtering and search for stock levels
   const [stockFilter, setStockFilter] = useState<'all' | 'low_stock' | 'out_of_stock' | 'healthy'>('all');
@@ -127,25 +131,17 @@ export const InventoryView: React.FC = () => {
   const vehiclesOnRoute = deliveryVehicles.filter((v) => v.status === 'on_route').length;
 
   const openAdjustModal = (product: Product, defaultType: StockMovementType = 'purchase') => {
-    setSelectedProduct(product);
-    setMovementType(defaultType);
-    setQuantity(defaultType === 'purchase' ? 20 : 1);
-    setReason('');
-    setIsAdjustModalOpen(true);
-  };
-
-  const handleConfirmAdjustment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProduct || quantity <= 0) return;
-
-    adjustStock(
-      selectedProduct.id,
-      movementType,
-      Number(quantity),
-      reason || 'تعديل يدوي من إدارة المخزون'
-    );
-    notify('تم بنجاح', `تم تحديث مخزون ${selectedProduct.nameAr}`, 'success');
-    setIsAdjustModalOpen(false);
+    let reasonCode: AdjustmentReasonCode = 'adjustment';
+    if (defaultType === 'purchase' || defaultType === 'restock') {
+      reasonCode = 'purchase';
+    } else if (defaultType === 'damage') {
+      reasonCode = 'damage';
+    } else if (defaultType === 'return') {
+      reasonCode = 'return';
+    }
+    setQuickAdjustProduct(product);
+    setQuickAdjustReason(reasonCode);
+    setIsQuickAdjustOpen(true);
   };
 
   return (
@@ -165,6 +161,16 @@ export const InventoryView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsSmartScanOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-black text-xs shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer ring-1 ring-emerald-400/30"
+            title="مسح فوري لباركود المنتجات بالكاميرا وتعديل كمياتها"
+          >
+            <Camera className="w-4 h-4 animate-pulse" />
+            <span>⚡ فحص ذكي بالكاميرا (Smart Scan)</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsSupplierPurchaseModalOpen(true)}
@@ -485,8 +491,18 @@ export const InventoryView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Quick Filter Buttons & Search */}
+              {/* Quick Filter Buttons & Search & Smart Scan */}
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSmartScanOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
+                  title="فتح كاميرا الفحص الذكي للبحث عن المنتج وتعديل كميته مباشرة"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>فحص بالكاميرا</span>
+                </button>
+
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute start-3 top-2.5" />
                   <input
@@ -768,7 +784,16 @@ export const InventoryView: React.FC = () => {
 
                           {/* Restock Actions */}
                           <td className="py-3 px-4 text-end">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openAdjustModal(product, 'adjustment')}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-amber-500 hover:text-slate-950 text-[11px] font-black transition-all cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+                                title="تعديل سريع للمخزون مع اختيار كود وسبب التعديل"
+                              >
+                                <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" />
+                                <span>تعديل سريع</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => openAdjustModal(product, 'purchase')}
@@ -791,14 +816,6 @@ export const InventoryView: React.FC = () => {
                                 title="تسجيل تالف أو هالك"
                               >
                                 تالف
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openAdjustModal(product, 'adjustment')}
-                                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                title="جرد وتعديل يدوي"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </td>
@@ -1228,91 +1245,24 @@ export const InventoryView: React.FC = () => {
         );
       })()}
 
-      {/* Adjust Modal */}
-      {isAdjustModalOpen && selectedProduct && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                تعديل مخزون: {selectedProduct.nameAr}
-              </h3>
-              <button
-                onClick={() => setIsAdjustModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* Quick Stock Adjustment Modal with Reasons & Count Mode */}
+      <QuickStockAdjustmentModal
+        isOpen={isQuickAdjustOpen}
+        onClose={() => setIsQuickAdjustOpen(false)}
+        product={quickAdjustProduct}
+        initialReasonCode={quickAdjustReason}
+      />
 
-            <form onSubmit={handleConfirmAdjustment} className="p-6 space-y-4">
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-900/40 flex items-center justify-between text-xs font-bold text-amber-800 dark:text-amber-300">
-                <span>المخزون الحالي المسجل:</span>
-                <span className="font-mono text-base">
-                  {selectedProduct.stock} {selectedProduct.unit}
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  نوع العملية المخزنية
-                </label>
-                <select
-                  value={movementType}
-                  onChange={(e) => setMovementType(e.target.value as StockMovementType)}
-                  className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
-                >
-                  <option value="purchase">توريد بضاعة جديدة (+ زيادة المخزون)</option>
-                  <option value="damage">تسجيل بضاعة تالفة / منتهية الصلاحية (- خصم من المخزون)</option>
-                  <option value="adjustment">جرد يدوي / تصحيح خطأ عد</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  الكمية ({selectedProduct.unit})
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="w-full text-sm font-bold font-mono px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  السبب أو رقم فاتورة التوريد
-                </label>
-                <input
-                  type="text"
-                  placeholder="مثال: فاتورة المورّد رقم 5412"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAdjustModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-md shadow-amber-500/20 cursor-pointer"
-                >
-                  تأكيد التعديل
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Smart Camera Scanner Modal with live visual overlay & auto-fill */}
+      <InventorySmartScannerModal
+        isOpen={isSmartScanOpen}
+        onClose={() => setIsSmartScanOpen(false)}
+        onOpenQuickAdjustment={(prod) => {
+          setQuickAdjustProduct(prod);
+          setQuickAdjustReason('purchase');
+          setIsQuickAdjustOpen(true);
+        }}
+      />
 
       {/* Smart Supplier Purchase & Inventory Restock Modal */}
       <SupplierPurchaseModal

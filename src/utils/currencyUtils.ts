@@ -13,6 +13,70 @@ export interface CurrencyPreset {
   countryAr: string;
 }
 
+/**
+ * Universal Currency & Price Input Parser
+ * Converts strings with commas (e.g. "8,80", "0,10", ",10", "8.80", "٨,٨٠") into accurate floating numbers.
+ * Prevents truncating cents and allows decimal prices with both comma and dot separators.
+ */
+export function parsePriceInput(val: string | number | null | undefined): number {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : val;
+  }
+  let str = String(val).trim();
+  if (!str) return 0;
+
+  // Convert Arabic-Indic numerals (٠-٩) to Latin (0-9)
+  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  for (let i = 0; i < 10; i++) {
+    str = str.replace(new RegExp(arabicNumerals[i], 'g'), String(i));
+  }
+
+  // Replace Arabic comma (،) and normal comma (,) with decimal period (.)
+  if (str.includes(',') && str.includes('.')) {
+    // If comma comes before dot (e.g. 1,000.50), comma is thousand separator
+    if (str.indexOf(',') < str.indexOf('.')) {
+      str = str.replace(/,/g, '');
+    } else {
+      // Dot comes before comma (e.g. 1.000,50), dot is thousand separator and comma is decimal
+      str = str.replace(/\./g, '').replace(/,/g, '.');
+    }
+  } else if (str.includes('،')) {
+    str = str.replace(/،/g, '.');
+  } else if (str.includes(',')) {
+    str = str.replace(/,/g, '.');
+  }
+
+  // If starts with "." like ".10", prepend "0"
+  if (str.startsWith('.')) {
+    str = '0' + str;
+  }
+
+  // Strip non-numeric characters except leading minus and decimal point
+  str = str.replace(/[^0-9.-]/g, '');
+
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Formats a numeric price for display with clean decimal cents support
+ */
+export function formatPriceDisplay(
+  amount: number,
+  options?: { useComma?: boolean; decimals?: number; symbol?: string }
+): string {
+  const num = Number(amount) || 0;
+  const hasDecimals = !Number.isInteger(num);
+  const targetDecimals = options?.decimals !== undefined ? options.decimals : (hasDecimals ? 2 : 0);
+
+  let formatted = num.toFixed(targetDecimals);
+  if (options?.useComma) {
+    formatted = formatted.replace('.', ',');
+  }
+  return options?.symbol ? `${formatted} ${options.symbol}` : formatted;
+}
+
 export const CURRENCY_PRESETS: CurrencyPreset[] = [
   {
     code: 'SYP',

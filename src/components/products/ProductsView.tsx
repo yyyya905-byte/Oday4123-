@@ -38,6 +38,7 @@ import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
 import { ProductBarcodeScannerModal } from './ProductBarcodeScannerModal';
 import { SupplierPurchaseModal } from '../debts/SupplierPurchaseModal';
 import { generateBarcodeSvg, generateRandomEan13 } from '../../utils/barcodeUtils';
+import { parsePriceInput } from '../../utils/currencyUtils';
 import { HoldToConfirmButton } from '../ui/HoldToConfirmButton';
 import { CheckIcon } from '@phosphor-icons/react/dist/ssr';
 import { soundEffects } from '../../services/audio';
@@ -1155,10 +1156,11 @@ export const ProductsView: React.FC = () => {
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
-                        min={0}
-                        value={costPrice || ''}
-                        onChange={e => setCostPrice(Number(e.target.value))}
+                        type="text"
+                        inputMode="decimal"
+                        value={costPrice ?? ''}
+                        onChange={e => setCostPrice(parsePriceInput(e.target.value))}
+                        placeholder="0.00"
                         className="w-full text-sm font-bold font-mono py-2 px-2.5 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-300 dark:border-slate-600 focus:outline-none focus:border-amber-500"
                       />
                       <span className="absolute end-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
@@ -1170,15 +1172,16 @@ export const ProductsView: React.FC = () => {
                   {/* 2. Retail Sale Price */}
                   <div>
                     <label className="block text-[11px] font-bold text-blue-600 dark:text-blue-400 mb-1">
-                      سعر البيع بالمفرق *
+                      سعر البيع بالمفرق * (يدعم الفواصل 8.80 أو 0,10)
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
+                        type="text"
                         required
-                        min={0}
-                        value={price || ''}
-                        onChange={e => setPrice(Number(e.target.value))}
+                        inputMode="decimal"
+                        value={price ?? ''}
+                        onChange={e => setPrice(parsePriceInput(e.target.value))}
+                        placeholder="0.00"
                         className="w-full text-sm font-black font-mono py-2 px-2.5 bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 rounded-xl border-2 border-blue-400 dark:border-blue-600 focus:outline-none"
                       />
                       <span className="absolute end-2.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-blue-600">
@@ -1194,10 +1197,11 @@ export const ProductsView: React.FC = () => {
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
-                        min={0}
-                        value={wholesalePrice || ''}
-                        onChange={e => setWholesalePrice(Number(e.target.value))}
+                        type="text"
+                        inputMode="decimal"
+                        value={wholesalePrice ?? ''}
+                        onChange={e => setWholesalePrice(parsePriceInput(e.target.value))}
+                        placeholder="0.00"
                         className="w-full text-sm font-bold font-mono py-2 px-2.5 bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 rounded-xl border border-amber-300 dark:border-amber-700 focus:outline-none"
                       />
                       <span className="absolute end-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-amber-500">

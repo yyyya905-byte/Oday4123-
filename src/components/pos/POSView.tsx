@@ -482,7 +482,8 @@ export const POSView: React.FC = () => {
   const totalDiscount = itemDiscountsTotal + orderDiscountAmount + pointsDiscountAmount;
   const taxableAmount = Math.max(0, subtotal - totalDiscount);
   const taxAmount = settings.enableTax ? (taxableAmount * (settings.defaultTaxRate || 0)) / 100 : 0;
-  const grandTotal = Math.round(taxableAmount + taxAmount);
+  const rawTotal = taxableAmount + taxAmount;
+  const grandTotal = Number.isInteger(rawTotal) ? rawTotal : Number(rawTotal.toFixed(2));
 
   // Smart Banknote Suggestions for Speed Cash Checkout
   const quickBanknotes = useMemo(() => {
