@@ -310,6 +310,7 @@ interface AppContextType {
   // Authentication & Staff
   currentUser: User;
   setCurrentUser: (user: User) => void;
+  updateUserProfile: (updates: { name?: string; jobTitle?: string; avatar?: string; role?: UserRole }) => void;
   users: User[];
   loginWithPin: (pin: string) => boolean;
   hasPermission: (action: string) => boolean;
@@ -2256,6 +2257,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify('تم تحديث بيانات الموظف', '', 'success');
   };
 
+  const updateUserProfile = (updates: { name?: string; jobTitle?: string; avatar?: string; role?: UserRole }) => {
+    const updatedUser: User = {
+      ...currentUser,
+      ...(updates.name !== undefined && { name: updates.name.trim() }),
+      ...(updates.jobTitle !== undefined && { jobTitle: updates.jobTitle.trim() }),
+      ...(updates.avatar !== undefined && { avatar: updates.avatar }),
+      ...(updates.role !== undefined && { role: updates.role }),
+    };
+
+    setCurrentUserState(updatedUser);
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, updatedUser.id);
+
+    const updatedUsers = users.map(u => u.id === currentUser.id ? updatedUser : u);
+    setUsersState(updatedUsers);
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updatedUsers));
+
+    if (googleUser && (currentUser.isGoogleAccount || currentUser.email === googleUser.email)) {
+      const updatedGoogle = googleAuthService.updateProfile({
+        name: updatedUser.name,
+        jobTitle: updatedUser.jobTitle,
+        picture: updatedUser.avatar,
+        role: updatedUser.role,
+      });
+      if (updatedGoogle) {
+        setGoogleUserState(updatedGoogle);
+      }
+    }
+
+    soundEffects.playSuccess();
+    notify('تم تحديث الملف الشخصي', 'تم حفظ وتطبيق التعديلات بنجاح', 'success');
+    logAudit('تعديل الملف الشخصي', `تم تحديث بيانات المستخدم: ${updatedUser.name} (${updatedUser.jobTitle || 'موظف'})`, 'low');
+  };
+
   const deleteStaff = (id: string) => {
     if (users.length <= 1) {
       notify('لا يمكن حذف الموظف الوحيد', '', 'error');
@@ -2298,6 +2332,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isGoogleAccount: true,
             avatar: res.user.picture || existingUser.avatar,
             name: res.user.name || existingUser.name,
+            jobTitle: existingUser.jobTitle || res.user.jobTitle || 'مدير المتجر',
           };
           const updatedUsers = users.map(u => u.id === existingUser.id ? activeAuthUser : u);
           setUsersState(updatedUsers);
@@ -2309,7 +2344,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             name: res.user.name || 'حساب Google',
             email: res.user.email,
             role: res.user.role || 'owner',
-            avatar: res.user.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&q=80',
+            jobTitle: res.user.jobTitle || 'مدير المتجر',
+            avatar: res.user.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80',
             pinCode: '0000',
             active: true,
             createdAt: new Date().toISOString(),
@@ -7776,6 +7812,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         revokeCurrentDeviceSubscription,
         currentUser,
         setCurrentUser,
+        updateUserProfile,
         users,
         loginWithPin,
         hasPermission,

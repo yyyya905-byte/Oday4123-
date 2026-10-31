@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for an interactive unified onboarding tour using the existing spotlight system. Covers seamless automated transitions between POS layout and Inventory management, highlighting stock tracking, low stock alerts, and quick adjustments with tactile audio and manual replay support.",
-  "updatedAt":  "2026-10-28T21:49:34.769729788Z",
+  "summary":  "Implementation plan for adding the Connected Devices & Terminals Management interface inside the Settings tab, featuring one-click role switching, one-click disconnection, live mesh synchronization, and quick granular permission management.",
+  "updatedAt":  "2026-10-31T20:16:09.329406597Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

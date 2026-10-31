@@ -250,10 +250,15 @@ export const PinSwitchModal: React.FC<PinSwitchModalProps> = ({ isOpen, onClose 
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-black text-xs text-slate-900 dark:text-white truncate">
                           {u.name}
                         </span>
+                        {u.jobTitle && (
+                          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            • {u.jobTitle}
+                          </span>
+                        )}
                         {u.isGoogleAccount && (
                           <span title="حساب مرتبط بـ Google">
                             <GoogleIcon className="w-3 h-3 shrink-0" />

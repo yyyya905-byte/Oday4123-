@@ -27,15 +27,31 @@ async function bootstrap() {
       }
     }
 
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      if (registrations.length > 0 && localStorage.getItem('kian_sw_purged_v5') !== 'true') {
-        await Promise.all(registrations.map((reg) => reg.unregister()));
-        localStorage.setItem('kian_sw_purged_v5', 'true');
-      }
+    // Register Service Worker for offline-first caching and instant startup on slow connections
+    if ('serviceWorker' in navigator && ((import.meta as any).env?.PROD || window.location.protocol === 'https:')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('./sw.js')
+          .then((reg) => {
+            // Check for updates periodically
+            reg.onupdatefound = () => {
+              const installingWorker = reg.installing;
+              if (installingWorker) {
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.info('[Service Worker] New version available, pre-caching complete.');
+                  }
+                };
+              }
+            };
+          })
+          .catch((err) => {
+            console.warn('[Service Worker] Registration skipped/restricted in iframe:', err);
+          });
+      });
     }
   } catch (err) {
-    console.warn('[Bootstrap] Cache cleanup warning:', err);
+    console.warn('[Bootstrap] Cache setup warning:', err);
   }
 
   await import('./main.tsx');

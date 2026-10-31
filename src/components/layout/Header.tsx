@@ -29,6 +29,7 @@ import {
 import { ExchangeBulletinModal } from '../currency/ExchangeBulletinModal';
 import { BarcodeDesignerModal } from '../barcode/BarcodeDesignerModal';
 import { ToolsHubModal } from '../modals/ToolsHubModal';
+import { UserProfileModal } from '../modals/UserProfileModal';
 import { getRoleInfo } from '../../utils/permissions';
 import { GoogleIcon } from '../common/GoogleIcon';
 import { soundEffects } from '../../services/audio';
@@ -76,6 +77,7 @@ export const Header: React.FC = () => {
   const [isBulletinModalOpen, setIsBulletinModalOpen] = useState(false);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [isToolsHubModalOpen, setIsToolsHubModalOpen] = useState(false);
+  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const improvementsCount = notifications.filter(
@@ -473,15 +475,18 @@ export const Header: React.FC = () => {
           </button>
         )}
 
-        {/* Staff Profile / PIN Switch */}
+        {/* Staff Profile / User Account / PIN Switch */}
         <button
           id="btn-user-profile-shift"
           type="button"
-          onClick={() => setIsPinModalOpen(true)}
+          onClick={() => {
+            soundEffects.playGlassTap();
+            setIsUserProfileModalOpen(true);
+          }}
           className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-200/60 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] border border-white/60 dark:border-white/[0.08] transition-all text-start cursor-pointer shrink-0 btn-tactile"
-          title={`${currentUser.name} (${roleInfo.labelAr}) - انقر لتبديل الموظف`}
+          title={`${currentUser.name} (${currentUser.jobTitle || roleInfo.labelAr}) - انقر لتعديل الملف الشخصي والوظيفة`}
         >
-          <div className="relative w-6 h-6 rounded-lg overflow-hidden bg-slate-900 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center font-black text-xs shrink-0">
+          <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-lg sm:rounded-xl overflow-hidden bg-slate-900 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center font-black text-xs shrink-0 border border-amber-500/20">
             {currentUser.avatar ? (
               <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
@@ -493,11 +498,25 @@ export const Header: React.FC = () => {
               </span>
             )}
           </div>
-          <span className="hidden xl:block text-xs font-bold text-slate-900 dark:text-white truncate max-w-[85px]">
-            {currentUser.name}
-          </span>
+          <div className="hidden xl:flex flex-col text-start leading-none">
+            <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[95px]">
+              {currentUser.name}
+            </span>
+            <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[95px] mt-0.5">
+              {currentUser.jobTitle || roleInfo.labelAr}
+            </span>
+          </div>
         </button>
       </div>
+
+      {/* User Profile & Account Edit Modal */}
+      {isUserProfileModalOpen && (
+        <UserProfileModal
+          isOpen={isUserProfileModalOpen}
+          onClose={() => setIsUserProfileModalOpen(false)}
+          onOpenPinSwitch={() => setIsPinModalOpen(true)}
+        />
+      )}
 
       {/* Unified Tools Hub Modal */}
       <ToolsHubModal

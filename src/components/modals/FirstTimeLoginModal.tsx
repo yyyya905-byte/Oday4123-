@@ -121,7 +121,7 @@ export const FirstTimeLoginModal: React.FC<FirstTimeLoginModalProps> = ({
     try {
       const success = await signInWithGoogle({ role: 'owner' });
       if (success) {
-        completeFirstLogin({ name: adminName });
+        completeFirstLogin();
       }
     } catch {
       setError('تعذر تسجيل الدخول عبر Google، يمكنك المتابعة بحساب الكاشير المحلي.');

@@ -65,6 +65,7 @@ import { isAuthorizedToGenerateCodes } from '../../utils/licenseUtils';
 import { StoreLogoUploader } from './StoreLogoUploader';
 import { ReceiptHeaderFooterSettings } from './ReceiptHeaderFooterSettings';
 import { MultiCurrencyManagerPanel } from './MultiCurrencyManagerPanel';
+import { ConnectedDevicesManagerPanel } from './ConnectedDevicesManagerPanel';
 
 interface ContrastLevelConfig {
   id: DarkContrastLevel;
@@ -145,7 +146,8 @@ export type SettingsSubTab =
   | 'debt_whatsapp'
   | 'google_drive'
   | 'indexeddb_autobackup'
-  | 'license';
+  | 'license'
+  | 'connected_devices';
 
 export interface DeepSearchOption {
   id: string;
@@ -515,6 +517,28 @@ const SETTINGS_DEEP_OPTIONS: DeepSearchOption[] = [
     keywords: ['ترخيص', 'تفعيل', 'كود', 'مفتاح', 'سيريال', 'شراء', 'جهاز', 'اجهزة'],
     icon: KeyRound,
     elementAnchorId: 'setting-anchor-license'
+  },
+  {
+    id: 'connected_devices_list',
+    cardId: 'connected_devices',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'قائمة الأجهزة المتصلة وشبكة الكاشير (Mesh)',
+    titleEn: 'Connected Devices List & Terminals',
+    descAr: 'عرض شاشات المطبخ وأجهزة الكاشير الفرعية المتصلة، مع إمكانية فصل أي جهاز أو تحديث صلاحياته بضغطة زر واحدة.',
+    keywords: ['اجهزة', 'جهاز', 'متصلة', 'شاشة مطبخ', 'كاشير فرعي', 'نادل', 'صلاحيات', 'فصل', 'شبكة', 'ربط', 'mesh', 'kds', 'cfd'],
+    icon: Monitor,
+    elementAnchorId: 'setting-anchor-connected-devices'
+  },
+  {
+    id: 'connected_devices_permissions',
+    cardId: 'connected_devices',
+    categoryLabel: 'المبيعات والعمليات',
+    titleAr: 'تحديث صلاحيات وأدوار الأجهزة بنقرة واحدة',
+    titleEn: 'One-Click Device Role & Permission Updates',
+    descAr: 'تغيير دور الجهاز فورياً (كاشير، شاشة تحضير، نادل) وتعديل صلاحيات البيع والخصم والمخزون.',
+    keywords: ['صلاحيات', 'ادوار', 'تحديث', 'كاشير', 'مطبخ', 'نادل', 'مشرف', 'اذونات', 'فورية'],
+    icon: Sliders,
+    elementAnchorId: 'setting-anchor-connected-devices'
   }
 ];
 
@@ -561,7 +585,8 @@ export const SettingsView: React.FC = () => {
     activePrimaryHex,
     setThemeColor,
     businessMode,
-    openStorageCleanupModal
+    openStorageCleanupModal,
+    devices
   } = useApp();
 
   const activeEmail = (
@@ -780,6 +805,18 @@ export const SettingsView: React.FC = () => {
       badgeColorClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
     },
     {
+      id: 'connected_devices' as const,
+      category: 'operations' as const,
+      categoryLabel: 'المبيعات والعمليات',
+      titleAr: 'الأجهزة المتصلة وشبكة الكاشير',
+      titleEn: 'Connected Devices & Terminals Mesh',
+      descAr: 'مراقبة وإدارة أجهزة الكاشير الفرعية وشاشات المطبخ والنوادل، وتحديث صلاحياتها أو فصلها بضغطة زر واحدة.',
+      icon: Monitor,
+      gradientClass: 'bg-gradient-to-br from-indigo-600 to-violet-700',
+      badge: `${devices.filter(d => d.isOnline).length} أجهزة متصلة`,
+      badgeColorClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+    },
+    {
       id: 'google_drive' as const,
       category: 'security' as const,
       categoryLabel: 'النسخ والترخيص',
@@ -817,7 +854,7 @@ export const SettingsView: React.FC = () => {
         ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
         : 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/20'
     }
-  ], [settings, formData, activeThemeColor, themeMode, theme, isAppPurchased, isTrialExpired, trialDaysRemaining]);
+  ], [settings, formData, activeThemeColor, themeMode, theme, isAppPurchased, isTrialExpired, trialDaysRemaining, devices]);
 
   const filteredCards = useMemo(() => {
     return settingsCards.filter(card => {
@@ -1164,7 +1201,7 @@ export const SettingsView: React.FC = () => {
               className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all active:scale-95 cursor-pointer shadow-sm shadow-amber-500/20"
             >
               <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-              <span>عرض جميع البطاقات (14)</span>
+              <span>عرض جميع بطاقات الإعدادات</span>
             </button>
           )}
         </div>
@@ -1281,11 +1318,11 @@ export const SettingsView: React.FC = () => {
             {/* Category Filter Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
               {[
-                { id: 'all', label: 'جميع البطاقات (14)' },
+                { id: 'all', label: `جميع البطاقات (${settingsCards.length})` },
                 { id: 'financial', label: 'الهوية والعملات (2)' },
                 { id: 'printing', label: 'الفواتير والطباعة (3)' },
                 { id: 'appearance', label: 'المظهر والواجهة (3)' },
-                { id: 'operations', label: 'المبيعات والعمليات (3)' },
+                { id: 'operations', label: 'المبيعات والعمليات (4)' },
                 { id: 'security', label: 'النسخ والترخيص (3)' }
               ].map(cat => (
                 <button
@@ -3997,6 +4034,13 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 16. CONNECTED DEVICES & TERMINALS MESH SUBTAB */}
+      {activeSubTab === 'connected_devices' && (
+        <div id="setting-anchor-connected-devices" className="max-w-5xl animate-in fade-in duration-200">
+          <ConnectedDevicesManagerPanel />
         </div>
       )}
     </div>

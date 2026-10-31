@@ -8,6 +8,7 @@ export interface GoogleAuthUser {
   email: string;
   name: string;
   picture?: string;
+  jobTitle?: string;
   accessToken?: string;
   idToken?: string;
   signedInAt: string;
@@ -20,6 +21,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  jobTitle?: string;
   avatar?: string;
   pinCode: string;
   active: boolean;

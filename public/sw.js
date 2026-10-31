@@ -45,6 +45,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Fonts cache for Google Fonts & gstatic (Cache-First for slow connection resilience)
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              const clone = networkResponse.clone();
+              caches.open('kian-fonts-cache-v1').then((cache) => cache.put(event.request, clone));
+            }
+            return networkResponse;
+          })
+          .catch(() => cached || new Response('', { status: 408 }));
+      })
+    );
+    return;
+  }
+
   // 1. Always bypass cross-origin requests, non-GET requests, SSE streams, and Vite dev endpoints
   const acceptHeader = event.request.headers.get('accept') || '';
   if (
@@ -101,7 +120,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Same-origin static assets -> Network first with safe cache fallback
+  // 4. Hashed immutable static assets (Cache-First strategy for ultra-fast startup on slow internet)
+  if (url.pathname.includes('/assets/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
+  // 5. Other same-origin static assets -> Network first with safe cache fallback
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
