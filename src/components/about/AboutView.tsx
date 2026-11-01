@@ -70,6 +70,7 @@ export const AboutView: React.FC = () => {
     language,
     setActiveTab,
     setIsButtonCustomizerModalOpen,
+    openWelcomeTour,
     notify
   } = app;
 
@@ -537,7 +538,16 @@ export const AboutView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+            <button
+              type="button"
+              onClick={() => openWelcomeTour()}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500/15 to-teal-500/15 hover:from-emerald-500/25 hover:to-teal-500/25 text-emerald-700 dark:text-emerald-300 font-black text-xs border border-emerald-500/40 shadow-xs transition-all active:scale-95 cursor-pointer"
+              title="عرض شاشة الترحيب ومميزات نظام كاشير كيان بالصور"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse" />
+              <span>{language === 'ar' ? 'مميزات النظام والجولة ✨' : 'Features Showcase ✨'}</span>
+            </button>
             <button
               type="button"
               onClick={() => setActiveTab('products')}

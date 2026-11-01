@@ -589,7 +589,8 @@ export const SettingsView: React.FC = () => {
     openStorageCleanupModal,
     devices,
     connectedDevices = devices,
-    criticalOfflineDevices = []
+    criticalOfflineDevices = [],
+    openWelcomeTour
   } = useApp();
 
   const activeEmail = (
@@ -1195,6 +1196,19 @@ export const SettingsView: React.FC = () => {
               </span>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.playGlassPress();
+              openWelcomeTour();
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-black text-xs transition-all active:scale-95 cursor-pointer shadow-xs"
+            title="عرض شاشة الترحيب ومميزات نظام كاشير كيان بالصور"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+            <span>جولة مميزات النظام ✨</span>
+          </button>
 
           {activeSubTab !== 'hub' && (
             <button

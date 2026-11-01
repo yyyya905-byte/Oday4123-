@@ -652,6 +652,9 @@ interface AppContextType {
   addCustomerReview: (review: Omit<CustomerFeedbackReview, 'id' | 'createdAt'>) => CustomerFeedbackReview;
   deleteCustomerReview: (id: string) => void;
   clearCustomerReviews: () => void;
+  isWelcomeTourOpen: boolean;
+  setIsWelcomeTourOpen: (open: boolean) => void;
+  openWelcomeTour: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -1549,6 +1552,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState<boolean>(false);
+
+  const [isWelcomeTourOpen, setIsWelcomeTourOpen] = useState<boolean>(() => {
+    try {
+      const seen = localStorage.getItem('kian_welcome_tour_seen_v1');
+      return seen !== 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const openWelcomeTour = useCallback(() => {
+    setIsWelcomeTourOpen(true);
+  }, []);
 
   const trialInfo = getTrialTimeRemaining(trialStartDate, 7);
   const trialDaysRemaining = trialInfo.daysRemaining;
@@ -8074,6 +8090,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCustomerReview,
         deleteCustomerReview,
         clearCustomerReviews,
+        isWelcomeTourOpen,
+        setIsWelcomeTourOpen,
+        openWelcomeTour,
       }}
     >
       {children}

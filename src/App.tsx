@@ -45,6 +45,7 @@ import { UrgentIncomingOrderModal } from './components/modals/UrgentIncomingOrde
 import { CustomerQrMenuPage } from './components/menu/CustomerQrMenuPage';
 import { FloatingActionHub } from './components/common/FloatingActionHub';
 import { InteractiveSpotlightTutorial } from './components/common/InteractiveSpotlightTutorial';
+import { WelcomeFeaturesLoadingModal } from './components/common/WelcomeFeaturesLoadingModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LongPressProvider } from './components/common/LongPressTooltip';
 import { WifiOff, RefreshCw, ArrowLeftRight, Database, CheckCircle2, Leaf } from 'lucide-react';
@@ -92,7 +93,9 @@ const AppContent: React.FC = () => {
     isOnline,
     isPowerSavingActive,
     isPowerSavingStandby,
-    wakeFromStandby
+    wakeFromStandby,
+    isWelcomeTourOpen,
+    setIsWelcomeTourOpen
   } = useApp();
 
   // If this device was paired or selected as a dedicated terminal
@@ -268,6 +271,13 @@ const AppContent: React.FC = () => {
 
       {/* Interactive Step-by-Step Spotlight Tutorial & Walkthrough System */}
       <InteractiveSpotlightTutorial />
+
+      {/* First-Visit Loading & App Features Showcase Screen with Animated Kian Logo */}
+      <WelcomeFeaturesLoadingModal
+        isOpen={isWelcomeTourOpen}
+        onClose={() => setIsWelcomeTourOpen(false)}
+        isInitialFirstVisit={true}
+      />
 
       {/* Floating Offline Sync & Storage Status Banner */}
       {(!isOnline || offlineQueueCount > 0) && (
