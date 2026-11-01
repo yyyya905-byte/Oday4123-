@@ -36,11 +36,16 @@ import {
   DEVICE_ROLE_WORK_PRESETS,
   RoleWorkPreset
 } from '../../utils/licenseUtils';
+import { DevicePermissionsModal } from '../modals/DevicePermissionsModal';
 import { soundEffects } from '../../services/audio';
 
 export const ConnectedDevicesManagerPanel: React.FC = () => {
   const {
     devices,
+    connectedDevices = devices,
+    removeConnectedDevice,
+    updateDeviceAllowedPages,
+    criticalOfflineDevices = [],
     isMasterDevice,
     currentDeviceName,
     currentSubDeviceUserName,
@@ -57,6 +62,9 @@ export const ConnectedDevicesManagerPanel: React.FC = () => {
     notify,
     businessMode,
   } = useApp();
+
+  const [permissionsDevice, setPermissionsDevice] = useState<LinkedDevice | null>(null);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<'all' | DeviceRole>('all');
@@ -175,8 +183,12 @@ export const ConnectedDevicesManagerPanel: React.FC = () => {
   const handleDisconnect = async (device: LinkedDevice) => {
     soundEffects.playWarning();
     try {
-      await disconnectDevice(device.id);
-      notify('تم فصل الجهاز بنجاح', `تم إنهاء جلسة اتصال "${device.name}" بالشبكة`, 'info');
+      if (removeConnectedDevice) {
+        await removeConnectedDevice(device.id);
+      } else {
+        await disconnectDevice(device.id);
+      }
+      notify('تم فصل الجهاز بنجاح', `تم إنهاء جلسة اتصال "${device.name}" بالشبكة وإزالته فورياً`, 'info');
     } catch {
       notify('خطأ', 'تعذر فصل الجهاز', 'error');
     }
@@ -250,6 +262,40 @@ export const ConnectedDevicesManagerPanel: React.FC = () => {
 
   return (
     <div className="space-y-6 text-start">
+      {/* Visual Alert Banner for Critical Disconnected Devices (شاشات المطبخ أو الكاشير الفرعي) */}
+      {criticalOfflineDevices && criticalOfflineDevices.length > 0 && (
+        <div className="bg-rose-500/15 border-2 border-rose-500 text-rose-950 dark:text-rose-100 p-4 sm:p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse shadow-lg">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-md">
+              <AlertTriangle className="w-6 h-6 animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-black text-sm sm:text-base text-rose-900 dark:text-rose-100">
+                  ⚠️ تنبيه بصري هام: فقدان الاتصال بـ ({criticalOfflineDevices.length}) أجهزة أساسية في النظام!
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                  انقطاع حرج
+                </span>
+              </div>
+              <p className="text-xs text-rose-700 dark:text-rose-300 mt-1">
+                الأجهزة المتأثرة: {criticalOfflineDevices.map(d => `${d.name} (${d.roleLabelAr || (d.role === 'kitchen_display' ? 'شاشة مطبخ KDS' : 'كاشير فرعي')})`).join('، ')}. يرجى فحص الشبكة وتشغيل الأجهزة.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleFullSync}
+            disabled={isSyncing}
+            className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-xs transition flex items-center gap-2 cursor-pointer shadow-md shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>إعادة فحص الاتصال</span>
+          </button>
+        </div>
+      )}
+
       {/* 1. Header & Live Network Summary Bar */}
       <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-5 sm:p-6 rounded-3xl shadow-lg border border-slate-700/60 relative overflow-hidden">
         <div className="absolute top-0 end-0 -mt-8 -me-8 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -257,13 +303,25 @@ export const ConnectedDevicesManagerPanel: React.FC = () => {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
                 <Radio className="w-5 h-5 animate-pulse" />
               </span>
               <h2 className="text-lg sm:text-xl font-black tracking-tight">
                 إدارة الأجهزة المتصلة وشبكة الكاشير (Mesh Terminals)
               </h2>
+              {/* Visual Badge Indicator */}
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-mono font-bold">
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                  <span>{onlineDevicesCount} متصل حالياً</span>
+                </span>
+                <span className="text-slate-400">|</span>
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                  <span>{offlineDevicesCount} غير نشط</span>
+                </span>
+              </div>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
               عرض ومراقبة كافة أجهزة الكاشير الفرعية، شاشات المطبخ (KDS)، أجهزة النوادل، وشاشات العملاء. يمكنك فصل أي جهاز أو تغيير صلاحياته بضغطة زر واحدة.
@@ -619,11 +677,26 @@ export const ConnectedDevicesManagerPanel: React.FC = () => {
                           <RefreshCw className="w-3.5 h-3.5" />
                         </button>
 
+                        {/* Edit Permissions Button (تعديل الصلاحيات) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEffects.playGlassTap();
+                            setPermissionsDevice(dev);
+                            setIsPermissionsModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                          title="تعديل الصفحات المسموحة ومفاتيح البيع للجهاز"
+                        >
+                          <Sliders className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>تعديل الصلاحيات</span>
+                        </button>
+
                         {/* One-Click Disconnect Button */}
                         <button
                           type="button"
                           onClick={() => handleDisconnect(dev)}
-                          className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-black transition flex items-center gap-1.5 cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
                           title="فصل الجهاز عن جلسة العمل فورياً بنقرة واحدة"
                         >
                           <WifiOff className="w-3.5 h-3.5" />
@@ -816,6 +889,16 @@ export const ConnectedDevicesManagerPanel: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Quick Permissions & Allowed Pages Modal */}
+      <DevicePermissionsModal
+        device={permissionsDevice}
+        isOpen={isPermissionsModalOpen}
+        onClose={() => {
+          setIsPermissionsModalOpen(false);
+          setPermissionsDevice(null);
+        }}
+      />
     </div>
   );
 };

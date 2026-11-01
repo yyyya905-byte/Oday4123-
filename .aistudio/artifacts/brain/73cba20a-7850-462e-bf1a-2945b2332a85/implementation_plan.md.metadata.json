@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for adding the Connected Devices & Terminals Management interface inside the Settings tab, featuring one-click role switching, one-click disconnection, live mesh synchronization, and quick granular permission management.",
-  "updatedAt":  "2026-10-31T20:16:09.329406597Z",
+  "summary":  "Implementation plan for visual badge counter, critical device disconnection alert banner, AppContext connectedDevices API (removeConnectedDevice, updateDeviceAllowedPages), dedicated DevicePermissionsModal, and cryptographic obfuscation/cloud verification of license purchase codes.",
+  "updatedAt":  "2026-11-01T15:13:35.361327600Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

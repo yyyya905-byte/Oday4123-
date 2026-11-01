@@ -55,6 +55,7 @@ export const Header: React.FC = () => {
     businessMode,
     setIsModeModalOpen,
     devices,
+    criticalOfflineDevices = [],
     isMasterDevice,
     currentDeviceName,
     currentSubDeviceUserName,
@@ -188,6 +189,25 @@ export const Header: React.FC = () => {
           >
             <DollarSign className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span className="font-mono tabular-nums">{bulletin.usdSellRate.toLocaleString()}</span>
+          </button>
+        )}
+
+        {/* Pulsing Critical Device Disconnection Alert Indicator */}
+        {criticalOfflineDevices && criticalOfflineDevices.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.playWarning();
+              setActiveTab('settings');
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-black transition-all active:scale-95 animate-pulse cursor-pointer shadow-sm shadow-rose-500/40 whitespace-nowrap"
+            title={`تنبيه بصري: انقطاع الاتصال بـ ${criticalOfflineDevices.length} أجهزة مهمة (${criticalOfflineDevices.map(d => d.name).join('، ')})`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 animate-bounce" />
+            <span className="hidden sm:inline">انقطاع جهاز مهم!</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-mono">
+              {criticalOfflineDevices.length}
+            </span>
           </button>
         )}
 

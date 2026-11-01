@@ -57,84 +57,185 @@ export const CANCELLED_LEGACY_CODES: readonly string[] = [
 ];
 
 export const LICENSE_POLICY_EPOCH_KEY = 'kian_license_policy_epoch_v2026_new_codes_only';
+export const LICENSE_SECURITY_SALT = 'kian_pos_secure_salt_2026_';
 
-export const PREDEFINED_LICENSE_CODES: PredefinedLicenseCode[] = [
-  // --- أكواد السنة الكاملة المعتمدة فقط (365 يوماً - استخدام لمرة واحدة) ---
+/**
+ * Pure synchronous cryptographic SHA-256 generator with zero external dependencies.
+ * Ensures salted hashing runs instantly in client browser & server without exposing codes in git.
+ */
+export function computeSha256(ascii: string): string {
+  function rightRotate(value: number, amount: number) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const mathPow = Math.pow;
+  const maxWord = mathPow(2, 32);
+  let i: number, j: number;
+  let result = '';
+  const words: number[] = [];
+  const asciiBitLength = ascii.length * 8;
+  const hash: number[] = [];
+  const k: number[] = [];
+  let primeCounter = 0;
+  const isComposite: Record<number, number> = {};
+
+  for (let candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) {
+        isComposite[i] = candidate;
+      }
+      hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+    }
+  }
+
+  let padded = ascii + '\x80';
+  while ((padded.length % 64) - 56) padded += '\x00';
+  for (i = 0; i < padded.length; i++) {
+    j = padded.charCodeAt(i);
+    words[i >> 2] |= j << (((3 - i) % 4) * 8);
+  }
+  words[words.length] = (asciiBitLength / maxWord) | 0;
+  words[words.length] = asciiBitLength | 0;
+
+  for (j = 0; j < words.length; ) {
+    const w = words.slice(j, (j += 16));
+    const oldHash = hash;
+    hash.length = 8;
+    for (i = 0; i < 64; i++) {
+      const w15 = w[i - 15];
+      const w2 = w[i - 2];
+      const s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3);
+      const s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10);
+      w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      const ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6]);
+      const maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2]);
+      const temp1 = hash[7] + (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) + ch + k[i] + w[i];
+      const temp2 = (rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) + maj;
+      hash.unshift((temp1 + temp2) | 0);
+      hash[4] = (hash[4] + temp1) | 0;
+      hash.pop();
+    }
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i]) | 0;
+    }
+  }
+
+  for (i = 0; i < 8; i++) {
+    for (let b = 3; b >= 0; b--) {
+      const byteVal = (hash[i] >> (8 * b)) & 255;
+      result += (byteVal < 16 ? '0' : '') + byteVal.toString(16);
+    }
+  }
+  return result;
+}
+
+export function computeSaltedCodeHash(inputCode?: string | null): string {
+  if (!inputCode || typeof inputCode !== 'string') return '';
+  const normalized = inputCode.trim().toUpperCase();
+  return computeSha256(LICENSE_SECURITY_SALT + normalized);
+}
+
+export interface EncryptedLicenseDefinition {
+  codeHash: string;
+  code?: string;
+  duration: '1_year' | '1_month' | '3_years' | 'lifetime';
+  durationDays: number;
+  durationLabelAr: string;
+  singleUse: boolean;
+  notes: string;
+  specialCelebration?: SpecialCelebrationInfo;
+}
+
+/**
+ * Predefined license codes stored ONLY as salted cryptographic SHA-256 hashes.
+ * Plaintext purchase codes are NEVER stored in this GitHub repository.
+ */
+export const PREDEFINED_LICENSE_CODES: (PredefinedLicenseCode & { codeHash: string })[] = [
+  // --- أكواد السنة الكاملة (365 يوماً - مشفرة بـ SHA-256 المملحة) ---
   {
-    code: 'SO_S1DF',
+    codeHash: 'ceb679886628d776825fda92f916fa729359d6f7e5d130a3d1dcad86ef0236cb',
+    code: '',
     duration: '1_year',
     durationDays: 365,
     durationLabelAr: 'اشتراك سنوي (سنة كاملة)',
     singleUse: true,
-    notes: 'كود ترخيص سنوي لمدة 365 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص سنوي لمدة 365 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
   {
-    code: 'SO_KLP1',
+    codeHash: '5f2d81cbb33ddee7565ccf4de61546a6fe8566772b620d5cd1ff49ac5edd24a3',
+    code: '',
     duration: '1_year',
     durationDays: 365,
     durationLabelAr: 'اشتراك سنوي (سنة كاملة)',
     singleUse: true,
-    notes: 'كود ترخيص سنوي لمدة 365 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص سنوي لمدة 365 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
   {
-    code: 'SO_DS1K9',
+    codeHash: '58058ea8f4ec5b8bee5bbe91d6e90e3d7398f936c1c91a40c2accdb00c377dad',
+    code: '',
     duration: '1_year',
     durationDays: 365,
     durationLabelAr: 'اشتراك سنوي (سنة كاملة)',
     singleUse: true,
-    notes: 'كود ترخيص سنوي لمدة 365 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص سنوي لمدة 365 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
   {
-    code: 'SO_S1HGK',
+    codeHash: '0d7d47f42e621fb16510c54e2d964428b1a798b50248600da83f16e856c88051',
+    code: '',
     duration: '1_year',
     durationDays: 365,
     durationLabelAr: 'اشتراك سنوي (سنة كاملة)',
     singleUse: true,
-    notes: 'كود ترخيص سنوي لمدة 365 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص سنوي لمدة 365 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
 
-  // --- أكواد الشهر الكامل المعتمدة فقط (30 يوماً - استخدام لمرة واحدة) ---
+  // --- أكواد الشهر الكامل (30 يوماً - مشفرة بـ SHA-256 المملحة) ---
   {
-    code: 'K9_0ASD',
+    codeHash: '304ae38b8875d682514797ad22e4e4883e84a0b52eae22dbc1c202f71c6f0b53',
+    code: '',
     duration: '1_month',
     durationDays: 30,
     durationLabelAr: 'اشتراك شهري (شهر كامل)',
     singleUse: true,
-    notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص شهري لمدة 30 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
   {
-    code: 'K9_7FRS10',
+    codeHash: '8cc1fc46a809e0119139ad08dd5499c7da715bf4fa464de3e177c96788114242',
+    code: '',
     duration: '1_month',
     durationDays: 30,
     durationLabelAr: 'اشتراك شهري (شهر كامل)',
     singleUse: true,
-    notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص شهري لمدة 30 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
   {
-    code: 'K9_7FKJSS9',
+    codeHash: '623d284cee0aebdbebfc9aa01ea619b41a2e042ef6f8844badbfd447763d978a',
+    code: '',
     duration: '1_month',
     durationDays: 30,
     durationLabelAr: 'اشتراك شهري (شهر كامل)',
     singleUse: true,
-    notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص شهري لمدة 30 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
   {
-    code: 'K9_GRKSC4',
+    codeHash: 'eda7902761c421888e4a3bd6de1dd28ace866f6ccd00ea97bdb948b11a777c33',
+    code: '',
     duration: '1_month',
     durationDays: 30,
     durationLabelAr: 'اشتراك شهري (شهر كامل)',
     singleUse: true,
-    notes: 'كود ترخيص شهري لمدة 30 يوماً — استخدام لمرة واحدة فقط'
+    notes: 'كود ترخيص شهري لمدة 30 يوماً — مشفر سحابياً واستخدام لمرة واحدة فقط'
   },
 
-  // --- كود الترخيص الخاص المميز لـ 3 سنوات كاملة (مهدى باسم خالي نزيه الغالي ❤️) ---
+  // --- كود الترخيص الخاص لـ 3 سنوات (مشفر بـ SHA-256 المملحة) ---
   {
-    code: 'alastorh',
+    codeHash: '12b64cd426af3c37be3edc2784f0e02206cea34f62caf437870690e95c516d43',
+    code: '',
     duration: '3_years',
-    durationDays: 1095, // 3 full calendar years (365 * 3)
+    durationDays: 1095,
     durationLabelAr: 'اشتراك مميز لمدة 3 سنوات (1095 يوماً)',
     singleUse: true,
-    notes: 'كود ترخيص خاص لمدة 3 سنوات مهدى باسم خالي نزيه الغالي — استخدام لمرة واحدة مرتبط ببصمة جهاز واحد',
+    notes: 'كود ترخيص خاص لمدة 3 سنوات مهدى باسم خالي نزيه الغالي — مشفر سحابياً واستخدام لمرة واحدة',
     specialCelebration: {
       benefactorNameAr: 'خالي نزيه الغالي',
       messageTitleAr: 'ترحيب وشكر خاص باسم خالي نزيه الغالي ❤️',
@@ -153,9 +254,23 @@ export function isCancelledLegacyCode(code?: string | null): boolean {
 
 export function isApprovedActiveLicenseCode(code?: string | null): boolean {
   if (!code || typeof code !== 'string') return false;
-  const clean = code.trim().toLowerCase();
+  const clean = code.trim();
   if (isCancelledLegacyCode(clean)) return false;
-  return PREDEFINED_LICENSE_CODES.some(c => c.code.toLowerCase() === clean);
+  const hash = computeSaltedCodeHash(clean);
+  return PREDEFINED_LICENSE_CODES.some(c => c.codeHash === hash);
+}
+
+export function findMatchingLicenseDefinition(inputCode?: string | null): PredefinedLicenseCode | undefined {
+  if (!inputCode || typeof inputCode !== 'string') return undefined;
+  const clean = inputCode.trim();
+  if (isCancelledLegacyCode(clean)) return undefined;
+  const hash = computeSaltedCodeHash(clean);
+  const found = PREDEFINED_LICENSE_CODES.find(c => c.codeHash === hash);
+  if (!found) return undefined;
+  return {
+    ...found,
+    code: clean
+  };
 }
 
 export function purgeLegacyCodesFromLocalAndFirebase(): void {
@@ -172,7 +287,7 @@ export function purgeLegacyCodesFromLocalAndFirebase(): void {
 }
 
 // Master activation codes list for backward compatibility
-export const MASTER_ACTIVATION_CODES = PREDEFINED_LICENSE_CODES.map(c => c.code);
+export const MASTER_ACTIVATION_CODES = PREDEFINED_LICENSE_CODES.map(c => c.code || '');
 
 /**
  * Calculate the exact expiration ISO date string based on subscription code duration
@@ -559,9 +674,7 @@ export async function verifyCodeDeviceProtectionOnServer(
 
   const cleaned = (inputCode || '').trim();
   const isLegacy = isCancelledLegacyCode(cleaned);
-  const matched = PREDEFINED_LICENSE_CODES.find(
-    c => c.code.toLowerCase() === cleaned.toLowerCase()
-  );
+  const matched = findMatchingLicenseDefinition(cleaned);
 
   if (!matched || isLegacy) {
     return {
@@ -988,10 +1101,8 @@ export function validateLicenseCode(
     };
   }
 
-  // 1. Check against predefined license codes
-  const matched = PREDEFINED_LICENSE_CODES.find(
-    c => c.code.toLowerCase() === lowerCleaned
-  );
+  // 1. Check against predefined license codes via salted cryptographic SHA-256 hash
+  const matched = findMatchingLicenseDefinition(cleaned);
 
   if (!matched) {
     return {

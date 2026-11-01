@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import {
   Product,
@@ -474,6 +474,10 @@ interface AppContextType {
 
   // Multi-Device Linking & Terminals Hub (الجهاز الرئيسي والأجهزة التابعة)
   devices: LinkedDevice[];
+  connectedDevices: LinkedDevice[];
+  removeConnectedDevice: (deviceId: string) => Promise<void>;
+  updateDeviceAllowedPages: (deviceId: string, allowedPages: ActiveTab[]) => Promise<void>;
+  criticalOfflineDevices: LinkedDevice[];
   kitchenOrders: KitchenOrder[];
   masterPairingPin: string;
   subscriptionBoundLinkCode: string;
@@ -6246,6 +6250,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify('تم فصل الجهاز الفرعي', 'تم إزالة الجهاز من شبكة الاشتراك المركزية', 'info');
   };
 
+  const removeConnectedDevice = async (deviceId: string) => {
+    await disconnectDevice(deviceId);
+  };
+
+  const updateDeviceAllowedPages = async (deviceId: string, allowedPages: ActiveTab[]): Promise<void> => {
+    const target = devices.find(d => d.id === deviceId);
+    if (!target) return;
+    const currentPerms = target.workPermissions || getDefaultWorkPermissionsForRole(target.role);
+    const updatedPermissions: DeviceWorkPermissions = {
+      ...currentPerms,
+      allowedPages,
+      autoShareDataWithMaster: true,
+    };
+    await updateSubDeviceRoleAndWork(deviceId, {
+      workPermissions: updatedPermissions,
+    });
+    setDevices(prev =>
+      prev.map(d =>
+        d.id === deviceId
+          ? {
+              ...d,
+              allowedPages,
+              currentDeviceAllowedPages: allowedPages,
+              workPermissions: updatedPermissions,
+            }
+          : d
+      )
+    );
+    notify(
+      'تم تحديث صلاحيات الجهاز فورياً',
+      `تم تحديد ${allowedPages.length} صفحات مسموحة للجهاز "${target.name}" ومزامنتها لحظياً`,
+      'success'
+    );
+  };
+
+  const criticalOfflineDevices = useMemo(() => {
+    return devices.filter(
+      d => !d.isMasterDevice && !d.isOnline && (d.role === 'kitchen_display' || d.role === 'secondary_pos')
+    );
+  }, [devices]);
+
   const regenerateSingleDeviceCode = async (deviceId: string): Promise<string> => {
     const target = devices.find(d => d.id === deviceId);
     const role = target?.role || 'secondary_pos';
@@ -7912,6 +7957,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markAllNotificationsAsRead,
         clearAllNotifications,
         devices,
+        connectedDevices: devices,
+        removeConnectedDevice,
+        updateDeviceAllowedPages,
+        criticalOfflineDevices,
         kitchenOrders,
         masterPairingPin,
         subscriptionBoundLinkCode,

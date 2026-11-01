@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import zlib from "zlib";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -1372,9 +1373,9 @@ app.post("/api/devices/pair", (req, res) => {
   });
 });
 
-// Update a sub-device's role, work description, work permissions, or uniqueDeviceCode from the Master Device
+// Update a sub-device's role, work description, work permissions, allowed pages, or uniqueDeviceCode from the Master Device
 app.post("/api/devices/update-sub-device", (req, res) => {
-  const { deviceId, name, role, roleLabelAr, workDescription, workPermissions, branchName, cashierName, connectedUserName, uniqueDeviceCode, pairingCode } = req.body;
+  const { deviceId, name, role, roleLabelAr, workDescription, workPermissions, allowedPages, currentDeviceAllowedPages, branchName, cashierName, connectedUserName, uniqueDeviceCode, pairingCode } = req.body;
   const idx = connectedDevices.findIndex(d => d.id === deviceId);
   if (idx === -1) {
     return res.status(404).json({ success: false, error: "الجهاز غير موجود في قائمة الأجهزة المتصلة" });
@@ -1384,6 +1385,11 @@ app.post("/api/devices/update-sub-device", (req, res) => {
   if (pairingCode) recentPairingPins.add(String(pairingCode).toUpperCase());
 
   const resolvedUser = connectedUserName !== undefined ? connectedUserName : cashierName;
+  const effectiveAllowedPages = Array.isArray(allowedPages)
+    ? allowedPages
+    : Array.isArray(currentDeviceAllowedPages)
+    ? currentDeviceAllowedPages
+    : connectedDevices[idx].workPermissions?.allowedPages;
 
   const updated: ConnectedDevice = {
     ...connectedDevices[idx],
@@ -1391,7 +1397,13 @@ app.post("/api/devices/update-sub-device", (req, res) => {
     ...(role ? { role } : {}),
     ...(roleLabelAr ? { roleLabelAr } : {}),
     ...(workDescription !== undefined ? { workDescription } : {}),
-    ...(workPermissions ? { workPermissions: { ...connectedDevices[idx].workPermissions, ...workPermissions, autoShareDataWithMaster: true } } : {}),
+    workPermissions: {
+      ...connectedDevices[idx].workPermissions,
+      ...(workPermissions || {}),
+      ...(effectiveAllowedPages ? { allowedPages: effectiveAllowedPages } : {}),
+      autoShareDataWithMaster: true,
+    },
+    ...(effectiveAllowedPages ? { allowedPages: effectiveAllowedPages, currentDeviceAllowedPages: effectiveAllowedPages } : {}),
     ...(branchName ? { branchName } : {}),
     ...(resolvedUser ? { cashierName: resolvedUser, connectedUserName: resolvedUser } : {}),
     ...(uniqueDeviceCode ? { uniqueDeviceCode } : {}),
@@ -2106,16 +2118,29 @@ interface ActivatedLicenseServerRecord {
 }
 
 const LICENSE_REGISTRY_FILE = path.join(process.cwd(), ".kian_license_registry.json");
+const LICENSE_SECURITY_SALT = 'kian_pos_secure_salt_2026_';
 
-const VALID_SERVER_LICENSE_CODES: Record<string, { code: string; durationLabelAr: string; days: number }> = {
-  so_s1df: { code: "SO_S1DF", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
-  so_klp1: { code: "SO_KLP1", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
-  so_ds1k9: { code: "SO_DS1K9", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
-  so_s1hgk: { code: "SO_S1HGK", durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
-  k9_0asd: { code: "K9_0ASD", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
-  k9_7frs10: { code: "K9_7FRS10", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
-  k9_7fkjss9: { code: "K9_7FKJSS9", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
-  k9_grksc4: { code: "K9_GRKSC4", durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+function computeServerSaltedCodeHash(inputCode?: string | null): string {
+  if (!inputCode || typeof inputCode !== 'string') return '';
+  const normalized = inputCode.trim().toUpperCase();
+  return crypto.createHash('sha256').update(LICENSE_SECURITY_SALT + normalized).digest('hex');
+}
+
+// Predefined license codes stored ONLY as cryptographic salted SHA-256 hashes
+// Zero plaintext codes are stored in this GitHub repository
+const VALID_SERVER_LICENSE_HASHES: Record<string, { durationLabelAr: string; days: number }> = {
+  // Annual (365 days)
+  'ceb679886628d776825fda92f916fa729359d6f7e5d130a3d1dcad86ef0236cb': { durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  '5f2d81cbb33ddee7565ccf4de61546a6fe8566772b620d5cd1ff49ac5edd24a3': { durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  '58058ea8f4ec5b8bee5bbe91d6e90e3d7398f936c1c91a40c2accdb00c377dad': { durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  '0d7d47f42e621fb16510c54e2d964428b1a798b50248600da83f16e856c88051': { durationLabelAr: "اشتراك سنوي (سنة كاملة)", days: 365 },
+  // Monthly (30 days)
+  '304ae38b8875d682514797ad22e4e4883e84a0b52eae22dbc1c202f71c6f0b53': { durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  '8cc1fc46a809e0119139ad08dd5499c7da715bf4fa464de3e177c96788114242': { durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  '623d284cee0aebdbebfc9aa01ea619b41a2e042ef6f8844badbfd447763d978a': { durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  'eda7902761c421888e4a3bd6de1dd28ace866f6ccd00ea97bdb948b11a777c33': { durationLabelAr: "اشتراك شهري (شهر كامل)", days: 30 },
+  // Special 3-Years
+  '12b64cd426af3c37be3edc2784f0e02206cea34f62caf437870690e95c516d43': { durationLabelAr: "اشتراك مميز لمدة 3 سنوات (1095 يوماً)", days: 1095 },
 };
 
 const CANCELLED_SERVER_LEGACY_CODES = new Set(["k9_0u", "k9_0s50", "kian-2025", "kian-pro", "kian-forever"]);
@@ -2128,13 +2153,14 @@ function loadLicenseRegistryFromDisk() {
       const raw = fs.readFileSync(LICENSE_REGISTRY_FILE, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
-        // Keep only approved new codes; purge any old cancelled codes (such as k9_0u, k9_0s50)
         const cleanRegistry: Record<string, ActivatedLicenseServerRecord> = {};
         let purgedAny = false;
         for (const [k, val] of Object.entries(parsed)) {
           const normKey = k.trim().toLowerCase();
-          if (VALID_SERVER_LICENSE_CODES[normKey] && !CANCELLED_SERVER_LEGACY_CODES.has(normKey)) {
-            cleanRegistry[normKey] = val as ActivatedLicenseServerRecord;
+          const computedHash = computeServerSaltedCodeHash(normKey);
+          const effectiveHash = VALID_SERVER_LICENSE_HASHES[normKey] ? normKey : (VALID_SERVER_LICENSE_HASHES[computedHash] ? computedHash : null);
+          if (effectiveHash && !CANCELLED_SERVER_LEGACY_CODES.has(normKey)) {
+            cleanRegistry[effectiveHash] = val as ActivatedLicenseServerRecord;
           } else {
             purgedAny = true;
           }
@@ -2163,13 +2189,14 @@ loadLicenseRegistryFromDisk();
 // 1. Verify if a subscription code is used on ANY device and compare Device Fingerprint
 app.post("/api/license/verify-device", (req, res) => {
   const { code, requestingDeviceId, requestingDeviceFingerprint, requestingDeviceName } = req.body;
-  const cleanKey = String(code || "").trim().toLowerCase();
+  const rawInput = String(code || "").trim();
+  const codeHash = computeServerSaltedCodeHash(rawInput);
   const reqDevId = String(requestingDeviceId || "KIAN-DEV-UNKNOWN").trim();
   const reqDevFp = String(requestingDeviceFingerprint || `FP-${reqDevId}`).trim();
   const reqDevName = String(requestingDeviceName || "جهاز جديد").trim();
 
-  const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
-  if (!predefined) {
+  const predefined = VALID_SERVER_LICENSE_HASHES[codeHash];
+  if (!predefined || CANCELLED_SERVER_LEGACY_CODES.has(rawInput.toLowerCase())) {
     return res.json({
       success: true,
       validCode: false,
@@ -2179,16 +2206,16 @@ app.post("/api/license/verify-device", (req, res) => {
       boundDeviceId: null,
       boundDeviceFingerprint: null,
       securityQuestions: {
-        q1_isUsedOnAnyDevice: "الكود غير مسجل ضمن أكواد النظام المعتمدة",
+        q1_isUsedOnAnyDevice: "الكود غير مسجل ضمن أكواد النظام المعتمدة أو ملغي",
         q2_whatIsDeviceId: "لا يوجد",
         q3_isCurrentlyActive: false,
-        statusSummaryAr: "كود غير صالح",
+        statusSummaryAr: "كود غير صالح ومحمي بالتشفير",
       },
-      message: "كود التفعيل غير صحيح، يرجى التأكد من كتابة الكود بدقة",
+      message: "كود التفعيل غير صحيح أو مشفر، يرجى التأكد من كتابة الكود بدقة",
     });
   }
 
-  const existingRecord = activatedLicenseRegistry[cleanKey];
+  const existingRecord = activatedLicenseRegistry[codeHash] || activatedLicenseRegistry[rawInput.toLowerCase()];
 
   // If the code IS already used on a device
   if (existingRecord && existingRecord.isUsed) {
@@ -2211,7 +2238,7 @@ app.post("/api/license/verify-device", (req, res) => {
 
       // Broadcast security alert to connected devices
       broadcastSseEvent("LICENSE_DUPLICATE_ATTEMPT", {
-        code: predefined.code,
+        code: rawInput.toUpperCase(),
         boundDeviceId: existingRecord.deviceId,
         boundDeviceFingerprint: existingRecord.deviceFingerprint,
         boundDeviceName: existingRecord.deviceName,
@@ -2248,8 +2275,8 @@ app.post("/api/license/verify-device", (req, res) => {
           : `✓ الكود مفعل ومربوط ببصمة هذا الجهاز (${existingRecord.deviceId})`,
       },
       message: isUsedByAnotherDevice
-        ? `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم مسبقاً في جهاز آخر يحمل المعرف (${existingRecord.deviceId} — ${existingRecord.deviceName}). يمكنك تأكيد نقل التفعيل إلى جهازك الحالي وإلغاء اشتراك الجهاز الآخر!`
-        : `✓ هذا الكود (${predefined.code}) مفعل ومرتبط ببصمة هذا الجهاز (${existingRecord.deviceId}).`,
+        ? `⛔ إشعار الكود مستخدم: هذا الكود (${rawInput.toUpperCase()}) مستخدم مسبقاً في جهاز آخر يحمل المعرف (${existingRecord.deviceId} — ${existingRecord.deviceName}). يمكنك تأكيد نقل التفعيل إلى جهازك الحالي وإلغاء اشتراك الجهاز الآخر!`
+        : `✓ هذا الكود (${rawInput.toUpperCase()}) مفعل ومرتبط ببصمة هذا الجهاز (${existingRecord.deviceId}).`,
     });
   }
 
@@ -2290,13 +2317,14 @@ app.post("/api/license/activate-device", (req, res) => {
     previousDeviceIdToRevoke,
   } = req.body;
 
-  const cleanKey = String(code || "").trim().toLowerCase();
+  const rawInput = String(code || "").trim();
+  const codeHash = computeServerSaltedCodeHash(rawInput);
   const reqDevId = String(deviceId || "KIAN-DEV-UNKNOWN").trim();
   const reqDevFp = String(deviceFingerprint || `FP-${reqDevId}`).trim();
   const reqDevName = String(deviceName || "جهاز كاشير").trim();
 
-  const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
-  if (!predefined) {
+  const predefined = VALID_SERVER_LICENSE_HASHES[codeHash];
+  if (!predefined || CANCELLED_SERVER_LEGACY_CODES.has(rawInput.toLowerCase())) {
     return res.status(400).json({
       success: false,
       error: "كود التفعيل غير صالح",
@@ -2304,7 +2332,7 @@ app.post("/api/license/activate-device", (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
-  const existingRecord = activatedLicenseRegistry[cleanKey];
+  const existingRecord = activatedLicenseRegistry[codeHash] || activatedLicenseRegistry[rawInput.toLowerCase()];
 
   // If already bound to another device and user did NOT confirm transfer, block it!
   if (existingRecord && existingRecord.isUsed && !confirmTransfer) {
@@ -2321,7 +2349,7 @@ app.post("/api/license/activate-device", (req, res) => {
       saveLicenseRegistryToDisk();
 
       broadcastSseEvent("LICENSE_DUPLICATE_ATTEMPT", {
-        code: predefined.code,
+        code: rawInput.toUpperCase(),
         boundDeviceId: existingRecord.deviceId,
         boundDeviceName: existingRecord.deviceName,
         attemptedByDeviceId: reqDevId,
@@ -2337,7 +2365,7 @@ app.post("/api/license/activate-device", (req, res) => {
         boundDeviceFingerprint: existingRecord.deviceFingerprint,
         boundDeviceName: existingRecord.deviceName,
         activatedAt: existingRecord.activatedAt,
-        error: `⛔ إشعار الكود مستخدم: هذا الكود (${predefined.code}) مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId}). يرجى تأكيد نقل التفعيل لإلغاء اشتراك الجهاز الآخر وتفعيله هنا.`,
+        error: `⛔ إشعار الكود مستخدم: هذا الكود (${rawInput.toUpperCase()}) مستخدم في جهاز آخر بمعرف (${existingRecord.deviceId}). يرجى تأكيد نقل التفعيل لإلغاء اشتراك الجهاز الآخر وتفعيله هنا.`,
       });
     }
   }
@@ -2355,7 +2383,7 @@ app.post("/api/license/activate-device", (req, res) => {
     : Number(existingRecord?.transferCount || 0);
 
   const newRecord: ActivatedLicenseServerRecord = {
-    code: predefined.code,
+    code: rawInput.toUpperCase(),
     isUsed: true,
     deviceId: reqDevId,
     deviceFingerprint: reqDevFp,
@@ -2373,7 +2401,7 @@ app.post("/api/license/activate-device", (req, res) => {
     attemptLogs: existingRecord?.attemptLogs || [],
   };
 
-  activatedLicenseRegistry[cleanKey] = newRecord;
+  activatedLicenseRegistry[codeHash] = newRecord;
   saveLicenseRegistryToDisk();
 
   // Set this device as the Master Device (الجهاز الرئيسي صاحب كود الاشتراك)
@@ -2461,9 +2489,10 @@ app.post("/api/license/sync-current", (req, res) => {
   const { code, deviceId, deviceFingerprint, deviceName, customerName, customerPhone, expiresAt, durationLabelAr, usedCodesList } = req.body;
 
   if (code) {
-    const cleanKey = String(code).trim().toLowerCase();
-    const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
-    if (!predefined || CANCELLED_SERVER_LEGACY_CODES.has(cleanKey)) {
+    const rawInput = String(code).trim();
+    const codeHash = computeServerSaltedCodeHash(rawInput);
+    const predefined = VALID_SERVER_LICENSE_HASHES[codeHash];
+    if (!predefined || CANCELLED_SERVER_LEGACY_CODES.has(rawInput.toLowerCase())) {
       return res.json({
         success: true,
         cancelledOldCodeResetToTrial: true,
@@ -2473,7 +2502,7 @@ app.post("/api/license/sync-current", (req, res) => {
       });
     }
 
-    const existing = activatedLicenseRegistry[cleanKey];
+    const existing = activatedLicenseRegistry[codeHash] || activatedLicenseRegistry[rawInput.toLowerCase()];
     if (
       existing &&
       deviceId &&
@@ -2492,11 +2521,12 @@ app.post("/api/license/sync-current", (req, res) => {
 
   let updated = false;
   if (code && deviceId) {
-    const cleanKey = String(code).trim().toLowerCase();
-    const predefined = VALID_SERVER_LICENSE_CODES[cleanKey];
-    if (predefined && !activatedLicenseRegistry[cleanKey]) {
-      activatedLicenseRegistry[cleanKey] = {
-        code: predefined.code,
+    const rawInput = String(code).trim();
+    const codeHash = computeServerSaltedCodeHash(rawInput);
+    const predefined = VALID_SERVER_LICENSE_HASHES[codeHash];
+    if (predefined && !activatedLicenseRegistry[codeHash]) {
+      activatedLicenseRegistry[codeHash] = {
+        code: rawInput.toUpperCase(),
         isUsed: true,
         deviceId: String(deviceId).trim(),
         deviceFingerprint: String(deviceFingerprint || `FP-${deviceId}`).trim(),
@@ -2515,11 +2545,12 @@ app.post("/api/license/sync-current", (req, res) => {
   if (Array.isArray(usedCodesList)) {
     for (const item of usedCodesList) {
       if (item && item.code) {
-        const k = String(item.code).trim().toLowerCase();
-        const pred = VALID_SERVER_LICENSE_CODES[k];
-        if (pred && !CANCELLED_SERVER_LEGACY_CODES.has(k) && !activatedLicenseRegistry[k]) {
-          activatedLicenseRegistry[k] = {
-            code: pred.code,
+        const rawCode = String(item.code).trim();
+        const itemHash = computeServerSaltedCodeHash(rawCode);
+        const pred = VALID_SERVER_LICENSE_HASHES[itemHash];
+        if (pred && !CANCELLED_SERVER_LEGACY_CODES.has(rawCode.toLowerCase()) && !activatedLicenseRegistry[itemHash]) {
+          activatedLicenseRegistry[itemHash] = {
+            code: rawCode.toUpperCase(),
             isUsed: true,
             deviceId: item.deviceId || String(deviceId || "KIAN-DEV-MAIN"),
             deviceFingerprint: item.deviceFingerprint || String(deviceFingerprint || `FP-${deviceId}`),

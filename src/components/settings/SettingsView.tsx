@@ -29,6 +29,7 @@ import {
   RefreshCw,
   Info,
   Check,
+  AlertTriangle,
   MessageSquareShare,
   Send,
   Calendar,
@@ -586,7 +587,9 @@ export const SettingsView: React.FC = () => {
     setThemeColor,
     businessMode,
     openStorageCleanupModal,
-    devices
+    devices,
+    connectedDevices = devices,
+    criticalOfflineDevices = []
   } = useApp();
 
   const activeEmail = (
@@ -813,8 +816,10 @@ export const SettingsView: React.FC = () => {
       descAr: 'مراقبة وإدارة أجهزة الكاشير الفرعية وشاشات المطبخ والنوادل، وتحديث صلاحياتها أو فصلها بضغطة زر واحدة.',
       icon: Monitor,
       gradientClass: 'bg-gradient-to-br from-indigo-600 to-violet-700',
-      badge: `${devices.filter(d => d.isOnline).length} أجهزة متصلة`,
-      badgeColorClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+      badge: `${(connectedDevices || devices).filter(d => d.isOnline).length} متصل | ${(connectedDevices || devices).filter(d => !d.isOnline).length} غير نشط`,
+      badgeColorClass: (criticalOfflineDevices && criticalOfflineDevices.length > 0)
+        ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 animate-pulse font-black'
+        : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
     },
     {
       id: 'google_drive' as const,
@@ -1206,6 +1211,42 @@ export const SettingsView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Visual Critical Disconnection Warning Banner at top of Settings */}
+      {criticalOfflineDevices && criticalOfflineDevices.length > 0 && (
+        <div className="bg-rose-500/15 border-2 border-rose-500 text-rose-950 dark:text-rose-100 p-4 sm:p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-pulse shadow-md">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertTriangle className="w-5 h-5 animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-black text-sm text-rose-900 dark:text-rose-100">
+                  ⚠️ تنبيه بصري هام: تم فقدان الاتصال بـ ({criticalOfflineDevices.length}) أجهزة أساسية في شبكة الكاشير!
+                </h4>
+                <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                  انقطاع حرج
+                </span>
+              </div>
+              <p className="text-xs text-rose-700 dark:text-rose-300 mt-1">
+                الأجهزة المتأثرة: {criticalOfflineDevices.map(d => `${d.name} (${d.roleLabelAr || (d.role === 'kitchen_display' ? 'شاشة مطبخ KDS' : 'كاشير فرعي')})`).join('، ')}.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setActiveSubTab('connected_devices');
+            }}
+            className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition flex items-center gap-2 cursor-pointer shadow-md active:scale-95 shrink-0"
+          >
+            <Monitor className="w-4 h-4" />
+            <span>فتح إدارة الأجهزة المتصلة</span>
+          </button>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* 1. CARDS HUB VIEW (عرض الإعدادات على شكل بطاقات منظمة)   */}

@@ -809,6 +809,8 @@ export interface LinkedDevice {
   ordersCount?: number;
   lastActivitySummary?: string;
   lastActivityAt?: string;
+  allowedPages?: ActiveTab[];
+  currentDeviceAllowedPages?: ActiveTab[];
 }
 
 export interface KitchenOrderItem {
