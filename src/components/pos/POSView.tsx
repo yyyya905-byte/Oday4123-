@@ -47,7 +47,10 @@ import {
   Sliders,
   Volume2,
   VolumeX,
-  Split
+  Split,
+  Heart,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { voiceAnnouncer } from '../../services/voiceAnnouncer';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -579,6 +582,115 @@ export const POSView: React.FC = () => {
     setEditingNoteItemKey(null);
   };
 
+  // Toggle Favorite Heart Action
+  const handleToggleFavorite = (product: Product) => {
+    soundEffects.playGlassTap();
+    haptics.selection();
+    const nextState = !product.isFavorite;
+    updateProduct(product.id, { isFavorite: nextState });
+    if (nextState) {
+      notify('تمت الإضافة للمفضلة ❤️', `تمت إضافة (${product.nameAr}) إلى المفضلة للوصول السريع`, 'success');
+    } else {
+      notify('تمت الإزالة من المفضلة', `تمت إزالة (${product.nameAr}) من المفضلة`, 'info');
+    }
+  };
+
+  // Voice Search with Web Speech API
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const recognitionRef = useRef<any>(null);
+
+  const startVoiceSearch = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      notify(
+        'المتصفح لا يدعم البحث الصوتي',
+        'يرجى استخدام متصفح حديث يدعم التعرف على الصوت (مثل Google Chrome أو Edge)',
+        'warning'
+      );
+      soundEffects.playWarning();
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = language === 'ar' ? 'ar-SA' : 'en-US';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        soundEffects.playGlassPress();
+        haptics.selection();
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript) {
+          const cleanText = transcript.trim();
+          setSearchQuery(cleanText);
+          soundEffects.playSuccess();
+          haptics.confirm();
+          notify('تم التعرف على الصوت 🎙️', `جاري البحث عن: "${cleanText}"`, 'success');
+          searchInputRef.current?.focus();
+        }
+        setIsListening(false);
+      };
+
+      recognition.onerror = (event: any) => {
+        setIsListening(false);
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          notify('تعذر التقاط الصوت', 'يرجى التأكد من السماح بالمايكروفون والتحدث بوضوح', 'warning');
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      notify('خطأ في تشغيل المايكروفون', 'يرجى مراجعة إذن الوصول للميكروفون في المتصفح', 'error');
+    }
+  };
+
+  const stopVoiceSearch = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+    haptics.tap();
+  };
+
+  const handleToggleVoiceSearch = () => {
+    if (isListening) {
+      stopVoiceSearch();
+    } else {
+      startVoiceSearch();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {}
+      }
+    };
+  }, []);
+
   const handleOpenProductDetails = (product: Product) => {
     soundEffects.playGlassTap();
     haptics.selection();
@@ -906,12 +1018,31 @@ export const POSView: React.FC = () => {
                 ? (language === 'ar' ? 'بحث عن بضاعة، كود أو باركود...' : 'Search item, SKU or barcode...')
                 : (language === 'ar' ? 'امسح الباركود أو ابحث عن منتج...' : 'Scan barcode or search...')
               }
-              className="w-full ps-10 pe-20 py-2.5 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all min-h-[46px]"
+              className="w-full ps-10 pe-28 py-2.5 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all min-h-[46px]"
             />
             <Search className="w-4 h-4 text-slate-400 absolute start-3.5 top-3.5 pointer-events-none" />
             
-            {/* Search actions: count badge, shortcut, or clear */}
+            {/* Search actions: Voice Search Mic, count badge, shortcut, or clear */}
             <div className="absolute end-2 top-2 flex items-center gap-1.5">
+              {/* Voice Search Microphone Button */}
+              <button
+                type="button"
+                onClick={handleToggleVoiceSearch}
+                className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                  isListening
+                    ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/40 ring-2 ring-rose-300'
+                    : 'text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title={isListening ? 'جاري الاستماع للصوت... انقر للإيقاف' : 'البحث الصوتي عن المنتجات'}
+                aria-label="البحث الصوتي عن المنتجات"
+              >
+                {isListening ? (
+                  <MicOff className="w-3.5 h-3.5 text-white animate-spin" />
+                ) : (
+                  <Mic className="w-3.5 h-3.5" />
+                )}
+              </button>
+
               {searchQuery ? (
                 <button
                   type="button"
@@ -934,6 +1065,23 @@ export const POSView: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* Active Voice Search Listening Notification */}
+          {isListening && (
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-rose-500/10 dark:bg-rose-950/40 border border-rose-500/30 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-300 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
+                <span className="font-black">جاري الاستماع... تحدث الآن باسم المنتج (مثال: برغر، كابتشينو، شاي)</span>
+              </div>
+              <button
+                type="button"
+                onClick={stopVoiceSearch}
+                className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 cursor-pointer"
+              >
+                إيقاف الاستماع
+              </button>
+            </div>
+          )}
 
           {/* Wholesale Mode Toggle (Wholesale Only) */}
           {businessMode === 'wholesale' && (
@@ -1134,6 +1282,24 @@ export const POSView: React.FC = () => {
                         </div>
                       )}
 
+                      {/* Favorite Heart Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleFavorite(product);
+                        }}
+                        className={`absolute top-1.5 end-1.5 w-7 h-7 rounded-xl backdrop-blur-md flex items-center justify-center transition-all cursor-pointer active:scale-90 shadow-sm z-10 ${
+                          product.isFavorite
+                            ? 'bg-rose-500 text-white shadow-rose-500/30 ring-1 ring-white/60'
+                            : 'bg-black/45 hover:bg-black/65 text-white/90 hover:text-white'
+                        }`}
+                        title={product.isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
+                        aria-label={product.isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${product.isFavorite ? 'fill-current text-white' : 'text-white'}`} />
+                      </button>
+
                       {/* Stock Badge */}
                       <span
                         className={`absolute top-1.5 start-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md backdrop-blur-xs ${
@@ -1148,7 +1314,7 @@ export const POSView: React.FC = () => {
                       </span>
 
                       {/* Restaurant Freshness Tag */}
-                      <span className="absolute top-1.5 end-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-700/90 text-white shadow-xs flex items-center gap-0.5">
+                      <span className="absolute bottom-1.5 start-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-700/90 text-white shadow-xs flex items-center gap-0.5">
                         <span>👨‍🍳</span>
                         <span>{language === 'ar' ? 'طازج' : 'Fresh'}</span>
                       </span>
@@ -1283,10 +1449,23 @@ export const POSView: React.FC = () => {
                   >
                     <div className="flex flex-col sm:grid sm:grid-cols-12 gap-2 sm:items-center">
                       {/* Item Details (Col 4) */}
-                      <div className="sm:col-span-4 flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold flex items-center justify-center shrink-0 text-xs">
-                          <Package className="w-4 h-4" />
-                        </div>
+                      <div className="sm:col-span-4 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleFavorite(product);
+                          }}
+                          className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-90 ${
+                            product.isFavorite
+                              ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                              : 'bg-amber-100/70 dark:bg-amber-950/60 text-amber-800/70 dark:text-amber-300/70 hover:text-rose-500'
+                          }`}
+                          title={product.isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
+                          aria-label={product.isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
+                        >
+                          <Heart className={`w-3.5 h-3.5 ${product.isFavorite ? 'fill-current text-rose-500' : ''}`} />
+                        </button>
                         <div className="min-w-0">
                           <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
                             {language === 'ar' ? product.nameAr : product.nameEn}
@@ -1452,10 +1631,23 @@ export const POSView: React.FC = () => {
                     }`}
                   >
                     {/* Item Name & Barcode (Col 5) */}
-                    <div className="sm:col-span-5 flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold flex items-center justify-center shrink-0 text-xs">
-                        <Tag className="w-4 h-4" />
-                      </div>
+                    <div className="sm:col-span-5 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleFavorite(product);
+                        }}
+                        className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-90 ${
+                          product.isFavorite
+                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500'
+                        }`}
+                        title={product.isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
+                        aria-label={product.isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${product.isFavorite ? 'fill-current text-rose-500' : ''}`} />
+                      </button>
                       <div className="min-w-0">
                         <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
                           {language === 'ar' ? product.nameAr : product.nameEn}
