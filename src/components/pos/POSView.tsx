@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Product, Category, DiningType, PaymentMethod } from '../../types';
+import { Product, ProductVariant, Category, DiningType, PaymentMethod } from '../../types';
 import { soundEffects } from '../../services/audio';
 import { haptics } from '../../services/haptics';
 import {
@@ -60,6 +60,7 @@ import { bluetoothPrinter, BluetoothPrinterStatus } from '../../services/bluetoo
 import { RestaurantPOSHeader } from './RestaurantPOSHeader';
 import { WholesalePOSHeader } from './WholesalePOSHeader';
 import { RetailPOSHeader } from './RetailPOSHeader';
+import { ProductVariantPickerModal } from './ProductVariantPickerModal';
 
 export const POSView: React.FC = () => {
   const {
@@ -132,6 +133,10 @@ export const POSView: React.FC = () => {
   const [isBluetoothModalOpen, setIsBluetoothModalOpen] = useState(false);
   const [btPrinterStatus, setBtPrinterStatus] = useState<BluetoothPrinterStatus>(bluetoothPrinter.getStatus());
 
+  // Variant Picker Modal State
+  const [isVariantPickerOpen, setIsVariantPickerOpen] = useState(false);
+  const [selectedProductForVariants, setSelectedProductForVariants] = useState<Product | null>(null);
+
   useEffect(() => {
     const unsub = bluetoothPrinter.subscribe(status => {
       setBtPrinterStatus(status);
@@ -154,6 +159,8 @@ export const POSView: React.FC = () => {
     currentDiscountValue?: number;
     currentDiscountType?: 'percentage' | 'fixed';
     subtotal?: number;
+    variantId?: string;
+    selectedVariant?: ProductVariant;
   }>({
     isOpen: false,
     mode: 'quantity',
@@ -166,8 +173,10 @@ export const POSView: React.FC = () => {
       product: item.product,
       currentQuantity: item.quantity,
       unit: item.wholesaleUnit || item.product.unit || 'قطعة',
-      maxStock: item.product.stock,
+      maxStock: item.selectedVariant ? item.selectedVariant.stock : item.product.stock,
       unitPrice: item.unitPrice,
+      variantId: item.variantId,
+      selectedVariant: item.selectedVariant,
     });
   };
 
@@ -188,9 +197,11 @@ export const POSView: React.FC = () => {
       mode: 'price',
       product: item.product,
       currentPrice: item.unitPrice,
-      costPrice: item.product.costPrice,
+      costPrice: item.selectedVariant?.costPrice !== undefined ? item.selectedVariant.costPrice : item.product.costPrice,
       isCartItem: true,
       cartQuantity: item.quantity,
+      variantId: item.variantId,
+      selectedVariant: item.selectedVariant,
     });
   };
 
@@ -206,23 +217,29 @@ export const POSView: React.FC = () => {
 
   const handleConfirmQuantityKeypad = (newQuantity: number) => {
     if (!touchKeypadConfig.product) return;
+    const vId = touchKeypadConfig.variantId;
     if (newQuantity <= 0) {
-      removeFromCart(touchKeypadConfig.product.id);
+      removeFromCart(touchKeypadConfig.product.id, vId);
       notify('تم تحديث السلة', `تم حذف ${touchKeypadConfig.product.nameAr} من السلة`, 'info');
     } else {
-      updateCartItemQuantity(touchKeypadConfig.product.id, newQuantity);
+      updateCartItemQuantity(touchKeypadConfig.product.id, newQuantity, vId);
       notify('تم تعديل الكمية', `الكمية الجديدة لـ ${touchKeypadConfig.product.nameAr}: ${newQuantity} ${touchKeypadConfig.unit || ''}`, 'success');
     }
   };
 
   const handleConfirmPriceKeypad = (newPrice: number, alsoUpdateCatalog: boolean, alsoAddToCart?: boolean) => {
     if (!touchKeypadConfig.product) return;
-    const { product, isCartItem } = touchKeypadConfig;
+    const { product, isCartItem, variantId } = touchKeypadConfig;
 
     if (isCartItem) {
-      updateCartItemPrice(product.id, newPrice);
+      updateCartItemPrice(product.id, newPrice, variantId);
       if (alsoUpdateCatalog) {
-        updateProduct(product.id, { price: newPrice });
+        if (variantId && product.variants) {
+          const updatedVars = product.variants.map(v => v.id === variantId ? { ...v, price: newPrice } : v);
+          updateProduct(product.id, { variants: updatedVars });
+        } else {
+          updateProduct(product.id, { price: newPrice });
+        }
         notify('تم تحديث السعر', `تم تعديل سعر ${product.nameAr} في السلة والمخزون إلى ${formatCurrency(newPrice)}`, 'success');
       } else {
         notify('تم تعديل السعر في السلة', `سعر الصنف الجديد: ${formatCurrency(newPrice)}`, 'success');
@@ -230,9 +247,9 @@ export const POSView: React.FC = () => {
     } else {
       if (alsoUpdateCatalog) {
         updateProduct(product.id, { price: newPrice });
-        const inCart = cart.find(it => it.productId === product.id);
+        const inCart = cart.find(it => it.productId === product.id && (!variantId || it.variantId === variantId));
         if (inCart) {
-          updateCartItemPrice(product.id, newPrice);
+          updateCartItemPrice(product.id, newPrice, variantId);
         }
         notify('تم تحديث سعر المنتج', `تم تعديل سعر ${product.nameAr} بالمخزون إلى ${formatCurrency(newPrice)}`, 'success');
       }
@@ -241,7 +258,7 @@ export const POSView: React.FC = () => {
         const updatedProduct = { ...product, price: newPrice };
         addToCart(updatedProduct);
         setTimeout(() => {
-          updateCartItemPrice(product.id, newPrice);
+          updateCartItemPrice(product.id, newPrice, variantId);
         }, 50);
       }
     }
@@ -312,7 +329,37 @@ export const POSView: React.FC = () => {
             return;
           }
 
-          // 2. Check product barcode / SKU
+          // 2. Check if scanned barcode matches a specific variant SKU or barcode
+          let foundVariantMatch: { product: Product; variant: ProductVariant } | null = null;
+          for (const p of products) {
+            if (p.variants && p.variants.length > 0) {
+              const matchedVar = p.variants.find(
+                v => (v.barcode && v.barcode.toLowerCase() === clean) ||
+                     (v.sku && v.sku.toLowerCase() === clean)
+              );
+              if (matchedVar) {
+                foundVariantMatch = { product: p, variant: matchedVar };
+                break;
+              }
+            }
+          }
+
+          if (foundVariantMatch) {
+            e.preventDefault();
+            addToCart(foundVariantMatch.product, 1, undefined, foundVariantMatch.variant);
+            soundEffects.playBeep();
+            setLastScannedBanner(prev => ({
+              product: foundVariantMatch!.product,
+              code: `${candidate} (${foundVariantMatch!.variant.nameAr})`,
+              count: prev?.product.id === foundVariantMatch!.product.id ? prev.count + 1 : 1
+            }));
+            setSearchQuery('');
+            scanBuffer = '';
+            searchInputRef.current?.focus();
+            return;
+          }
+
+          // 3. Check product barcode / SKU / identification codes
           const found = products.find(p =>
             p.barcode.toLowerCase() === clean ||
             p.sku.toLowerCase() === clean ||
@@ -321,8 +368,14 @@ export const POSView: React.FC = () => {
 
           if (found) {
             e.preventDefault();
-            addToCart(found);
-            soundEffects.playBeep();
+            if (found.hasVariants && found.variants && found.variants.length > 0) {
+              setSelectedProductForVariants(found);
+              setIsVariantPickerOpen(true);
+              soundEffects.playGlassTap();
+            } else {
+              addToCart(found);
+              soundEffects.playBeep();
+            }
             setLastScannedBanner(prev => ({
               product: found,
               code: candidate,
@@ -516,38 +569,52 @@ export const POSView: React.FC = () => {
   // Total items in cart
   const cartItemsCount = cart.reduce((sum, it) => sum + it.quantity, 0);
 
-  const startEditingNote = (productId: string, currentNote?: string) => {
-    setEditingNoteItemKey(productId);
+  const startEditingNote = (itemKey: string, currentNote?: string) => {
+    setEditingNoteItemKey(itemKey);
     setTempNoteText(currentNote || '');
   };
 
-  const saveItemNote = (productId: string) => {
-    updateCartItemKitchenNotes(productId, tempNoteText.trim());
+  const saveItemNote = (productId: string, variantId?: string) => {
+    updateCartItemKitchenNotes(productId, tempNoteText.trim(), variantId);
     setEditingNoteItemKey(null);
   };
 
+  const handleOpenProductDetails = (product: Product) => {
+    soundEffects.playGlassTap();
+    haptics.selection();
+    setSelectedProductForVariants(product);
+    setIsVariantPickerOpen(true);
+  };
+
   // Haptic-wrapped helpers for ergonomic tactile & Apple Glass audio feedback
-  const handleAddToCartWithHaptics = (product: Product, quantity = 1, isWholesale = false) => {
-    if (product.stock <= 0) {
+  const handleAddToCartWithHaptics = (product: Product, quantity = 1, isWholesale = false, variant?: ProductVariant) => {
+    // If product has variants and no specific variant was provided, open variant selection sheet
+    if (product.hasVariants && product.variants && product.variants.length > 0 && !variant) {
+      handleOpenProductDetails(product);
+      return;
+    }
+
+    const currentStock = variant ? variant.stock : product.stock;
+    if (currentStock <= 0) {
       soundEffects.playWarning();
     } else {
       soundEffects.playGlassTap();
     }
-    addToCart(product, quantity, isWholesale);
+    addToCart(product, quantity, isWholesale, variant);
   };
 
-  const handleUpdateQuantityWithHaptics = (productId: string, newQty: number, direction: 'up' | 'down' = 'up') => {
+  const handleUpdateQuantityWithHaptics = (productId: string, newQty: number, direction: 'up' | 'down' = 'up', variantId?: string) => {
     if (newQty <= 0) {
       soundEffects.playDeleteTick();
     } else {
       soundEffects.playQuantityTick(direction);
     }
-    updateCartItemQuantity(productId, newQty);
+    updateCartItemQuantity(productId, newQty, variantId);
   };
 
-  const handleRemoveFromCartWithHaptics = (productId: string) => {
+  const handleRemoveFromCartWithHaptics = (productId: string, variantId?: string) => {
     soundEffects.playDeleteTick();
-    removeFromCart(productId);
+    removeFromCart(productId, variantId);
   };
 
   const handleClearCartWithHaptics = () => {
@@ -1159,6 +1226,24 @@ export const POSView: React.FC = () => {
                         </button>
                       </div>
                     </div>
+
+                    {/* Dedicated View Details Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenProductDetails(product);
+                      }}
+                      className="w-full mt-2.5 py-1.5 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                      title="عرض تفاصيل الصنف وتحديد المقاس والخيارات"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>
+                        {product.hasVariants && product.variants && product.variants.length > 0
+                          ? `عرض التفاصيل والخيارات (${product.variants.length})`
+                          : 'عرض التفاصيل'}
+                      </span>
+                    </button>
                   </div>
                 );
               })}
@@ -1275,6 +1360,19 @@ export const POSView: React.FC = () => {
                             <span>-1</span>
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenProductDetails(product);
+                          }}
+                          className="px-2.5 py-2 min-h-[38px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                          title="عرض تفاصيل الصنف واختيار المتغيرات"
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" />
+                          <span>{product.hasVariants && product.variants?.length ? `الخيارات (${product.variants.length})` : 'التفاصيل'}</span>
+                        </button>
 
                         <button
                           type="button"
@@ -1417,6 +1515,18 @@ export const POSView: React.FC = () => {
                           <span>{language === 'ar' ? 'تنقيص' : 'Remove'}</span>
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenProductDetails(product);
+                        }}
+                        className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 min-h-[40px]"
+                        title="عرض تفاصيل الصنف واختيار المتغيرات"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
+                        <span className="hidden md:inline">{product.hasVariants && product.variants?.length ? `الخيارات (${product.variants.length})` : 'التفاصيل'}</span>
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1590,213 +1700,229 @@ export const POSView: React.FC = () => {
               <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">{t('emptyCartSubtitle')}</p>
             </div>
           ) : (
-            cart.map(item => (
-              <div
-                key={item.productId}
-                className={`p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border flex flex-col gap-2 shadow-2xs ${
-                  item.isWholesale ? 'border-amber-300/80 dark:border-amber-800/80' : 'border-slate-200/80 dark:border-slate-700/80'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  {/* Item Details */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {language === 'ar' ? item.product.nameAr : item.product.nameEn}
-                      </h4>
-                      {item.wholesaleUnit && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 shrink-0">
-                          {item.wholesaleUnit}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCartItemPriceEdit(item)}
-                        className="group/cprice inline-flex items-center gap-1 px-1.5 py-0.5 -ms-1 rounded-lg bg-amber-50/70 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border border-amber-200/80 hover:border-amber-400 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 transition-all cursor-pointer"
-                        title="انقر لتعديل سعر هذا الصنف في السلة مباشرة"
-                      >
-                        <span className="font-bold">{formatCurrency(item.unitPrice)}</span>
-                        <Edit3 className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                        {item.unitPrice !== item.product.price && (
-                          <span className="text-[9px] px-1 rounded bg-amber-500 text-slate-950 font-black">
-                            معدّل
+            cart.map(item => {
+              const itemKey = `${item.productId}_${item.variantId || 'base'}`;
+              const basePriceForComparison = item.selectedVariant ? item.selectedVariant.price : item.product.price;
+
+              return (
+                <div
+                  key={itemKey}
+                  className={`p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border flex flex-col gap-2 shadow-2xs ${
+                    item.isWholesale ? 'border-amber-300/80 dark:border-amber-800/80' : 'border-slate-200/80 dark:border-slate-700/80'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    {/* Item Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {language === 'ar' ? item.product.nameAr : item.product.nameEn}
+                        </h4>
+                        {item.selectedVariant && (
+                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 flex items-center gap-1 shrink-0">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>{item.selectedVariant.nameAr}</span>
                           </span>
                         )}
-                      </button>
-                      {item.discount > 0 && (
-                        <span className="text-[10px] text-emerald-600 font-bold">
-                          (خصم {formatCurrency(item.discount)})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Quantity Controls - Mobile-friendly touch targets */}
-                  <div className="flex items-center gap-1 sm:gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateQuantityWithHaptics(item.productId, item.quantity - 1, 'down')}
-                      className="w-9 h-9 sm:w-7 sm:h-7 min-w-[34px] min-h-[34px] rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center justify-center active:scale-90 transition-transform cursor-pointer"
-                      aria-label="تقليل الكمية"
-                    >
-                      <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEffects.playGlassTap();
-                        handleOpenQuantityKeypad(item);
-                      }}
-                      className="min-w-[36px] px-1.5 py-1 min-h-[32px] text-center text-xs font-black font-mono text-slate-900 dark:text-white bg-slate-50 hover:bg-blue-50 dark:bg-slate-800 dark:hover:bg-blue-950/60 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg border border-transparent hover:border-blue-400 transition-all cursor-pointer active:scale-95 shadow-2xs flex items-center justify-center gap-0.5 group/qty"
-                      title="انقر لتعديل الكمية باللوحة الرقمية اللمسية"
-                    >
-                      <span>{item.quantity}</span>
-                      <Edit3 className="w-2.5 h-2.5 text-slate-400 group-hover/qty:text-blue-500 opacity-60 group-hover/qty:opacity-100 shrink-0" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateQuantityWithHaptics(item.productId, item.quantity + 1, 'up')}
-                      className={`w-9 h-9 sm:w-7 sm:h-7 min-w-[34px] min-h-[34px] rounded-xl text-white flex items-center justify-center active:scale-90 transition-transform cursor-pointer ${
-                        businessMode === 'restaurant'
-                          ? 'bg-emerald-600 hover:bg-emerald-700'
-                          : businessMode === 'wholesale'
-                          ? 'bg-amber-500 hover:bg-amber-600'
-                          : 'bg-blue-600 hover:bg-blue-700'
-                      }`}
-                      aria-label="زيادة الكمية"
-                    >
-                      <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Item Total & Trash */}
-                  <div className="text-end shrink-0 min-w-[65px] flex flex-col items-end">
-                    <span className="text-xs font-black text-slate-900 dark:text-white font-mono block">
-                      {formatCurrency(item.total)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFromCartWithHaptics(item.productId)}
-                      className="w-9 h-9 min-w-[36px] min-h-[36px] p-2 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 transition-colors mt-0.5 cursor-pointer active:scale-90"
-                      title="حذف الصنف"
-                      aria-label="حذف الصنف"
-                    >
-                      <Trash2 className="w-4 h-4 text-rose-500" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Wholesale Mode: Rapid Carton Multiplier & Trade Mode Switch */}
-                {businessMode === 'wholesale' && (
-                  <div className="pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[10px]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEffects.playCategorySwitch();
-                        toggleCartItemTradeMode(item.productId);
-                      }}
-                      className={`px-2.5 py-1 min-h-[32px] rounded-lg font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 ${
-                        item.isWholesale
-                          ? 'bg-amber-500 text-white shadow-2xs'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {item.isWholesale ? '📦 تسعير طرد / جملة' : '🏷️ تسعير مفرق'}
-                    </button>
-
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-400">تعديل سريع:</span>
-                      {item.quantity > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQuantityWithHaptics(item.productId, Math.max(1, item.quantity - 5), 'down')}
-                          className="px-2 py-1 min-h-[30px] rounded-lg bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-300 font-mono font-bold active:scale-95 cursor-pointer transition-colors"
-                          title="تنقيص 5 قطع"
-                        >
-                          -5
-                        </button>
-                      )}
-                      {[5, 10].map(cnt => (
-                        <button
-                          key={cnt}
-                          type="button"
-                          onClick={() => handleUpdateQuantityWithHaptics(item.productId, item.quantity + cnt, 'up')}
-                          className="px-2 py-1 min-h-[30px] rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-amber-100 text-slate-800 dark:text-slate-200 font-mono font-bold active:scale-95 cursor-pointer"
-                        >
-                          +{cnt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Restaurant Mode: Item Kitchen Notes */}
-                {businessMode === 'restaurant' && (
-                  <div className="pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
-                    {editingNoteItemKey === item.productId ? (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            value={tempNoteText}
-                            onChange={e => setTempNoteText(e.target.value)}
-                            placeholder={language === 'ar' ? 'ملاحظة المطبخ (مثلاً: بدون بصل)...' : 'Kitchen note...'}
-                            className="flex-1 px-2.5 py-1.5 min-h-[36px] text-xs rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-slate-900 dark:text-white focus:outline-none"
-                            autoFocus
-                          />
-                          <button
-                            type="button"
-                            onClick={() => saveItemNote(item.productId)}
-                            className="px-2.5 py-1.5 min-h-[36px] bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 active:scale-95 cursor-pointer flex items-center justify-center"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {/* Quick tags */}
-                        <div className="flex flex-wrap gap-1">
-                          {quickChefNotes.map(n => (
-                            <button
-                              key={n}
-                              type="button"
-                              onClick={() => setTempNoteText(n)}
-                              className="text-[10px] font-semibold px-2 py-1 min-h-[30px] rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-emerald-100 dark:hover:bg-emerald-950 hover:text-emerald-800 active:scale-95 cursor-pointer"
-                            >
-                              {n}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between text-xs">
-                        {item.kitchenNotes ? (
-                          <div 
-                            onClick={() => startEditingNote(item.productId, item.kitchenNotes)}
-                            className="text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer hover:underline flex items-center gap-1 min-h-[32px]"
-                          >
-                            <span>📝</span>
-                            <span className="truncate max-w-[220px]">{item.kitchenNotes}</span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startEditingNote(item.productId)}
-                            className="text-slate-400 hover:text-emerald-600 text-xs font-semibold flex items-center gap-1.5 min-h-[34px] px-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors active:scale-95 cursor-pointer"
-                          >
-                            <MessageSquarePlus className="w-3.5 h-3.5" />
-                            <span>+ {language === 'ar' ? 'ملاحظة للشيف' : 'Chef Note'}</span>
-                          </button>
+                        {item.wholesaleUnit && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 shrink-0">
+                            {item.wholesaleUnit}
+                          </span>
                         )}
                       </div>
-                    )}
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCartItemPriceEdit(item)}
+                          className="group/cprice inline-flex items-center gap-1 px-1.5 py-0.5 -ms-1 rounded-lg bg-amber-50/70 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border border-amber-200/80 hover:border-amber-400 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 transition-all cursor-pointer"
+                          title="انقر لتعديل سعر هذا الصنف في السلة مباشرة"
+                        >
+                          <span className="font-bold">{formatCurrency(item.unitPrice)}</span>
+                          <Edit3 className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                          {item.unitPrice !== basePriceForComparison && (
+                            <span className="text-[9px] px-1 rounded bg-amber-500 text-slate-950 font-black">
+                              معدّل
+                            </span>
+                          )}
+                        </button>
+                        {item.selectedVariant?.sku && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {item.selectedVariant.sku}
+                          </span>
+                        )}
+                        {item.discount > 0 && (
+                          <span className="text-[10px] text-emerald-600 font-bold">
+                            (خصم {formatCurrency(item.discount)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quantity Controls - Mobile-friendly touch targets */}
+                    <div className="flex items-center gap-1 sm:gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateQuantityWithHaptics(item.productId, item.quantity - 1, 'down', item.variantId)}
+                        className="w-9 h-9 sm:w-7 sm:h-7 min-w-[34px] min-h-[34px] rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center justify-center active:scale-90 transition-transform cursor-pointer"
+                        aria-label="تقليل الكمية"
+                      >
+                        <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEffects.playGlassTap();
+                          handleOpenQuantityKeypad(item);
+                        }}
+                        className="min-w-[36px] px-1.5 py-1 min-h-[32px] text-center text-xs font-black font-mono text-slate-900 dark:text-white bg-slate-50 hover:bg-blue-50 dark:bg-slate-800 dark:hover:bg-blue-950/60 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg border border-transparent hover:border-blue-400 transition-all cursor-pointer active:scale-95 shadow-2xs flex items-center justify-center gap-0.5 group/qty"
+                        title="انقر لتعديل الكمية باللوحة الرقمية اللمسية"
+                      >
+                        <span>{item.quantity}</span>
+                        <Edit3 className="w-2.5 h-2.5 text-slate-400 group-hover/qty:text-blue-500 opacity-60 group-hover/qty:opacity-100 shrink-0" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateQuantityWithHaptics(item.productId, item.quantity + 1, 'up', item.variantId)}
+                        className={`w-9 h-9 sm:w-7 sm:h-7 min-w-[34px] min-h-[34px] rounded-xl text-white flex items-center justify-center active:scale-90 transition-transform cursor-pointer ${
+                          businessMode === 'restaurant'
+                            ? 'bg-emerald-600 hover:bg-emerald-700'
+                            : businessMode === 'wholesale'
+                            ? 'bg-amber-500 hover:bg-amber-600'
+                            : 'bg-blue-600 hover:bg-blue-700'
+                        }`}
+                        aria-label="زيادة الكمية"
+                      >
+                        <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Item Total & Trash */}
+                    <div className="text-end shrink-0 min-w-[65px] flex flex-col items-end">
+                      <span className="text-xs font-black text-slate-900 dark:text-white font-mono block">
+                        {formatCurrency(item.total)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFromCartWithHaptics(item.productId, item.variantId)}
+                        className="w-9 h-9 min-w-[36px] min-h-[36px] p-2 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 transition-colors mt-0.5 cursor-pointer active:scale-90"
+                        title="حذف الصنف"
+                        aria-label="حذف الصنف"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-500" />
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))
+
+                  {/* Wholesale Mode: Rapid Carton Multiplier & Trade Mode Switch */}
+                  {businessMode === 'wholesale' && (
+                    <div className="pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEffects.playCategorySwitch();
+                          toggleCartItemTradeMode(item.productId, item.variantId);
+                        }}
+                        className={`px-2.5 py-1 min-h-[32px] rounded-lg font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 ${
+                          item.isWholesale
+                            ? 'bg-amber-500 text-white shadow-2xs'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {item.isWholesale ? '📦 تسعير طرد / جملة' : '🏷️ تسعير مفرق'}
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">تعديل سريع:</span>
+                        {item.quantity > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuantityWithHaptics(item.productId, Math.max(1, item.quantity - 5), 'down', item.variantId)}
+                            className="px-2 py-1 min-h-[30px] rounded-lg bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-300 font-mono font-bold active:scale-95 cursor-pointer transition-colors"
+                            title="تنقيص 5 قطع"
+                          >
+                            -5
+                          </button>
+                        )}
+                        {[5, 10].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            onClick={() => handleUpdateQuantityWithHaptics(item.productId, item.quantity + cnt, 'up', item.variantId)}
+                            className="px-2 py-1 min-h-[30px] rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-amber-100 text-slate-800 dark:text-slate-200 font-mono font-bold active:scale-95 cursor-pointer"
+                          >
+                            +{cnt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Restaurant Mode: Item Kitchen Notes */}
+                  {businessMode === 'restaurant' && (
+                    <div className="pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                      {editingNoteItemKey === itemKey ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={tempNoteText}
+                              onChange={e => setTempNoteText(e.target.value)}
+                              placeholder={language === 'ar' ? 'ملاحظة المطبخ (مثلاً: بدون بصل)...' : 'Kitchen note...'}
+                              className="flex-1 px-2.5 py-1.5 min-h-[36px] text-xs rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-slate-900 dark:text-white focus:outline-none"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveItemNote(item.productId, item.variantId)}
+                              className="px-2.5 py-1.5 min-h-[36px] bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 active:scale-95 cursor-pointer flex items-center justify-center"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Quick tags */}
+                          <div className="flex flex-wrap gap-1">
+                            {quickChefNotes.map(n => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => setTempNoteText(n)}
+                                className="text-[10px] font-semibold px-2 py-1 min-h-[30px] rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-emerald-100 dark:hover:bg-emerald-950 hover:text-emerald-800 active:scale-95 cursor-pointer"
+                              >
+                                {n}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-xs">
+                          {item.kitchenNotes ? (
+                            <div 
+                              onClick={() => startEditingNote(itemKey, item.kitchenNotes)}
+                              className="text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer hover:underline flex items-center gap-1 min-h-[32px]"
+                            >
+                              <span>📝</span>
+                              <span className="truncate max-w-[220px]">{item.kitchenNotes}</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startEditingNote(itemKey)}
+                              className="text-slate-400 hover:text-emerald-600 text-xs font-semibold flex items-center gap-1.5 min-h-[34px] px-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors active:scale-95 cursor-pointer"
+                            >
+                              <MessageSquarePlus className="w-3.5 h-3.5" />
+                              <span>+ {language === 'ar' ? 'ملاحظة للشيف' : 'Chef Note'}</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
@@ -2172,6 +2298,16 @@ export const POSView: React.FC = () => {
       <BluetoothPrinterModal
         isOpen={isBluetoothModalOpen}
         onClose={() => setIsBluetoothModalOpen(false)}
+      />
+
+      {/* Product Variant Options & Sizes Picker Modal */}
+      <ProductVariantPickerModal
+        isOpen={isVariantPickerOpen}
+        onClose={() => setIsVariantPickerOpen(false)}
+        product={selectedProductForVariants}
+        onAddToCart={(prod, qty, forceWholesale, variant) => {
+          addToCart(prod, qty, forceWholesale, variant);
+        }}
       />
     </div>
   );

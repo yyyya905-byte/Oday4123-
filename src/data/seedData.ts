@@ -364,6 +364,55 @@ export const initialProducts: Product[] = [
     wholesaleUnitMultiplier: 6,
     tradeType: 'both',
     costPrice: 11000,
+    hasVariants: true,
+    variantOptions: [
+      {
+        nameAr: 'الحجم',
+        nameEn: 'Size',
+        values: ['صغير 250ml', 'وسط 350ml', 'كبير 450ml']
+      }
+    ],
+    variants: [
+      {
+        id: 'var_cap_sm',
+        nameAr: 'صغير (250 مل)',
+        nameEn: 'Small (250ml)',
+        sku: 'BEV-002-SM',
+        barcode: '6210010021',
+        price: 20000,
+        costPrice: 9000,
+        wholesalePrice: 16000,
+        stock: 25,
+        minStock: 5,
+        attributes: { 'الحجم': 'صغير 250ml' }
+      },
+      {
+        id: 'var_cap_md',
+        nameAr: 'وسط (350 مل)',
+        nameEn: 'Medium (350ml)',
+        sku: 'BEV-002-MD',
+        barcode: '6210010022',
+        price: 24000,
+        costPrice: 11000,
+        wholesalePrice: 19000,
+        stock: 25,
+        minStock: 5,
+        attributes: { 'الحجم': 'وسط 350ml' }
+      },
+      {
+        id: 'var_cap_lg',
+        nameAr: 'كبير (450 مل)',
+        nameEn: 'Large (450ml)',
+        sku: 'BEV-002-LG',
+        barcode: '6210010023',
+        price: 29000,
+        costPrice: 13000,
+        wholesalePrice: 23000,
+        stock: 14,
+        minStock: 4,
+        attributes: { 'الحجم': 'كبير 450ml' }
+      }
+    ],
     stock: 64,
     minStock: 10,
     unit: 'كوب',
@@ -390,6 +439,60 @@ export const initialProducts: Product[] = [
     wholesaleUnitMultiplier: 6,
     tradeType: 'both',
     costPrice: 13000,
+    hasVariants: true,
+    variantOptions: [
+      {
+        nameAr: 'الحجم',
+        nameEn: 'Size',
+        values: ['وسط 350ml', 'كبير 500ml']
+      },
+      {
+        nameAr: 'نوع الحليب',
+        nameEn: 'Milk Type',
+        values: ['حليب بقري عادي', 'حليب شوفان / لوز']
+      }
+    ],
+    variants: [
+      {
+        id: 'var_lat_std_md',
+        nameAr: 'وسط / حليب عادي',
+        nameEn: 'Medium / Regular Milk',
+        sku: 'BEV-003-MD-STD',
+        barcode: '6210010031',
+        price: 26000,
+        costPrice: 12000,
+        wholesalePrice: 20000,
+        stock: 18,
+        minStock: 4,
+        attributes: { 'الحجم': 'وسط 350ml', 'نوع الحليب': 'حليب بقري عادي' }
+      },
+      {
+        id: 'var_lat_std_lg',
+        nameAr: 'كبير / حليب عادي',
+        nameEn: 'Large / Regular Milk',
+        sku: 'BEV-003-LG-STD',
+        barcode: '6210010032',
+        price: 30000,
+        costPrice: 14000,
+        wholesalePrice: 23000,
+        stock: 14,
+        minStock: 4,
+        attributes: { 'الحجم': 'كبير 500ml', 'نوع الحليب': 'حليب بقري عادي' }
+      },
+      {
+        id: 'var_lat_oat_lg',
+        nameAr: 'كبير / حليب شوفان فاخر',
+        nameEn: 'Large / Oat Milk Special',
+        sku: 'BEV-003-LG-OAT',
+        barcode: '6210010033',
+        price: 35000,
+        costPrice: 16000,
+        wholesalePrice: 27000,
+        stock: 10,
+        minStock: 3,
+        attributes: { 'الحجم': 'كبير 500ml', 'نوع الحليب': 'حليب شوفان / لوز' }
+      }
+    ],
     stock: 42,
     minStock: 8,
     unit: 'كوب',

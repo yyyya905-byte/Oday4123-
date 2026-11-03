@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { flushSync } from 'react-dom';
 import {
   Product,
+  ProductVariant,
   Category,
   Customer,
   Supplier,
@@ -250,7 +251,7 @@ interface AppContextType {
   setGuestCount: (count: number) => void;
   kitchenNote: string;
   setKitchenNote: (note: string) => void;
-  updateCartItemKitchenNotes: (productId: string, notes: string) => void;
+  updateCartItemKitchenNotes: (productId: string, notes: string, variantId?: string) => void;
 
   // Active View & Modal State
   activeTab: ActiveTab;
@@ -368,12 +369,12 @@ interface AppContextType {
   posTradeMode: 'retail' | 'wholesale';
   setPosTradeMode: (mode: 'retail' | 'wholesale') => void;
   cart: CartItem[];
-  addToCart: (product: Product, quantity?: number, forceWholesale?: boolean) => void;
-  toggleCartItemTradeMode: (productId: string) => void;
-  updateCartItemQuantity: (productId: string, quantity: number) => void;
-  updateCartItemDiscount: (productId: string, discount: number, discountType: 'percentage' | 'fixed') => void;
-  updateCartItemPrice: (productId: string, newPrice: number) => void;
-  removeFromCart: (productId: string) => void;
+  addToCart: (product: Product, quantity?: number, forceWholesale?: boolean, variant?: ProductVariant) => void;
+  toggleCartItemTradeMode: (productId: string, variantId?: string) => void;
+  updateCartItemQuantity: (productId: string, quantity: number, variantId?: string) => void;
+  updateCartItemDiscount: (productId: string, discount: number, discountType: 'percentage' | 'fixed', variantId?: string) => void;
+  updateCartItemPrice: (productId: string, newPrice: number, variantId?: string) => void;
+  removeFromCart: (productId: string, variantId?: string) => void;
   clearCart: () => void;
   selectedCustomer: Customer | null;
   setSelectedCustomer: (customer: Customer | null) => void;
@@ -454,7 +455,7 @@ interface AppContextType {
   // Inventory
   inventoryLogs: InventoryTransaction[];
   stockMovements: InventoryTransaction[];
-  adjustStock: (productId: string, quantityDeltaOrType: number | StockMovementType, typeOrDelta?: StockMovementType | number, reason?: string) => void;
+  adjustStock: (productId: string, quantityDeltaOrType: number | StockMovementType, typeOrDelta?: StockMovementType | number, reason?: string, variantId?: string) => void;
 
   // Expenses
   expenses: Expense[];
@@ -2983,7 +2984,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addToCart = (product: Product, quantity: number = 1, forceWholesale?: boolean) => {
+  const addToCart = (product: Product, quantity: number = 1, forceWholesale?: boolean, variant?: ProductVariant) => {
     if (product.status === 'inactive') {
       notify('المنتج غير متاح للبيع', product.nameAr, 'warning');
       return;
@@ -2996,16 +2997,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ? forceWholesale
       : posTradeMode === 'wholesale' || (product.tradeType === 'wholesale');
 
-    const effectiveUnitPrice = isWholesale && product.wholesalePrice !== undefined && product.wholesalePrice > 0
-      ? product.wholesalePrice
-      : product.price;
+    const variantWholesale = variant?.wholesalePrice;
+    const wholesalePriceToUse = variantWholesale && variantWholesale > 0 ? variantWholesale : product.wholesalePrice;
+    const baseRetailPrice = variant ? variant.price : product.price;
+
+    const effectiveUnitPrice = isWholesale && wholesalePriceToUse !== undefined && wholesalePriceToUse > 0
+      ? wholesalePriceToUse
+      : baseRetailPrice;
+
+    const targetVariantId = variant?.id;
 
     setCart(prev => {
-      const existing = prev.find(item => item.productId === product.id);
+      const existing = prev.find(item =>
+        item.productId === product.id && (targetVariantId ? item.variantId === targetVariantId : !item.variantId)
+      );
       if (existing) {
         const newQty = existing.quantity + quantity;
         return prev.map(item =>
-          item.productId === product.id
+          item.productId === product.id && (targetVariantId ? item.variantId === targetVariantId : !item.variantId)
             ? {
                 ...item,
                 quantity: newQty,
@@ -3027,6 +3036,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isWholesale,
           wholesaleUnit: isWholesale ? product.wholesaleUnit : undefined,
           wholesaleMultiplier: product.wholesaleUnitMultiplier,
+          variantId: targetVariantId,
+          selectedVariant: variant,
           total: calculateItemTotal(effectiveUnitPrice, quantity, product.discount || 0, 'fixed'),
         };
         return [...prev, newItem];
@@ -3034,14 +3045,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const toggleCartItemTradeMode = (productId: string) => {
+  const toggleCartItemTradeMode = (productId: string, variantId?: string) => {
     setCart(prev =>
       prev.map(item => {
-        if (item.productId !== productId) return item;
+        if (item.productId !== productId || (variantId && item.variantId !== variantId)) return item;
         const willBeWholesale = !item.isWholesale;
-        const newUnitPrice = willBeWholesale && item.product.wholesalePrice
-          ? item.product.wholesalePrice
-          : item.product.price;
+        const effectiveWholesale = item.selectedVariant?.wholesalePrice || item.product.wholesalePrice;
+        const effectiveRetail = item.selectedVariant?.price || item.product.price;
+        const newUnitPrice = willBeWholesale && effectiveWholesale
+          ? effectiveWholesale
+          : effectiveRetail;
 
         return {
           ...item,
@@ -3062,15 +3075,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return Math.max(0, base - discountAmt);
   };
 
-  const updateCartItemQuantity = (productId: string, quantity: number) => {
+  const updateCartItemQuantity = (productId: string, quantity: number, variantId?: string) => {
     if (quantity <= 0) {
-      removeFromCart(productId);
+      removeFromCart(productId, variantId);
       return;
     }
     soundEffects.playClick();
     setCart(prev =>
       prev.map(item =>
-        item.productId === productId
+        item.productId === productId && (!variantId || item.variantId === variantId)
           ? {
               ...item,
               quantity,
@@ -3081,10 +3094,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const updateCartItemDiscount = (productId: string, discount: number, discountType: 'percentage' | 'fixed') => {
+  const updateCartItemDiscount = (productId: string, discount: number, discountType: 'percentage' | 'fixed', variantId?: string) => {
     setCart(prev =>
       prev.map(item =>
-        item.productId === productId
+        item.productId === productId && (!variantId || item.variantId === variantId)
           ? {
               ...item,
               discount,
@@ -3096,12 +3109,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const updateCartItemPrice = (productId: string, newPrice: number) => {
+  const updateCartItemPrice = (productId: string, newPrice: number, variantId?: string) => {
     if (newPrice < 0) return;
     soundEffects.playClick();
     setCart(prev =>
       prev.map(item =>
-        item.productId === productId
+        item.productId === productId && (!variantId || item.variantId === variantId)
           ? {
               ...item,
               unitPrice: newPrice,
@@ -3112,15 +3125,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const removeFromCart = (productId: string) => {
+  const removeFromCart = (productId: string, variantId?: string) => {
     soundEffects.playClick();
-    setCart(prev => prev.filter(item => item.productId !== productId));
+    setCart(prev => prev.filter(item => !(item.productId === productId && (!variantId || item.variantId === variantId))));
   };
 
-  const updateCartItemKitchenNotes = (productId: string, notes: string) => {
+  const updateCartItemKitchenNotes = (productId: string, notes: string, variantId?: string) => {
     setCart(prev =>
       prev.map(item =>
-        item.productId === productId
+        item.productId === productId && (!variantId || item.variantId === variantId)
           ? { ...item, kitchenNotes: notes }
           : item
       )
@@ -3266,17 +3279,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tradeType: computedTradeType,
       items: cart.map(it => ({
         productId: it.productId,
-        productNameAr: it.product.nameAr,
-        productNameEn: it.product.nameEn,
-        barcode: it.product.barcode,
+        productNameAr: it.selectedVariant ? `${it.product.nameAr} (${it.selectedVariant.nameAr})` : it.product.nameAr,
+        productNameEn: it.selectedVariant ? `${it.product.nameEn} (${it.selectedVariant.nameEn || it.selectedVariant.nameAr})` : it.product.nameEn,
+        barcode: it.selectedVariant?.barcode || it.product.barcode,
         quantity: it.quantity,
         unitPrice: it.unitPrice,
-        costPrice: it.product.costPrice,
+        costPrice: it.selectedVariant?.costPrice !== undefined ? it.selectedVariant.costPrice : it.product.costPrice,
         discount: it.discount,
         total: it.total,
         kitchenNotes: it.kitchenNotes,
         isWholesale: it.isWholesale,
         wholesaleUnit: it.wholesaleUnit,
+        variantId: it.variantId,
+        variantNameAr: it.selectedVariant?.nameAr,
+        variantSku: it.selectedVariant?.sku,
       })),
       subtotal,
       discountTotal: totalDiscounts,
@@ -3297,7 +3313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 1. Deduct Stock automatically
     cart.forEach(item => {
-      adjustStock(item.productId, -item.quantity, 'sale', `فاتورة مبيعات ${invoiceNum}`);
+      adjustStock(item.productId, -item.quantity, 'sale', `فاتورة مبيعات ${invoiceNum}`, item.variantId);
     });
 
     // 2. Update Customer Points & Totals & Debt (if credit)
@@ -3713,7 +3729,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     productId: string,
     quantityDeltaOrType: number | StockMovementType,
     typeOrDelta?: StockMovementType | number,
-    reason?: string
+    reason?: string,
+    variantId?: string
   ) => {
     const product = (products || []).find(p => p.id === productId);
     if (!product) return;
@@ -3740,13 +3757,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const previousStock = product.stock || 0;
     const newStock = Math.max(0, previousStock + quantityDelta);
 
-    // Update product stock atomically
+    // Update product stock and variant stock atomically
     setProductsState(prev => {
-      const updated = prev.map(p =>
-        p.id === productId
-          ? { ...p, stock: Math.max(0, (p.stock || 0) + quantityDelta), updatedAt: new Date().toISOString() }
-          : p
-      );
+      const updated = prev.map(p => {
+        if (p.id !== productId) return p;
+
+        let updatedVariants = p.variants;
+        if (variantId && p.variants && p.variants.length > 0) {
+          updatedVariants = p.variants.map(v =>
+            v.id === variantId
+              ? { ...v, stock: Math.max(0, (v.stock || 0) + quantityDelta) }
+              : v
+          );
+        }
+
+        const calculatedStock = (updatedVariants && updatedVariants.length > 0 && p.hasVariants)
+          ? updatedVariants.reduce((sum, v) => sum + v.stock, 0)
+          : Math.max(0, (p.stock || 0) + quantityDelta);
+
+        return {
+          ...p,
+          stock: calculatedStock,
+          variants: updatedVariants,
+          updatedAt: new Date().toISOString()
+        };
+      });
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
       return updated;
     });

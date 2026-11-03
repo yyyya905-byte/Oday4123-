@@ -786,5 +786,22 @@ html, body, #root {
   border-radius: 1rem;
 }
 
+/* Animated Floating Kian Brand Logo */
+@keyframes floatKian {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg) scale(1);
+    box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.35);
+  }
+  50% {
+    transform: translateY(-5px) rotate(1.5deg) scale(1.03);
+    box-shadow: 0 16px 32px -5px rgba(16, 185, 129, 0.55);
+  }
+}
+
+.animate-float-kian {
+  animation: floatKian 3.2s ease-in-out infinite;
+}
+
+
 
 

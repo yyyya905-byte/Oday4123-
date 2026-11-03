@@ -44,6 +44,28 @@ export interface Category {
 
 export type TradeType = 'retail' | 'wholesale' | 'both';
 
+export interface ProductVariantOption {
+  nameAr: string; // e.g. 'الحجم' أو 'اللون' أو 'النوع'
+  nameEn?: string; // e.g. 'Size', 'Color'
+  values: string[]; // e.g. ['صغير', 'وسط', 'كبير']
+}
+
+export interface ProductVariant {
+  id: string; // Unique variant ID e.g. 'var_1', 'var_1712000_1'
+  nameAr: string; // e.g. 'كبير (450 مل)' or 'أسود / مقاس L'
+  nameEn?: string;
+  sku: string; // Specific variant SKU e.g. 'CAP-LRG'
+  barcode?: string; // Specific barcode for direct scanner matching
+  price: number; // Variant specific retail price
+  costPrice?: number; // Variant specific cost price
+  wholesalePrice?: number; // Variant wholesale price
+  stock: number; // Current stock for this specific variant
+  minStock?: number; // Minimum stock threshold for alert
+  attributes: Record<string, string>; // e.g. { 'الحجم': 'كبير', 'اللون': 'أسود' }
+  image?: string;
+  status?: 'active' | 'inactive';
+}
+
 export interface Product {
   id: string;
   nameAr: string;
@@ -59,6 +81,9 @@ export interface Product {
   wholesaleUnitMultiplier?: number; // Number of single pieces inside wholesale unit (e.g. 12 or 24)
   tradeType?: TradeType; // 'retail' | 'wholesale' | 'both'
   identificationCodes?: string[]; // Multiple identification codes / barcodes / carton codes / serials (supports 100+ codes per product/wholesale unit)
+  hasVariants?: boolean; // Whether this product has variants / options
+  variantOptions?: ProductVariantOption[]; // Definition of variant dimensions (e.g. Size, Color)
+  variants?: ProductVariant[]; // Concrete variant list with SKU, Price, Stock
   stock: number;
   minStock: number;
   unit: string;
@@ -92,6 +117,8 @@ export interface CartItem {
   isWholesale?: boolean; // Indicates if sold at wholesale rate
   wholesaleUnit?: string;
   wholesaleMultiplier?: number;
+  variantId?: string; // Specific variant ID if product has variants
+  selectedVariant?: ProductVariant; // Specific variant object
 }
 
 export interface Customer {
@@ -148,6 +175,9 @@ export interface SaleItem {
   kitchenNotes?: string;
   isWholesale?: boolean;
   wholesaleUnit?: string;
+  variantId?: string;
+  variantNameAr?: string;
+  variantSku?: string;
 }
 
 export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'points' | 'credit' | 'split' | string;

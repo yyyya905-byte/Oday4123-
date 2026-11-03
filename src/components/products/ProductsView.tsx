@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Product, Category, TradeType, DeviceRole } from '../../types';
+import { Product, ProductVariantOption, ProductVariant, Category, TradeType, DeviceRole } from '../../types';
 import {
   PRESET_FOOD_IMAGES,
   TARGET_DEVICE_OPTIONS,
@@ -118,6 +118,13 @@ export const ProductsView: React.FC = () => {
   const [bulkCodesInput, setBulkCodesInput] = useState<string>('');
   const [showBulkCodesBox, setShowBulkCodesBox] = useState<boolean>(false);
 
+  // Product Variants State
+  const [hasVariants, setHasVariants] = useState<boolean>(false);
+  const [variantOptions, setVariantOptions] = useState<ProductVariantOption[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [newOptionName, setNewOptionName] = useState<string>('');
+  const [newOptionValuesInput, setNewOptionValuesInput] = useState<string>('');
+
   // Currency label
   const currencySymbol = settings.currency.symbolNative || settings.currency.symbol;
   const currencyCode = settings.currency.code;
@@ -217,6 +224,11 @@ export const ProductsView: React.FC = () => {
     setNewCodeInput('');
     setBulkCodesInput('');
     setShowBulkCodesBox(false);
+    setHasVariants(false);
+    setVariantOptions([]);
+    setVariants([]);
+    setNewOptionName('');
+    setNewOptionValuesInput('');
     setIsProductModalOpen(true);
   };
 
@@ -250,7 +262,127 @@ export const ProductsView: React.FC = () => {
     setNewCodeInput('');
     setBulkCodesInput('');
     setShowBulkCodesBox(false);
+    setHasVariants(Boolean(product.hasVariants && product.variants && product.variants.length > 0));
+    setVariantOptions(product.variantOptions ? JSON.parse(JSON.stringify(product.variantOptions)) : []);
+    setVariants(product.variants ? JSON.parse(JSON.stringify(product.variants)) : []);
+    setNewOptionName('');
+    setNewOptionValuesInput('');
     setIsProductModalOpen(true);
+  };
+
+  // Option dimensions management
+  const handleAddOptionDimension = () => {
+    const trimmedName = newOptionName.trim();
+    if (!trimmedName) {
+      notify('تنبيه', 'يرجى كتابة اسم الخاصية (مثلاً: الحجم، اللون، النكهة)', 'warning');
+      return;
+    }
+    const parsedValues = newOptionValuesInput
+      .split(/[,،\n]+/)
+      .map(v => v.trim())
+      .filter(Boolean);
+
+    if (parsedValues.length === 0) {
+      notify('تنبيه', 'يرجى كتابة قيم الخاصية مفصولة بفواصل (مثلاً: صغير، وسط، كبير)', 'warning');
+      return;
+    }
+
+    setVariantOptions(prev => [...prev, { nameAr: trimmedName, values: parsedValues }]);
+    setNewOptionName('');
+    setNewOptionValuesInput('');
+    soundEffects.playClick();
+  };
+
+  const handleRemoveOptionDimension = (index: number) => {
+    setVariantOptions(prev => prev.filter((_, i) => i !== index));
+    soundEffects.playDeleteTick();
+  };
+
+  // Generate Cartesian combinations for variants
+  const handleGenerateVariants = () => {
+    if (variantOptions.length === 0) {
+      notify('تنبيه', 'يرجى إضافة خاصية واحدة على الأقل (مثل الحجم أو المقاس)', 'warning');
+      return;
+    }
+
+    const cartesian = (arrays: string[][]): string[][] => {
+      return arrays.reduce<string[][]>(
+        (acc, curr) => acc.flatMap(c => curr.map(n => [...c, n])),
+        [[]]
+      );
+    };
+
+    const valueArrays = variantOptions.map(o => o.values);
+    const combinations = cartesian(valueArrays);
+
+    const parsedPrice = parsePriceInput(price) || 10000;
+    const parsedCost = parsePriceInput(costPrice) || 7000;
+    const parsedWholesale = parsePriceInput(wholesalePrice) || Math.round(parsedPrice * 0.85);
+    const baseSkuClean = sku.trim() || 'SKU';
+
+    const generated: ProductVariant[] = combinations.map((combo, idx) => {
+      const attrs: Record<string, string> = {};
+      combo.forEach((val, optIdx) => {
+        const opt = variantOptions[optIdx];
+        if (opt) {
+          attrs[opt.nameAr] = val;
+        }
+      });
+
+      const comboName = combo.join(' / ');
+      const variantSku = `${baseSkuClean}-${idx + 1}`;
+      const variantBarcode = `${barcode ? barcode : generateRandomEan13()}${idx + 1}`.slice(0, 13);
+
+      return {
+        id: `var_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
+        nameAr: comboName,
+        sku: variantSku,
+        barcode: variantBarcode,
+        price: parsedPrice,
+        costPrice: parsedCost,
+        wholesalePrice: parsedWholesale,
+        stock: Math.max(1, Math.floor(stock / Math.max(1, combinations.length))),
+        minStock: 3,
+        attributes: attrs,
+        status: 'active'
+      };
+    });
+
+    setVariants(generated);
+    soundEffects.playSuccess();
+    notify('تم توليد التفرعات', `تم إنشاء ${generated.length} خيار بنجاح`, 'success');
+  };
+
+  const handleAddManualVariant = () => {
+    const parsedPrice = parsePriceInput(price) || 10000;
+    const parsedCost = parsePriceInput(costPrice) || 7000;
+    const parsedWholesale = parsePriceInput(wholesalePrice) || Math.round(parsedPrice * 0.85);
+
+    const newVar: ProductVariant = {
+      id: `var_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      nameAr: `خيار جديد ${variants.length + 1}`,
+      sku: `${sku || 'SKU'}-${variants.length + 1}`,
+      barcode: generateRandomEan13(),
+      price: parsedPrice,
+      costPrice: parsedCost,
+      wholesalePrice: parsedWholesale,
+      stock: 10,
+      minStock: 3,
+      attributes: {},
+      status: 'active'
+    };
+
+    setVariants(prev => [...prev, newVar]);
+    soundEffects.playClick();
+  };
+
+  const handleUpdateVariantField = (id: string, updates: Partial<ProductVariant>) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
+  };
+
+  const handleDeleteVariant = (id: string) => {
+    setVariants(prev => prev.filter(v => v.id !== id));
+    soundEffects.playDeleteTick();
   };
 
   const handleSaveProduct = (e: React.FormEvent) => {
@@ -262,6 +394,16 @@ export const ProductsView: React.FC = () => {
     if (!nameAr.trim() || parsedPrice <= 0) {
       notify('تنبيه', 'يرجى إدخال اسم المنتج وسعر البيع بالعملة المحددة', 'warning');
       return;
+    }
+
+    let finalStock = Number(stock);
+    let finalVariants: ProductVariant[] | undefined = undefined;
+    let finalOptions: ProductVariantOption[] | undefined = undefined;
+
+    if (hasVariants && variants.length > 0) {
+      finalVariants = variants;
+      finalOptions = variantOptions;
+      finalStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
     }
 
     const payload = {
@@ -278,7 +420,10 @@ export const ProductsView: React.FC = () => {
       wholesaleUnitMultiplier: Number(wholesaleUnitMultiplier) || 1,
       tradeType,
       identificationCodes,
-      stock: Number(stock),
+      hasVariants: Boolean(hasVariants && variants.length > 0),
+      variantOptions: finalOptions,
+      variants: finalVariants,
+      stock: finalStock,
       minStock: Number(minStock),
       unit: unit || 'قطعة',
       image: image.trim() || undefined,
@@ -635,6 +780,12 @@ export const ProductsView: React.FC = () => {
                               </span>
                               {product.isFavorite && (
                                 <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                              )}
+                              {product.hasVariants && product.variants && product.variants.length > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 dark:bg-purple-500/25 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-[10px] font-black">
+                                  <Sparkles className="w-3 h-3 text-purple-500" />
+                                  <span>{product.variants.length} تفرعات</span>
+                                </span>
                               )}
                               {isLowStock && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black shadow-xs animate-pulse">
@@ -1294,6 +1445,281 @@ export const ProductsView: React.FC = () => {
                     className="w-full text-sm font-bold font-mono px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-rose-300 dark:border-rose-700 focus:outline-none focus:border-rose-500"
                   />
                 </div>
+              </div>
+
+              {/* Product Variants & Options Section */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-500/5 via-slate-50 to-indigo-500/5 dark:from-purple-950/20 dark:via-slate-800/40 dark:to-indigo-950/20 border border-purple-200/70 dark:border-purple-800/50 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>خيارات وتفرعات المنتج (الأحجام والمقاسات والألوان)</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold">
+                          Variants & Options
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        تفعيل تفرعات متعددة للمنتج لكل منها باركود، رمز SKU، سعر، ومخزون مستقل
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={hasVariants}
+                      onChange={e => {
+                        setHasVariants(e.target.checked);
+                        soundEffects.playClick();
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-purple-600" />
+                  </label>
+                </div>
+
+                {hasVariants && (
+                  <div className="space-y-4 pt-2 border-t border-purple-200/50 dark:border-purple-800/40">
+                    {/* Dimension Builder */}
+                    <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/80 space-y-2.5">
+                      <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5 text-purple-500" />
+                        <span>تعريف خصائص الخيارات (مثل: الحجم أو المقاس، واللون، ونوع الحليب...)</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        <div className="sm:col-span-4">
+                          <input
+                            type="text"
+                            value={newOptionName}
+                            onChange={e => setNewOptionName(e.target.value)}
+                            placeholder="اسم الخاصية: مثلاً الحجم أو اللون"
+                            className="w-full text-xs font-bold px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        <div className="sm:col-span-6">
+                          <input
+                            type="text"
+                            value={newOptionValuesInput}
+                            onChange={e => setNewOptionValuesInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddOptionDimension();
+                              }
+                            }}
+                            placeholder="القيم مفصولة بفواصل: مثلاً صغير، وسط، كبير"
+                            className="w-full text-xs font-bold px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <button
+                            type="button"
+                            onClick={handleAddOptionDimension}
+                            className="w-full h-full py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>إضافة</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Defined Option Dimensions List */}
+                      {variantOptions.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1.5">
+                          {variantOptions.map((opt, optIdx) => (
+                            <div
+                              key={optIdx}
+                              className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-xs"
+                            >
+                              <span className="font-black text-purple-900 dark:text-purple-200">
+                                {opt.nameAr}:
+                              </span>
+                              <div className="flex items-center gap-1">
+                                {opt.values.map((v, vIdx) => (
+                                  <span
+                                    key={vIdx}
+                                    className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 font-semibold text-[10px] text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700"
+                                  >
+                                    {v}
+                                  </span>
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveOptionDimension(optIdx)}
+                                className="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-100 dark:hover:bg-rose-900/40 cursor-pointer"
+                                title="حذف الخاصية"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons: Generate & Add Manual */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleGenerateVariants}
+                          disabled={variantOptions.length === 0}
+                          className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:pointer-events-none active:scale-95 text-white font-black text-xs flex items-center gap-1.5 shadow-sm shadow-purple-600/20 cursor-pointer transition-all"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>توليد التفرعات آلياً من الخصائص</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleAddManualVariant}
+                          className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-purple-500" />
+                          <span>إضافة تفرع يدوياً</span>
+                        </button>
+                      </div>
+
+                      {variants.length > 0 && (
+                        <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                          إجمالي التفرعات: <span className="text-purple-600 dark:text-purple-400 font-black">{variants.length}</span> |
+                          إجمالي الرصيد: <span className="text-emerald-600 dark:text-emerald-400 font-mono font-black">{variants.reduce((s, v) => s + (Number(v.stock) || 0), 0)} قطعة</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Variants Table / Grid */}
+                    {variants.length === 0 ? (
+                      <div className="p-6 text-center rounded-xl bg-purple-50/40 dark:bg-purple-950/20 border border-dashed border-purple-300 dark:border-purple-800/50">
+                        <Layers className="w-8 h-8 text-purple-400 mx-auto mb-2 opacity-70" />
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          لم يتم إنشاء تفرعات بعد لهذا الصنف
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          قم بإضافة خصائص مثل (الحجم: صغير، وسط، كبير) ثم اضغط "توليد التفرعات آلياً" أو أضف تفرعاً يدوياً
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[360px] overflow-y-auto pr-0.5">
+                        {variants.map((v, idx) => (
+                          <div
+                            key={v.id}
+                            className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2 hover:border-purple-300 dark:hover:border-purple-800 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-1">
+                                <span className="w-5 h-5 rounded-md bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-black text-[10px] flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={v.nameAr}
+                                  onChange={e => handleUpdateVariantField(v.id, { nameAr: e.target.value })}
+                                  placeholder="اسم التفرع (مثلاً: كبير / حليب شوفان)"
+                                  className="flex-1 text-xs font-black px-2.5 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-purple-500"
+                                />
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVariant(v.id)}
+                                className="w-7 h-7 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center cursor-pointer transition-colors"
+                                title="حذف التفرع"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                                  رمز SKU
+                                </label>
+                                <input
+                                  type="text"
+                                  value={v.sku}
+                                  onChange={e => handleUpdateVariantField(v.id, { sku: e.target.value })}
+                                  className="w-full text-[11px] font-mono font-bold px-2 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                                  الباركود
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={v.barcode}
+                                    onChange={e => handleUpdateVariantField(v.id, { barcode: e.target.value })}
+                                    className="w-full text-[11px] font-mono font-bold px-2 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold text-blue-600 dark:text-blue-400 mb-0.5">
+                                  سعر البيع ({currencySymbol})
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={v.price}
+                                  onChange={e => handleUpdateVariantField(v.id, { price: Number(e.target.value) })}
+                                  className="w-full text-[11px] font-mono font-black px-2 py-1 bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                                  سعر التكلفة ({currencySymbol})
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={v.costPrice}
+                                  onChange={e => handleUpdateVariantField(v.id, { costPrice: Number(e.target.value) })}
+                                  className="w-full text-[11px] font-mono font-bold px-2 py-1 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">
+                                  الرصيد بالمخزن
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={v.stock}
+                                  onChange={e => handleUpdateVariantField(v.id, { stock: Math.max(0, Number(e.target.value)) })}
+                                  className="w-full text-[11px] font-mono font-black px-2 py-1 bg-slate-50 dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold text-rose-500 dark:text-rose-400 mb-0.5">
+                                  الحد الأدنى
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={v.minStock || 3}
+                                  onChange={e => handleUpdateVariantField(v.id, { minStock: Math.max(0, Number(e.target.value)) })}
+                                  className="w-full text-[11px] font-mono font-bold px-2 py-1 bg-slate-50 dark:bg-slate-800 text-rose-600 dark:text-rose-400 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Product Image & Customer QR Menu Target Device Routing (QR Menu routing only in restaurant mode) */}

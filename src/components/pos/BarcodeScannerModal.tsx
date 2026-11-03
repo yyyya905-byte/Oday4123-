@@ -40,6 +40,38 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     lastScanTimestamp.current = now;
     lastScannedCodeRef.current = clean;
 
+    // 1. Check if scanned barcode matches a specific variant barcode or SKU
+    let matchedVariantProd: { product: typeof products[0]; variant: any } | null = null;
+    for (const p of products) {
+      if (p.variants && p.variants.length > 0) {
+        const vMatch = p.variants.find(
+          v => (v.barcode && v.barcode.toLowerCase() === clean.toLowerCase()) ||
+               (v.sku && v.sku.toLowerCase() === clean.toLowerCase())
+        );
+        if (vMatch) {
+          matchedVariantProd = { product: p, variant: vMatch };
+          break;
+        }
+      }
+    }
+
+    if (matchedVariantProd) {
+      soundEffects.playBeep();
+      addToCart(matchedVariantProd.product, 1, undefined, matchedVariantProd.variant);
+      const name = `${matchedVariantProd.product.nameAr} - ${matchedVariantProd.variant.nameAr} (${formatCurrency(matchedVariantProd.variant.price)})`;
+      setLastScannedName(name);
+      notify('تمت إضافة الخيار للسلة', name, 'success');
+      setManualCode('');
+      setNotFoundCode(null);
+
+      if (!continuousScan) {
+        stopCamera();
+        onClose();
+      }
+      return;
+    }
+
+    // 2. Check base product barcode / SKU / identification codes
     const found = products.find(
       p =>
         p.barcode.toLowerCase() === clean.toLowerCase() ||
