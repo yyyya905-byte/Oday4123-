@@ -71,10 +71,13 @@ export const RetailPOSHeader: React.FC<RetailPOSHeaderProps> = ({
           </button>
 
           {/* Customer QR / Member Selector */}
-          <div className="relative">
+          <div>
             <button
               type="button"
-              onClick={() => setIsCustomerSelectOpen(!isCustomerSelectOpen)}
+              onClick={() => {
+                soundEffects.playGlassPress();
+                setIsCustomerSelectOpen(true);
+              }}
               className={`flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
                 selectedCustomer
                   ? 'bg-amber-500 text-slate-900 border-amber-400 font-black shadow-xs'
@@ -86,69 +89,116 @@ export const RetailPOSHeader: React.FC<RetailPOSHeaderProps> = ({
             </button>
 
             {isCustomerSelectOpen && (
-              <div className="absolute top-full end-0 mt-2 w-72 sm:w-80 bg-slate-900 text-white rounded-2xl p-3 shadow-2xl border border-slate-700 z-50 animate-in fade-in zoom-in-95">
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs font-bold text-blue-400">
-                  <span className="flex items-center gap-1.5">
-                    <QrCode className="w-4 h-4" />
-                    <span>{language === 'ar' ? 'اختيار عميل الولاء والمكافآت' : 'Select Loyalty Member'}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomerSelectOpen(false)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                    aria-label="إغلاق"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <input
-                  type="text"
-                  value={customerSearchQuery}
-                  onChange={e => setCustomerSearchQuery(e.target.value)}
-                  placeholder={language === 'ar' ? 'بحث بالاسم أو الهاتف...' : 'Search by name or phone...'}
-                  className="w-full pl-3 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 mb-2"
-                  autoFocus
-                />
-
-                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                  <div
-                    onClick={() => {
-                      setSelectedCustomer(null);
-                      setIsCustomerSelectOpen(false);
-                    }}
-                    className={`p-2.5 rounded-xl border text-xs cursor-pointer min-h-[38px] flex items-center gap-2 ${
-                      !selectedCustomer ? 'bg-blue-950 border-blue-500 text-blue-200' : 'bg-slate-800 border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    <User className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{language === 'ar' ? 'عميل نقدي عام (بدون نقاط)' : 'General Retail Customer'}</span>
-                  </div>
-
-                  {filteredRetailCustomers.map(cust => (
-                    <div
-                      key={cust.id}
-                      onClick={() => {
-                        setSelectedCustomer(cust);
-                        setIsCustomerSelectOpen(false);
-                      }}
-                      className={`p-2.5 rounded-xl border text-xs cursor-pointer flex items-center justify-between min-h-[38px] ${
-                        selectedCustomer?.id === cust.id
-                          ? 'bg-blue-950 border-blue-500 text-white'
-                          : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-bold text-blue-300">{cust.name}</div>
-                        <div className="text-[10px] text-slate-400">{cust.phone}</div>
+              <div
+                className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto modal-backdrop-animate text-slate-900 dark:text-white"
+                onClick={e => {
+                  if (e.target === e.currentTarget) {
+                    setIsCustomerSelectOpen(false);
+                  }
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-label={language === 'ar' ? 'اختيار عميل الولاء والمكافآت' : 'Select Loyalty Member'}
+              >
+                <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/90 dark:border-slate-800 overflow-hidden flex flex-col max-h-[88vh] modal-enter-slide-down">
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 bg-slate-50/90 dark:bg-slate-800/80 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20">
+                        <QrCode className="w-5 h-5" />
                       </div>
-                      <div className="text-end">
-                        <span className="text-amber-400 font-bold font-mono text-[11px] block">
-                          ⭐ {cust.points} نقطة
-                        </span>
+                      <div className="min-w-0">
+                        <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">
+                          {language === 'ar' ? 'اختيار عميل الولاء والمكافآت' : 'Select Loyalty Member'}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          {language === 'ar'
+                            ? `متاح ${retailCustomers.length} عميل بالتجزئة`
+                            : `${retailCustomers.length} customers available`}
+                        </p>
                       </div>
                     </div>
-                  ))}
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomerSelectOpen(false)}
+                      className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer shrink-0"
+                      aria-label={language === 'ar' ? 'إغلاق' : 'Close'}
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Search Input Box */}
+                  <div className="p-4 border-b border-slate-100 dark:border-slate-800/70 bg-white dark:bg-slate-900 shrink-0">
+                    <input
+                      type="text"
+                      value={customerSearchQuery}
+                      onChange={e => setCustomerSearchQuery(e.target.value)}
+                      placeholder={language === 'ar' ? 'بحث بالاسم، الكود أو رقم الهاتف...' : 'Search by name, code or phone...'}
+                      className="w-full px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Customers List */}
+                  <div className="p-4 space-y-2 max-h-72 overflow-y-auto flex-1">
+                    <div
+                      onClick={() => {
+                        soundEffects.playSuccess();
+                        setSelectedCustomer(null);
+                        setIsCustomerSelectOpen(false);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-xs cursor-pointer min-h-[44px] flex items-center gap-2.5 transition-all ${
+                        !selectedCustomer
+                          ? 'bg-indigo-500/15 border-indigo-500 dark:border-indigo-400 text-slate-900 dark:text-white ring-2 ring-indigo-500/30 font-bold'
+                          : 'bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <User className="w-4 h-4 text-indigo-500 shrink-0" />
+                      <span>{language === 'ar' ? 'عميل نقدي عام (بدون حساب نقاط)' : 'General Retail Customer'}</span>
+                    </div>
+
+                    {filteredRetailCustomers.map(cust => (
+                      <div
+                        key={cust.id}
+                        onClick={() => {
+                          soundEffects.playSuccess();
+                          setSelectedCustomer(cust);
+                          setIsCustomerSelectOpen(false);
+                        }}
+                        className={`p-3.5 rounded-2xl border text-xs cursor-pointer flex items-center justify-between min-h-[44px] transition-all ${
+                          selectedCustomer?.id === cust.id
+                            ? 'bg-indigo-500/15 border-indigo-500 dark:border-indigo-400 text-slate-900 dark:text-white ring-2 ring-indigo-500/30 font-bold'
+                            : 'bg-white dark:bg-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800 border-slate-200/90 dark:border-slate-800/90 text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white">{cust.name}</div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{cust.phone}</div>
+                        </div>
+                        <div className="text-end shrink-0">
+                          <span className="text-amber-500 dark:text-amber-400 font-bold font-mono text-xs block">
+                            ⭐ {cust.points} {language === 'ar' ? 'نقطة' : 'pts'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-3 bg-slate-50/80 dark:bg-slate-800/60 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 shrink-0">
+                    <span>
+                      {language === 'ar' ? 'انقر بالخارج للإغلاق' : 'Click outside to close'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomerSelectOpen(false)}
+                      className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-bold cursor-pointer transition-colors"
+                    >
+                      {language === 'ar' ? 'إغلاق' : 'Close'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

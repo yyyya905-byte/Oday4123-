@@ -123,7 +123,7 @@ export const DraggableModalWrapper: React.FC<DraggableModalWrapperProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 ${zIndexClass || 'z-[9999]'} bg-black/75 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto overflow-x-hidden animate-in fade-in duration-200 ${containerClassName}`}
+      className={`fixed inset-0 ${zIndexClass || 'z-[9999]'} bg-black/75 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto overflow-x-hidden modal-backdrop-animate ${containerClassName}`}
       onClick={e => {
         if (closeOnBackdrop && e.target === e.currentTarget) {
           onClose();
@@ -139,7 +139,7 @@ export const DraggableModalWrapper: React.FC<DraggableModalWrapperProps> = ({
           transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`,
           transition: isDragging ? 'none' : 'transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1)'
         }}
-        className={`bg-white dark:bg-slate-900 rounded-3xl w-full ${maxWidth} shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-auto max-h-[92vh] flex flex-col transition-shadow ${
+        className={`bg-white dark:bg-slate-900 rounded-3xl w-full ${maxWidth} shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-auto max-h-[92vh] flex flex-col transition-shadow modal-enter-slide-down ${
           isDragging ? 'shadow-amber-500/20 ring-2 ring-amber-500/40 select-none' : ''
         } ${className}`}
       >

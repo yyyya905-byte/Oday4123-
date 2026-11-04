@@ -802,6 +802,47 @@ html, body, #root {
   animation: floatKian 3.2s ease-in-out infinite;
 }
 
+/* Smooth Modal Entrance Animations (Fade-in + Subtle Slide from Top to Center) */
+@keyframes modalSlideDownFade {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.005);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes backdropFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.modal-backdrop-animate {
+  animation: backdropFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-enter-slide-down {
+  animation: modalSlideDownFade 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop-animate,
+  .modal-enter-slide-down {
+    animation: none !important;
+  }
+}
+
 
 
 
