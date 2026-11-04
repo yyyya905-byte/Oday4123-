@@ -18,6 +18,7 @@ export const ReceiptCustomizerModal: React.FC<ReceiptCustomizerModalProps> = ({
     <DraggableModalWrapper
       isOpen={isOpen}
       onClose={onClose}
+      zIndexClass="z-[10000]"
       title="لوحة تخصيص شكل الفاتورة والإيصال"
       subtitle="تخصيص الحقول، الشعار، الرقم الضريبي، ملاحظات العميل، ورسالة التذييل مع معاينة فورية"
       icon={<Receipt className="w-5 h-5 text-amber-500 shrink-0" />}

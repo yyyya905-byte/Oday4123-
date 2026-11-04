@@ -207,7 +207,7 @@ export const ProductVariantPickerModal: React.FC<ProductVariantPickerModalProps>
       role="dialog"
       aria-modal="true"
       aria-labelledby="product-details-modal-title"
-      className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div

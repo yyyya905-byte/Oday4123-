@@ -71,6 +71,8 @@ import {
   DEBT_COLLECTION_STORAGE_KEY,
   DebtReminderLog
 } from '../../services/debtCollectionService';
+import { soundEffects } from '../../services/audio';
+import { voiceAnnouncer } from '../../services/voiceAnnouncer';
 
 
 export const DebtView: React.FC = () => {
@@ -612,6 +614,13 @@ export const DebtView: React.FC = () => {
     );
 
     if (tx) {
+      soundEffects.playCash();
+      voiceAnnouncer.announcePayment(
+        tx.amount,
+        selectedCustomerForPay.name,
+        settings.currency.symbol,
+        language === 'ar' ? 'ar' : 'en'
+      );
       setIsCustomerPayModalOpen(false);
       setSelectedVoucherForPrint(tx);
 
@@ -1205,6 +1214,15 @@ export const DebtView: React.FC = () => {
 
     saveInstallmentPlansToStorage(updatedPlans);
     if (tx) {
+      soundEffects.playCash();
+      if (plan.partyType === 'customer') {
+        voiceAnnouncer.announcePayment(
+          amountToPay,
+          plan.partyName,
+          settings.currency.symbol,
+          language === 'ar' ? 'ar' : 'en'
+        );
+      }
       setSelectedVoucherForPrint(tx);
     }
   };
@@ -1341,6 +1359,7 @@ export const DebtView: React.FC = () => {
     );
 
     if (tx) {
+      soundEffects.playCash();
       setIsSupplierPayModalOpen(false);
       setSelectedVoucherForPrint(tx);
 
@@ -1688,7 +1707,7 @@ export const DebtView: React.FC = () => {
       </div>
 
       {/* Main View Body & Tabs */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-3 sm:p-5 space-y-3">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-3 sm:p-5 space-y-3 pb-24 lg:pb-5">
         {/* Navigation Tabs Bar & Search / Filter Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
           {/* Tabs */}

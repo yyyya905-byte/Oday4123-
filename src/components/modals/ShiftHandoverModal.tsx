@@ -25,6 +25,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { soundEffects } from '../../services/audio';
+import { voiceAnnouncer } from '../../services/voiceAnnouncer';
 import { CashShift } from '../../types';
 
 interface ShiftHandoverModalProps {
@@ -114,6 +115,8 @@ export const ShiftHandoverModal: React.FC<ShiftHandoverModalProps> = ({
     e.preventDefault();
     const amount = parseFloat(openingFloatInput) || 0;
     startNewShift(amount, openingNotes);
+    soundEffects.playSuccess();
+    voiceAnnouncer.announceShift('open', (activeShift?.shiftNumber || 0) + 1, language === 'ar' ? 'ar' : 'en');
     setOpeningFloatInput('0');
     setOpeningNotes('');
     setActiveTab('current');
@@ -133,6 +136,7 @@ export const ShiftHandoverModal: React.FC<ShiftHandoverModalProps> = ({
     }
 
     recordShiftCashMovement(movementType, amount, movementReason);
+    soundEffects.playGlassPress();
     setMovementAmount('');
     setMovementReason('');
     setActiveTab('current');
@@ -151,6 +155,7 @@ export const ShiftHandoverModal: React.FC<ShiftHandoverModalProps> = ({
       );
       setPrintedShift(closed);
       soundEffects.playSuccess();
+      voiceAnnouncer.announceShift('close', closed.shiftNumber, language === 'ar' ? 'ar' : 'en');
     } catch (err: any) {
       notify('خطأ', err.message || 'فشل إغلاق الوردية', 'error');
     }
@@ -214,7 +219,7 @@ ${shiftToShare.closingNotes ? `📝 ملاحظات: ${shiftToShare.closingNotes}
       role="dialog"
       aria-modal="true"
       aria-labelledby="shift-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
     >
       <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh] overflow-hidden text-slate-900 dark:text-slate-100">
         

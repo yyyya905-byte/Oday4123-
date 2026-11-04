@@ -25,9 +25,12 @@ import {
   Clock,
   ArrowUpDown,
   Sliders,
+  MessageCircle,
+  Share2
 } from 'lucide-react';
 import { PrintableReceiptModal } from '../pos/PrintableReceiptModal';
 import { ReceiptCustomizerModal } from '../modals/ReceiptCustomizerModal';
+import { WhatsAppShareInvoiceModal } from './WhatsAppShareInvoiceModal';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import {
   CivilDateRange,
@@ -39,6 +42,8 @@ import {
   getCivilMonthStart,
   getCivilMonthEnd,
 } from '../../utils/civilDate';
+import { soundEffects } from '../../services/audio';
+import { haptics } from '../../services/haptics';
 
 export const InvoicesView: React.FC = () => {
   const {
@@ -64,6 +69,10 @@ export const InvoicesView: React.FC = () => {
   const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
   const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<DebtTransaction | null>(null);
+
+  // WhatsApp Share Modal State
+  const [whatsAppShareSale, setWhatsAppShareSale] = useState<Sale | null>(null);
+  const [isWhatsAppShareModalOpen, setIsWhatsAppShareModalOpen] = useState(false);
 
   const resolveCustomerFromSale = (sale: Sale): Customer | null => {
     if (sale.customerId) {
@@ -98,6 +107,8 @@ export const InvoicesView: React.FC = () => {
   }, [dateRange]);
 
   const handleApplyPreset = (preset: 'all' | 'today' | 'yesterday' | 'last7' | 'thisMonth') => {
+    soundEffects.playCategorySwitch();
+    haptics.selection();
     switch (preset) {
       case 'all':
         setDateRange({ from: undefined, to: undefined });
@@ -124,7 +135,7 @@ export const InvoicesView: React.FC = () => {
   // Filter sales by civil date range and text search query
   const filteredSales = useMemo(() => {
     return sales.filter(s => {
-      // 1. Date Range Filter using strict Civil Date (never parsed as UTC)
+      // 1. Date Range Filter using strict Civil Date
       if (!isCivilDateInRange(s.createdAt, dateRange)) {
         return false;
       }
@@ -166,16 +177,30 @@ export const InvoicesView: React.FC = () => {
   }, [filteredSales]);
 
   const handleViewDetails = (sale: Sale) => {
+    soundEffects.playGlassTap();
+    haptics.selection();
     setSelectedSale(sale);
     setIsDetailModalOpen(true);
   };
 
   const handlePrintReceipt = (sale: Sale) => {
+    soundEffects.playGlassTap();
+    haptics.buttonPress();
     setSelectedSale(sale);
     setIsReceiptModalOpen(true);
   };
 
+  const handleOpenWhatsAppShare = (sale: Sale, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    soundEffects.playGlassPress();
+    haptics.selection();
+    setWhatsAppShareSale(sale);
+    setIsWhatsAppShareModalOpen(true);
+  };
+
   const handleExportCSV = () => {
+    soundEffects.playSuccess();
+    haptics.confirm();
     if (filteredSales.length === 0) return;
     const headers = ['رقم الفاتورة', 'التاريخ والوقت', 'العميل', 'الكاشير', 'طريقة الدفع', 'عدد الأصناف', 'المبلغ الإجمالي'];
     const rows = filteredSales.map(s => [
@@ -200,27 +225,33 @@ export const InvoicesView: React.FC = () => {
   const hasActiveDateFilter = Boolean(dateRange.from || dateRange.to);
 
   return (
-    <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-5 bg-slate-50/50 dark:bg-slate-950">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="flex-1 p-3.5 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 pb-28 lg:pb-8 bg-slate-50/50 dark:bg-slate-950">
+      {/* Top Header & Fast Actions */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <Receipt className="w-6 h-6 text-amber-500" />
-            <span>{t('invoicesHistoryTitle')}</span>
-            <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2 py-0.5 rounded-full">
-              {filteredSales.length} من أصل {sales.length} فاتورة
-            </span>
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            عرض الفواتير باستخدام التاريخ وفلاتر الفترات المخصصة، إعادة طباعة الإيصالات، ومتابعة المتحصلات
-          </p>
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <span>{t('invoicesHistoryTitle')}</span>
+                <span className="text-xs text-slate-400 font-bold font-mono">
+                  ({filteredSales.length} / {sales.length})
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                مشاركة الفواتير عبر واتساب، توليد الروابط السريعة، طباعة الإيصالات، وتتبع المبيعات
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {filteredSales.length > 0 && (
             <button
               onClick={handleExportCSV}
-              className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer min-h-[40px] active:scale-95"
               title="تصدير الفواتير المعروضة إلى ملف Excel/CSV"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
@@ -231,39 +262,47 @@ export const InvoicesView: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              soundEffects.playGlassPress();
               if (customers.length > 0) {
                 setStatementCustomer(customers[0]);
               }
               setIsStatementOpen(true);
             }}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 min-h-[40px]"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>كشف حساب عميل</span>
           </button>
 
           <button
-            onClick={() => setIsCustomizerModalOpen(true)}
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setIsCustomizerModalOpen(true);
+            }}
             id="btn-invoices-receipt-customizer"
-            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-black text-xs rounded-xl border border-amber-300/80 dark:border-amber-700/80 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-            title="تخصيص شكل وحقول الفاتورة (الشعار، الرقم الضريبي، ملاحظات العميل، ورسالة التذييل)"
+            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-bold text-xs rounded-xl border border-amber-300/80 dark:border-amber-700/80 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 min-h-[40px]"
+            title="تخصيص شكل وحقول الفاتورة"
           >
             <Sliders className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>تخصيص شكل الفاتورة</span>
+            <span className="hidden sm:inline">تخصيص شكل الفاتورة</span>
+            <span className="sm:hidden">تخصيص</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('returns')}
-            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs rounded-xl border border-rose-200 dark:border-rose-800/60 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            onClick={() => {
+              soundEffects.playGlassPress();
+              setActiveTab('returns');
+            }}
+            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs rounded-xl border border-rose-200 dark:border-rose-800/60 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer min-h-[40px] active:scale-95"
           >
-            <RotateCcw className="w-4 h-4 text-rose-500" />
-            <span>مسح باركود وإرجاع بضاعة</span>
+            <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
+            <span>إرجاع بضاعة</span>
           </button>
         </div>
       </div>
 
       {/* Date Filtering Bar & Controls */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
+      <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3">
         {/* Presets and Custom Range Picker */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           {/* Quick Date Presets */}
@@ -276,7 +315,7 @@ export const InvoicesView: React.FC = () => {
             <button
               type="button"
               onClick={() => handleApplyPreset('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 activePreset === 'all'
                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -288,7 +327,7 @@ export const InvoicesView: React.FC = () => {
             <button
               type="button"
               onClick={() => handleApplyPreset('today')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 activePreset === 'today'
                   ? 'bg-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-500'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -300,7 +339,7 @@ export const InvoicesView: React.FC = () => {
             <button
               type="button"
               onClick={() => handleApplyPreset('yesterday')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 activePreset === 'yesterday'
                   ? 'bg-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-500'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -312,7 +351,7 @@ export const InvoicesView: React.FC = () => {
             <button
               type="button"
               onClick={() => handleApplyPreset('last7')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 activePreset === 'last7'
                   ? 'bg-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-500'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -324,7 +363,7 @@ export const InvoicesView: React.FC = () => {
             <button
               type="button"
               onClick={() => handleApplyPreset('thisMonth')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 activePreset === 'thisMonth'
                   ? 'bg-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-500'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -367,20 +406,20 @@ export const InvoicesView: React.FC = () => {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="بحث برقم الفاتورة، اسم العميل، أو الكاشير..."
-              className="w-full bg-slate-50 dark:bg-slate-800/60 ps-9 pe-4 py-2 rounded-2xl text-xs font-medium text-slate-900 dark:text-white border border-slate-200/80 dark:border-slate-700 focus:outline-hidden focus:ring-2 focus:ring-amber-500/40"
+              className="w-full bg-slate-50 dark:bg-slate-800/60 ps-9 pe-4 py-2.5 rounded-2xl text-xs font-medium text-slate-900 dark:text-white border border-slate-200/80 dark:border-slate-700 focus:outline-hidden focus:ring-2 focus:ring-amber-500/40 min-h-[42px]"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute end-2.5 p-1 rounded-full text-slate-400 hover:text-slate-600"
+                className="absolute end-2.5 p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Active Period Feedback Badge */}
+          {/* Active Period Feedback Text */}
           <div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-2 text-[11px] text-slate-500 dark:text-slate-400">
             <span>النطاق النشط:</span>
             <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl">
@@ -391,10 +430,10 @@ export const InvoicesView: React.FC = () => {
       </div>
 
       {/* Date Range Financial Summary Metrics Ribbon */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold">إجمالي فواتير الفترة</span>
+            <span className="text-xs font-bold">إجمالي الفواتير</span>
             <Receipt className="w-4 h-4 text-amber-500" />
           </div>
           <p className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono">
@@ -402,9 +441,9 @@ export const InvoicesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold">مبيعات الفترة المحددة</span>
+            <span className="text-xs font-bold">مبيعات الفترة</span>
             <DollarSign className="w-4 h-4 text-emerald-500" />
           </div>
           <p className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
@@ -412,7 +451,7 @@ export const InvoicesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-xs font-bold">المتحصل نقداً (Cash)</span>
             <Banknote className="w-4 h-4 text-blue-500" />
@@ -422,9 +461,9 @@ export const InvoicesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
           <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold">متوسط قيمة الفاتورة</span>
+            <span className="text-xs font-bold">متوسط الفاتورة</span>
             <TrendingUp className="w-4 h-4 text-indigo-500" />
           </div>
           <p className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono">
@@ -433,20 +472,111 @@ export const InvoicesView: React.FC = () => {
         </div>
       </div>
 
-      {/* Invoices Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-hidden">
+      {/* 1. Mobile Cards View (Visible on small screens < md) */}
+      <div className="block md:hidden space-y-3">
+        {filteredSales.length === 0 ? (
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 text-center text-slate-400">
+            <Receipt className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700 mb-2" />
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+              لا توجد فواتير مطابقة للفترة المحددة
+            </p>
+          </div>
+        ) : (
+          filteredSales.map(sale => (
+            <div
+              key={sale.id}
+              className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3"
+            >
+              {/* Card Header */}
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">
+                    #{sale.invoiceNumber}
+                  </span>
+                  {sale.queueNumber && (
+                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-slate-950 font-mono font-black text-[10px]">
+                      طابور #{String(sale.queueNumber).padStart(3, '0')}
+                    </span>
+                  )}
+                  {sale.tableName && (
+                    <span className="text-[10px] font-bold text-emerald-600">
+                      ({sale.tableName})
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {new Date(sale.createdAt).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+
+              {/* Card Meta & Total */}
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-white block">
+                    {sale.customerName || 'عميل نقدي'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    كاشير: {sale.cashierName} · {sale.items.reduce((acc, it) => acc + it.quantity, 0)} أصناف
+                  </span>
+                </div>
+                <div className="text-end">
+                  <span className="font-mono font-black text-amber-600 dark:text-amber-400 text-base block">
+                    {formatCurrency(sale.total)}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold">
+                    {sale.paymentMethod === 'cash' ? 'نقداً' : sale.paymentMethod === 'card' ? 'بطاقة' : sale.paymentMethod}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card Mobile Actions (Touch targets >= 44px) */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenWhatsAppShare(sale)}
+                  className="min-h-[44px] py-2 px-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-xs"
+                >
+                  <MessageCircle className="w-4 h-4 fill-current" />
+                  <span>واتساب</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePrintReceipt(sale)}
+                  className="min-h-[44px] py-2 px-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-bold text-xs border border-amber-300/80 dark:border-amber-700/80 flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <Printer className="w-4 h-4 text-amber-600" />
+                  <span>طباعة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleViewDetails(sale)}
+                  className="min-h-[44px] py-2 px-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>تفاصيل</span>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 2. Desktop Invoices Table (Visible on md and up) */}
+      <div className="hidden md:block bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-start text-xs">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-                <th className="py-3 px-4 text-start">رقم الفاتورة</th>
-                <th className="py-3 px-3 text-start">التاريخ والوقت</th>
-                <th className="py-3 px-3 text-start">العميل</th>
-                <th className="py-3 px-3 text-start">الكاشير</th>
-                <th className="py-3 px-3 text-start">طريقة الدفع</th>
-                <th className="py-3 px-3 text-center">عدد الأصناف</th>
-                <th className="py-3 px-3 text-end">المبلغ الإجمالي</th>
-                <th className="py-3 px-4 text-end">إجراءات</th>
+                <th className="py-3 px-4 text-start font-bold">رقم الفاتورة</th>
+                <th className="py-3 px-3 text-start font-bold">التاريخ والوقت</th>
+                <th className="py-3 px-3 text-start font-bold">العميل</th>
+                <th className="py-3 px-3 text-start font-bold">الكاشير</th>
+                <th className="py-3 px-3 text-start font-bold">طريقة الدفع</th>
+                <th className="py-3 px-3 text-center font-bold">عدد الأصناف</th>
+                <th className="py-3 px-3 text-end font-bold">المبلغ الإجمالي</th>
+                <th className="py-3 px-4 text-end font-bold">إجراءات سريعة</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -516,38 +646,56 @@ export const InvoicesView: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-end">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Direct WhatsApp Share Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenWhatsAppShare(sale, e)}
+                          className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] inline-flex items-center gap-1.5 cursor-pointer border border-emerald-300/70 dark:border-emerald-800/60 shadow-2xs active:scale-95 transition-all"
+                          title="مشاركة تفاصيل الفاتورة ورابطها السريع عبر واتساب"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 fill-current text-emerald-600 dark:text-emerald-400" />
+                          <span>واتساب</span>
+                        </button>
+
                         {(sale.customerId || sale.customerName) && (
                           <button
                             type="button"
                             onClick={() => {
+                              soundEffects.playGlassPress();
                               const cust = resolveCustomerFromSale(sale);
                               setStatementCustomer(cust);
                               setIsStatementOpen(true);
                             }}
-                            className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                            className="px-2 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-all"
                             title="عرض كشف الحساب التفصيلي للعميل"
                           >
                             <FileSpreadsheet className="w-3.5 h-3.5" />
-                            <span>كشف حساب</span>
+                            <span className="hidden xl:inline">كشف حساب</span>
                           </button>
                         )}
+
                         <button
-                          onClick={() => navigateToReturnWithInvoice(sale)}
-                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                          onClick={() => {
+                            soundEffects.playGlassPress();
+                            navigateToReturnWithInvoice(sale);
+                          }}
+                          className="p-1.5 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition-colors"
                           title="إرجاع بضاعة من الفاتورة"
                         >
                           <RotateCcw className="w-4 h-4" />
                         </button>
+
                         <button
                           onClick={() => handleViewDetails(sale)}
-                          className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          className="p-1.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
                           title="عرض تفاصيل الفاتورة"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+
                         <button
                           onClick={() => handlePrintReceipt(sale)}
-                          className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                          className="p-1.5 rounded-xl text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer transition-colors"
                           title="طباعة الإيصال"
                         >
                           <Printer className="w-4 h-4" />
@@ -577,7 +725,7 @@ export const InvoicesView: React.FC = () => {
               </div>
               <button
                 onClick={() => setIsDetailModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -654,15 +802,27 @@ export const InvoicesView: React.FC = () => {
               {/* Action buttons */}
               <div className="pt-3 flex flex-wrap gap-2">
                 <button
+                  type="button"
+                  onClick={() => {
+                    handleOpenWhatsAppShare(selectedSale);
+                  }}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <MessageCircle className="w-4 h-4 fill-current" />
+                  <span>مشاركة عبر واتساب</span>
+                </button>
+
+                <button
                   onClick={() => {
                     setIsDetailModalOpen(false);
                     setIsReceiptModalOpen(true);
                   }}
-                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>طباعة الإيصال الحراري</span>
+                  <span>طباعة الإيصال</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -674,8 +834,9 @@ export const InvoicesView: React.FC = () => {
                   className="px-3.5 py-2.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  <span>كشف حساب العميل</span>
+                  <span>كشف حساب</span>
                 </button>
+
                 <button
                   onClick={() => {
                     setIsDetailModalOpen(false);
@@ -691,6 +852,14 @@ export const InvoicesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* WhatsApp Share Invoice Modal */}
+      <WhatsAppShareInvoiceModal
+        isOpen={isWhatsAppShareModalOpen}
+        onClose={() => setIsWhatsAppShareModalOpen(false)}
+        sale={whatsAppShareSale}
+        customer={whatsAppShareSale ? resolveCustomerFromSale(whatsAppShareSale) : null}
+      />
 
       {/* Printable Receipt Modal */}
       <PrintableReceiptModal

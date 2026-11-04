@@ -157,6 +157,7 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
     <DraggableModalWrapper
       isOpen={isOpen}
       onClose={onClose}
+      zIndexClass="z-[10000]"
       title="معاينة الفاتورة قبل الطباعة"
       subtitle={`رقم: ${sale.invoiceNumber} • ${paperSize}`}
       icon={<CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />}

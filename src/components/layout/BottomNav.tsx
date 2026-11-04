@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { SectionsNavModal } from '../modals/SectionsNavModal';
 import { soundEffects } from '../../services/audio';
+import { haptics } from '../../services/haptics';
 
 export const BottomNav: React.FC = () => {
   const {
@@ -40,6 +41,7 @@ export const BottomNav: React.FC = () => {
       badge: cartCount > 0 ? cartCount : undefined,
       onClick: () => {
         soundEffects.playCategorySwitch();
+        haptics.selection();
         setActiveTab('pos');
       }
     },
@@ -52,6 +54,7 @@ export const BottomNav: React.FC = () => {
             badge: restaurantAlerts > 0 ? restaurantAlerts : undefined,
             onClick: () => {
               soundEffects.playCategorySwitch();
+              haptics.selection();
               setActiveTab('restaurant');
             }
           }
@@ -63,6 +66,7 @@ export const BottomNav: React.FC = () => {
       icon: Package,
       onClick: () => {
         soundEffects.playCategorySwitch();
+        haptics.selection();
         setActiveTab('products');
       }
     },
@@ -72,6 +76,7 @@ export const BottomNav: React.FC = () => {
       icon: FileSpreadsheet,
       onClick: () => {
         soundEffects.playCategorySwitch();
+        haptics.selection();
         setActiveTab('invoices');
       }
     },
@@ -81,6 +86,7 @@ export const BottomNav: React.FC = () => {
       icon: Coins,
       onClick: () => {
         soundEffects.playCategorySwitch();
+        haptics.selection();
         setActiveTab('debts');
       }
     }
@@ -101,7 +107,7 @@ export const BottomNav: React.FC = () => {
   return (
     <>
       {/* Mobile & Tablet Apple-Glass Bottom Navigation Bar */}
-      <nav className="app-bottom-nav lg:hidden fixed bottom-0 left-0 right-0 h-14 material-panel border-t z-40 px-2 flex items-center justify-around select-none">
+      <nav className="app-bottom-nav lg:hidden fixed bottom-0 left-0 right-0 h-16 material-panel border-t border-slate-200/80 dark:border-white/[0.08] z-40 px-2 flex items-center justify-around select-none backdrop-blur-xl shadow-lg">
         {navButtons.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -112,21 +118,21 @@ export const BottomNav: React.FC = () => {
               id={`mobile-tab-${tab.id}`}
               type="button"
               onClick={tab.onClick}
-              className={`flex-1 flex flex-col items-center justify-center h-full min-h-[40px] relative transition-all cursor-pointer active:scale-95 ${
+              className={`flex-1 flex flex-col items-center justify-center h-full min-h-[44px] py-1 relative transition-all cursor-pointer active:scale-95 rounded-2xl ${
                 isActive
                   ? 'text-slate-950 dark:text-white font-black'
                   : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <div className="relative flex items-center justify-center">
-                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600 dark:text-blue-400 scale-105' : ''} transition-transform`} />
+                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600 dark:text-blue-400 scale-110' : ''} transition-transform`} />
                 {tab.badge !== undefined && (
                   <span className="absolute -top-1.5 -end-2.5 min-w-[16px] h-4 px-1 bg-blue-600 text-white text-[9px] font-black font-mono rounded-full flex items-center justify-center shadow-2xs">
                     {tab.badge}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] mt-0.5 truncate max-w-[72px] whitespace-nowrap">{tab.label}</span>
+              <span className="text-[10px] mt-1 truncate max-w-[76px] whitespace-nowrap">{tab.label}</span>
             </button>
           );
         })}
@@ -140,12 +146,12 @@ export const BottomNav: React.FC = () => {
               soundEffects.playGlassPress();
               setIsSectionsModalOpen(true);
             }}
-            className="flex-1 flex flex-col items-center justify-center h-full min-h-[40px] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer active:scale-95 transition-all"
+            className="flex-1 flex flex-col items-center justify-center h-full min-h-[44px] py-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer active:scale-95 transition-all rounded-2xl"
           >
             <div className="relative flex items-center justify-center">
               <Grid className="w-5 h-5 text-slate-700 dark:text-slate-200" />
             </div>
-            <span className="text-[10px] mt-0.5 font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+            <span className="text-[10px] mt-1 font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
               {language === 'ar' ? 'الأقسام' : 'Sections'}
             </span>
           </button>

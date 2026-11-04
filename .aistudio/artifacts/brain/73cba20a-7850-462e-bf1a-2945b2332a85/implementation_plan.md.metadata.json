@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for POS product card 'View Details' button and enhanced product details & variant selector popup with interactive attribute chips and live price updates.",
-  "updatedAt": "2026-11-03T00:41:25.234717832Z",
+  "summary": "خطة شاملة لرفع طبقات النوافذ المنبثقة (Modals & Popups) إلى أعلى طبقة بصرية z-[9999] و z-[10000] مع خلفية معتمة ومنع التداخل البصري، خاصة في شاشة الكاشير (POS).",
+  "updatedAt": "2026-11-04T01:32:27.516642466Z",
   "requestFeedback": true,
   "userFacing": true
 }

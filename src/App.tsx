@@ -48,6 +48,8 @@ import { InteractiveSpotlightTutorial } from './components/common/InteractiveSpo
 import { WelcomeFeaturesLoadingModal } from './components/common/WelcomeFeaturesLoadingModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LongPressProvider } from './components/common/LongPressTooltip';
+import { PrintableReceiptModal } from './components/pos/PrintableReceiptModal';
+import { Sale } from './types';
 import { WifiOff, RefreshCw, ArrowLeftRight, Database, CheckCircle2, Leaf } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -95,8 +97,29 @@ const AppContent: React.FC = () => {
     isPowerSavingStandby,
     wakeFromStandby,
     isWelcomeTourOpen,
-    setIsWelcomeTourOpen
+    setIsWelcomeTourOpen,
+    sales
   } = useApp();
+
+  const [deepLinkedSale, setDeepLinkedSale] = useState<Sale | null>(null);
+
+  // Digital Quick Link listener (?invoice=... or ?receipt=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const invParam = params.get('invoice') || params.get('receipt');
+      if (invParam && sales && sales.length > 0) {
+        const clean = invParam.trim().toLowerCase();
+        const matched = sales.find(
+          s => s.invoiceNumber.toLowerCase() === clean || s.id.toLowerCase() === clean
+        );
+        if (matched) {
+          setDeepLinkedSale(matched);
+        }
+      }
+    } catch {}
+  }, [sales]);
 
   // If this device was paired or selected as a dedicated terminal
   if (dedicatedDeviceRole === 'kitchen_display' && businessMode === 'restaurant') {
@@ -278,6 +301,15 @@ const AppContent: React.FC = () => {
         onClose={() => setIsWelcomeTourOpen(false)}
         isInitialFirstVisit={true}
       />
+
+      {/* Digital Receipt / Invoice Opened via Quick WhatsApp Link */}
+      {deepLinkedSale && (
+        <PrintableReceiptModal
+          isOpen={Boolean(deepLinkedSale)}
+          onClose={() => setDeepLinkedSale(null)}
+          sale={deepLinkedSale}
+        />
+      )}
 
       {/* Floating Offline Sync & Storage Status Banner */}
       {(!isOnline || offlineQueueCount > 0) && (

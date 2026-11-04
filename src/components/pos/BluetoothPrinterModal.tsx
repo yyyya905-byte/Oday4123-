@@ -101,6 +101,7 @@ export const BluetoothPrinterModal: React.FC<BluetoothPrinterModalProps> = ({ is
     <DraggableModalWrapper
       isOpen={isOpen}
       onClose={onClose}
+      zIndexClass="z-[10000]"
       title="طابعات الإيصالات الحرارية عبر البلوتوث (ESC/POS)"
       subtitle="اتصال لاسلكي مباشر وطباعة فورية بدون كابلات أو برامج وسيطة"
       icon={<Bluetooth className="w-5 h-5 text-blue-500 shrink-0" />}

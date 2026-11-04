@@ -1,15 +1,17 @@
 /**
  * Smart Voice Announcer Service (المساعد الصوتي الذكي للكاشير)
  * 
- * Uses Web Speech Synthesis API to announce invoice totals, greetings,
- * and quick cashier notifications in natural Arabic or English.
+ * Uses Web Speech Synthesis API to announce invoice totals, cash payments,
+ * shift events, greetings, and cashier notifications in natural Arabic or English.
  */
 
 class VoiceAnnouncerService {
   private enabled: boolean = true;
-  private volume: number = 0.9;
+  private volume: number = 0.95;
   private rate: number = 1.0;
   private pitch: number = 1.0;
+  private cachedVoices: SpeechSynthesisVoice[] = [];
+  private voicesLoaded: boolean = false;
 
   constructor() {
     try {
@@ -19,6 +21,29 @@ class VoiceAnnouncerService {
       }
     } catch {
       this.enabled = true;
+    }
+
+    this.initVoices();
+  }
+
+  private initVoices(): void {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const populate = () => {
+      try {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          this.cachedVoices = voices;
+          this.voicesLoaded = true;
+        }
+      } catch {
+        // Voice loading ignored
+      }
+    };
+
+    populate();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = populate;
     }
   }
 
@@ -38,34 +63,46 @@ class VoiceAnnouncerService {
   }
 
   public toggle(): boolean {
-    this.setEnabled(!this.enabled);
-    return this.enabled;
+    const nextState = !this.enabled;
+    this.setEnabled(nextState);
+    return nextState;
   }
 
   public setVolume(vol: number): void {
     this.volume = Math.max(0, Math.min(1, vol));
   }
 
+  public setRate(rate: number): void {
+    this.rate = Math.max(0.5, Math.min(2, rate));
+  }
+
   public speak(text: string, lang: 'ar' | 'en' = 'ar'): void {
-    if (!this.enabled || !this.isSupported()) return;
+    if (!this.enabled || !this.isSupported() || !text?.trim()) return;
 
     try {
-      // Cancel previous utterances to avoid speech lag in fast checkout
+      // Cancel previous utterances to avoid speech lag in fast checkout operations
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new SpeechSynthesisUtterance(text.trim());
       utterance.lang = lang === 'ar' ? 'ar-SA' : 'en-US';
       utterance.volume = this.volume;
       utterance.rate = this.rate;
       utterance.pitch = this.pitch;
 
-      // Select matching voice if available
-      const voices = window.speechSynthesis.getVoices();
-      const matchedVoice = voices.find(v => 
-        lang === 'ar' ? v.lang.startsWith('ar') : v.lang.startsWith('en')
-      );
-      if (matchedVoice) {
-        utterance.voice = matchedVoice;
+      // Select optimal voice if available
+      const voices = this.cachedVoices.length > 0 ? this.cachedVoices : window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        // Priority for Arabic: ar-SA, ar-EG, ar-AE, any Arabic voice
+        const matchedVoice = lang === 'ar'
+          ? (voices.find(v => v.lang === 'ar-SA') ||
+             voices.find(v => v.lang === 'ar-EG') ||
+             voices.find(v => v.lang.startsWith('ar')))
+          : (voices.find(v => v.lang === 'en-US') ||
+             voices.find(v => v.lang.startsWith('en')));
+
+        if (matchedVoice) {
+          utterance.voice = matchedVoice;
+        }
       }
 
       window.speechSynthesis.speak(utterance);
@@ -81,13 +118,40 @@ class VoiceAnnouncerService {
     if (!this.enabled) return;
 
     const formattedNum = Math.round(total).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US');
-    let message = '';
+    const message = lang === 'ar'
+      ? `المبلغ المطلوب: ${formattedNum} ${currencySymbol}. شكراً لتسوقكم!`
+      : `Total amount is ${formattedNum} ${currencySymbol}. Thank you!`;
 
-    if (lang === 'ar') {
-      message = `المبلغ المطلوب: ${formattedNum} ${currencySymbol}. شكراً لتسوقكم!`;
-    } else {
-      message = `Total amount is ${formattedNum} ${currencySymbol}. Thank you!`;
-    }
+    this.speak(message, lang);
+  }
+
+  /**
+   * Announce received debt or installment payment
+   */
+  public announcePayment(amount: number, customerName: string = '', currencySymbol: string = '', lang: 'ar' | 'en' = 'ar'): void {
+    if (!this.enabled) return;
+
+    const formattedNum = Math.round(amount).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US');
+    const message = lang === 'ar'
+      ? `تم استلام دفعة بقيمة ${formattedNum} ${currencySymbol} ${customerName ? `من العميل ${customerName}` : ''}. تم تحديث الرصيد بنجاح.`
+      : `Payment of ${formattedNum} ${currencySymbol} received successfully. Balance updated.`;
+
+    this.speak(message, lang);
+  }
+
+  /**
+   * Announce shift open/close
+   */
+  public announceShift(action: 'open' | 'close', shiftNumber: number | string, lang: 'ar' | 'en' = 'ar'): void {
+    if (!this.enabled) return;
+
+    const message = lang === 'ar'
+      ? (action === 'open'
+          ? `تم بدء وردية العمل رقم ${shiftNumber} بنجاح. بالتوفيق!`
+          : `تم إغلاق الوردية رقم ${shiftNumber} وتوليد تقرير التسليم.`)
+      : (action === 'open'
+          ? `Shift #${shiftNumber} started successfully. Have a great day!`
+          : `Shift #${shiftNumber} closed and handover report generated.`);
 
     this.speak(message, lang);
   }
@@ -97,7 +161,7 @@ class VoiceAnnouncerService {
    */
   public testVoice(lang: 'ar' | 'en' = 'ar'): void {
     const testMsg = lang === 'ar'
-      ? 'المساعد الصوتي لنظام كيان كاشير يعمل بنجاح. أهلاً وسهلاً بكم!'
+      ? 'المساعد الصوتي لنظام كيان كاشير يعمل بنجاح وبوضوح. أهلاً وسهلاً بكم!'
       : 'Kian Cashier smart voice announcer is working perfectly. Welcome!';
     this.speak(testMsg, lang);
   }

@@ -340,7 +340,7 @@ export const CustomersView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6 bg-slate-50/50 dark:bg-slate-950">
+    <div className="flex-1 p-3 sm:p-6 overflow-y-auto space-y-6 pb-28 lg:pb-8 bg-slate-50/50 dark:bg-slate-950">
       {/* Top Primary Navigation Tabs */}
       <div className="flex items-center gap-2.5 overflow-x-auto pb-1 border-b border-slate-200/80 dark:border-slate-800">
         <button

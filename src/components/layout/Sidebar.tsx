@@ -2,6 +2,8 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { ActiveTab } from '../../types';
 import { canAccessTab } from '../../utils/permissions';
+import { soundEffects } from '../../services/audio';
+import { haptics } from '../../services/haptics';
 import {
   LayoutDashboard,
   ReceiptText,
@@ -239,7 +241,11 @@ export const Sidebar: React.FC = () => {
                       key={item.id}
                       id={`sidebar-tab-${item.id}`}
                       type="button"
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => {
+                        soundEffects.playCategorySwitch();
+                        haptics.selection();
+                        setActiveTab(item.id);
+                      }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer btn-tactile ${
                         isActive
                           ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-950 shadow-xs font-black'

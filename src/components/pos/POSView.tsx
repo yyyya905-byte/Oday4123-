@@ -64,6 +64,7 @@ import { RestaurantPOSHeader } from './RestaurantPOSHeader';
 import { WholesalePOSHeader } from './WholesalePOSHeader';
 import { RetailPOSHeader } from './RetailPOSHeader';
 import { ProductVariantPickerModal } from './ProductVariantPickerModal';
+import { matchesProductSearch } from '../../utils/arabicSearch';
 
 export const POSView: React.FC = () => {
   const {
@@ -430,23 +431,19 @@ export const POSView: React.FC = () => {
     ? ['بدون بصل', 'شطة زيادة', 'سكر خفيف', 'مستوي جيداً', 'صوص خارجي', 'بدون ثوم', 'سفري معلب']
     : ['No Onions', 'Extra Spicy', 'Less Sugar', 'Well Done', 'Sauce on Side', 'No Garlic', 'Packed To-Go'];
 
-  // Filter products
+  // Enhanced Arabic and multi-token product search filter
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       if (p.status === 'inactive') return false;
       if (showFavoritesOnly && !p.isFavorite) return false;
       if (selectedCategory !== 'cat_all' && p.categoryId !== selectedCategory) return false;
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchName = p.nameAr.toLowerCase().includes(q) || p.nameEn.toLowerCase().includes(q);
-        const matchBarcode = p.barcode.includes(q);
-        const matchSku = p.sku.toLowerCase().includes(q);
-        const matchIdentification = p.identificationCodes?.some(c => c.toLowerCase().includes(q));
-        return matchName || matchBarcode || matchSku || matchIdentification;
+        const cat = categories.find(c => c.id === p.categoryId);
+        return matchesProductSearch(p, searchQuery, cat?.nameAr);
       }
       return true;
     });
-  }, [products, selectedCategory, showFavoritesOnly, searchQuery]);
+  }, [products, selectedCategory, showFavoritesOnly, searchQuery, categories]);
 
   // Handle direct Enter on search input (e.g. from physical barcode scanner)
   const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -795,7 +792,7 @@ export const POSView: React.FC = () => {
             }}
             data-longpress-title={language === 'ar' ? 'لوحة المفاتيح الرقمية اللمسية' : 'Touch Numeric Keypad'}
             data-longpress-desc={language === 'ar' ? 'إدخال سريع للكميات والأسعار والخصومات بأزرار لمسية كبيرة مريحة للعين والأصابع.' : 'Fast numeric entry for quantities and prices with large touch buttons.'}
-            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-blue-50/90 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800/60 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] bg-blue-50/90 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-2xl border border-blue-200 dark:border-blue-800/60 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
             title={language === 'ar' ? 'لوحة مفاتيح رقمية لمسية للكميات والأسعار' : 'Touch Numeric Keypad'}
           >
             <Calculator className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -814,7 +811,7 @@ export const POSView: React.FC = () => {
             }}
             data-longpress-title={language === 'ar' ? 'قارئ الباركود' : 'Barcode Scanner'}
             data-longpress-desc={language === 'ar' ? 'مسح الباركود باستخدام كاميرا الهاتف أو أجهزة الليزر USB لإضافة الأصناف للسلة فوراً.' : 'Scan barcodes with camera or USB scanner to add items to cart.'}
-            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
             title={language === 'ar' ? 'قارئ الباركود والكاميرا' : 'Barcode & Camera Scanner'}
           >
             <ScanBarcode className="w-4 h-4 text-amber-500" />
@@ -834,7 +831,7 @@ export const POSView: React.FC = () => {
             }}
             data-longpress-title={language === 'ar' ? 'مسح كود العميل وبطاقة الولاء' : 'Customer Loyalty Card'}
             data-longpress-desc={language === 'ar' ? 'التعرف على العميل، كسب نقاط المكافآت، واحتساب رصيد المشتريات.' : 'Identify member customer, award loyalty points, and track balance.'}
-            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] text-xs font-bold rounded-2xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
               selectedCustomer
                 ? 'bg-amber-500 text-white border-amber-500 shadow-amber-500/20'
                 : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
@@ -859,7 +856,7 @@ export const POSView: React.FC = () => {
             }}
             data-longpress-title="طابعة إيصالات البلوتوث (ESC/POS)"
             data-longpress-desc="ربط وإدارة طابعة الفواتير الحرارية اللاسلكية، فحص الاتصال، وطباعة إيصالات مباشرة."
-            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] text-xs font-bold rounded-2xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
               btPrinterStatus.isConnected
                 ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
                 : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
@@ -890,7 +887,7 @@ export const POSView: React.FC = () => {
                 handleOpenProductPriceEdit(filteredProducts[0]);
               }
             }}
-            className="flex items-center justify-center gap-1 px-3 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
             title={language === 'ar' ? 'تعديل سعر صنف سريع' : 'Edit Item Price'}
           >
             <Edit3 className="w-4 h-4 text-amber-500" />
@@ -907,7 +904,7 @@ export const POSView: React.FC = () => {
               setShowFavoritesOnly(!showFavoritesOnly);
               setSelectedCategory('cat_all');
             }}
-            className={`flex items-center justify-center gap-1 px-3 min-h-[40px] text-xs font-bold rounded-xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] text-xs font-bold rounded-2xl border shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer ${
               showFavoritesOnly
                 ? 'bg-amber-500 text-white border-amber-500'
                 : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
@@ -928,7 +925,7 @@ export const POSView: React.FC = () => {
               soundEffects.playGlassPress();
               setIsButtonCustomizerModalOpen(true);
             }}
-            className="flex items-center justify-center gap-1 px-2.5 min-h-[40px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
+            className="flex items-center justify-center gap-1 px-3 min-h-[44px] bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs active:scale-95 transition-all shrink-0 cursor-pointer"
             title={language === 'ar' ? 'تخصيص أزرار الكاشير' : 'Customize Buttons'}
           >
             <Sliders className="w-4 h-4 text-slate-500" />
@@ -1120,7 +1117,7 @@ export const POSView: React.FC = () => {
           )}
 
           {/* 2. Unified Cashier Command Cluster */}
-          <div data-tour="pos-actions" className="flex items-center gap-1.5 apple-glass-card p-1 rounded-2xl shrink-0 overflow-x-auto no-scrollbar">
+          <div data-tour="pos-actions" className="flex items-center gap-2 apple-glass-card p-1.5 rounded-2xl shrink-0 overflow-x-auto no-scrollbar">
             {posActionButtonsOrder.map((btnId) => {
               if (posActionButtonsVisibility[btnId] === false) return null;
               return renderCashierButton(btnId);
@@ -1134,7 +1131,7 @@ export const POSView: React.FC = () => {
                 soundEffects.playGlassPress();
                 setIsMobileCartOpen(true);
               }}
-              className={`pos-mobile-cart-trigger lg:hidden flex items-center justify-center gap-1.5 px-3.5 min-h-[40px] text-white font-bold text-xs rounded-xl shadow-xs shrink-0 active:scale-95 transition-all cursor-pointer ${
+              className={`pos-mobile-cart-trigger lg:hidden flex items-center justify-center gap-2 px-4 min-h-[44px] text-white font-black text-xs rounded-2xl shadow-xs shrink-0 active:scale-95 transition-all cursor-pointer ${
                 businessMode === 'restaurant'
                   ? 'bg-emerald-600'
                   : businessMode === 'wholesale'
@@ -1150,7 +1147,7 @@ export const POSView: React.FC = () => {
         </div>
 
         {/* Categories Horizontal Scrolling Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-0.5 no-scrollbar shrink-0 max-w-full">
+        <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-0.5 no-scrollbar shrink-0 max-w-full">
           <button
             onClick={() => {
               soundEffects.playCategorySwitch();
@@ -1159,17 +1156,17 @@ export const POSView: React.FC = () => {
             }}
             data-longpress-title={language === 'ar' ? 'جميع التصنيفات' : 'All Categories'}
             data-longpress-desc={language === 'ar' ? 'عرض جميع المنتجات المتاحة بنظام الكاشير دون أي تصفية تصنيف.' : 'Show all products without category filtering.'}
-            className={`flex items-center gap-1.5 px-4 py-2 min-h-[42px] rounded-xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-2xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
               selectedCategory === 'cat_all' && !showFavoritesOnly
                 ? businessMode === 'restaurant'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-black'
                   : businessMode === 'wholesale'
-                  ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                  : 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                  ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
+                  : 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-black'
                 : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
+            <Layers className="w-4 h-4" />
             <span>{t('allCategories')}</span>
           </button>
 
@@ -1182,9 +1179,9 @@ export const POSView: React.FC = () => {
             }}
             data-longpress-title={businessMode === 'restaurant' ? (language === 'ar' ? 'الأكثر طلباً بالمطعم' : 'Popular Dishes') : (language === 'ar' ? 'الأصناف المميزة بنجمة' : 'Favorite Products')}
             data-longpress-desc={language === 'ar' ? 'تصفية سريعة لعرض المنتجات الأكثر مبيعاً أو المحددة كمفضلة للوصول الفوري.' : 'Filter to quickly access most popular or starred items.'}
-            className={`flex items-center gap-1.5 px-4 py-2 min-h-[42px] rounded-xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-2xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
               showFavoritesOnly
-                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
                 : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50'
             }`}
           >
@@ -1200,13 +1197,13 @@ export const POSView: React.FC = () => {
                 setSelectedCategory(cat.id);
                 setShowFavoritesOnly(false);
               }}
-              className={`flex items-center gap-1.5 px-4 py-2 min-h-[42px] rounded-xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-2xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
                 selectedCategory === cat.id && !showFavoritesOnly
                   ? businessMode === 'restaurant'
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-black'
                     : businessMode === 'wholesale'
-                    ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                    : 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                    ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
+                    : 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-black'
                   : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50'
               }`}
             >
@@ -1249,7 +1246,7 @@ export const POSView: React.FC = () => {
             </div>
           ) : businessMode === 'restaurant' ? (
             /* 1. RESTAURANT & CAFE MODE: Visual Food Photo Cards Grid */
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3.5 pb-12">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 pb-28 lg:pb-12">
               {filteredProducts.map(product => {
                 const inCart = cart.find(it => it.productId === product.id);
                 const isOutOfStock = product.stock <= 0;
@@ -1260,7 +1257,7 @@ export const POSView: React.FC = () => {
                     key={product.id}
                     id={`pos-product-card-${product.id}`}
                     onClick={() => handleAddToCartWithHaptics(product)}
-                    className={`group relative bg-white dark:bg-slate-900 rounded-2xl p-2.5 sm:p-3 border transition-all cursor-pointer flex flex-col justify-between select-none shadow-xs hover:shadow-md hover:scale-[1.01] active:scale-[0.98] border-slate-200/90 dark:border-slate-800 hover:border-emerald-500 ${
+                    className={`group relative bg-white dark:bg-slate-900 rounded-3xl p-3 sm:p-3.5 border transition-all cursor-pointer flex flex-col justify-between select-none shadow-xs hover:shadow-md hover:scale-[1.01] active:scale-[0.98] border-slate-200/90 dark:border-slate-800 hover:border-emerald-500 ${
                       inCart
                         ? 'ring-2 ring-emerald-500/50 bg-emerald-50/20 dark:bg-emerald-950/20'
                         : ''
@@ -1358,7 +1355,7 @@ export const POSView: React.FC = () => {
                           {product.unit || 'وجبة / طلب'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                         {inCart && (
                           <>
                             <button
@@ -1367,13 +1364,13 @@ export const POSView: React.FC = () => {
                                 e.stopPropagation();
                                 handleUpdateQuantityWithHaptics(product.id, inCart.quantity - 1, 'down');
                               }}
-                              className="w-9 h-9 sm:w-8 sm:h-8 min-w-[34px] min-h-[34px] rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 flex items-center justify-center transition-colors shadow-2xs active:scale-90 cursor-pointer border border-rose-200/80 dark:border-rose-800/60"
+                              className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 flex items-center justify-center transition-colors shadow-2xs active:scale-90 cursor-pointer border border-rose-200/80 dark:border-rose-800/60"
                               title="تنقيص الكمية (-1)"
                               aria-label="تنقيص المنتج"
                             >
                               <Minus className="w-4 h-4" />
                             </button>
-                            <span className="min-w-[24px] text-center text-xs font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
+                            <span className="min-w-[26px] text-center text-xs font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
                               {inCart.quantity}
                             </span>
                           </>
@@ -1384,7 +1381,7 @@ export const POSView: React.FC = () => {
                             e.stopPropagation();
                             handleAddToCartWithHaptics(product);
                           }}
-                          className="w-10 h-10 sm:w-9 sm:h-9 min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 hover:text-white group-hover:bg-emerald-600 group-hover:text-white text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors shadow-xs active:scale-90 cursor-pointer"
+                          className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 hover:text-white group-hover:bg-emerald-600 group-hover:text-white text-slate-700 dark:text-slate-300 flex items-center justify-center transition-colors shadow-xs active:scale-90 cursor-pointer"
                           title="إضافة للطلب (+1)"
                           aria-label="إضافة للطلب"
                         >
@@ -1400,10 +1397,10 @@ export const POSView: React.FC = () => {
                         e.stopPropagation();
                         handleOpenProductDetails(product);
                       }}
-                      className="w-full mt-2.5 py-1.5 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                      className="w-full mt-2.5 py-2 px-3 rounded-xl min-h-[38px] bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
                       title="عرض تفاصيل الصنف وتحديد المقاس والخيارات"
                     >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <SlidersHorizontal className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       <span>
                         {product.hasVariants && product.variants && product.variants.length > 0
                           ? `عرض التفاصيل والخيارات (${product.variants.length})`
@@ -1524,7 +1521,7 @@ export const POSView: React.FC = () => {
                       </div>
 
                       {/* Quick Bulk Add & Decrement Actions (Col 3) */}
-                      <div className="sm:col-span-3 flex items-center justify-end sm:justify-center gap-1.5 flex-wrap">
+                      <div className="sm:col-span-3 flex items-center justify-end sm:justify-center gap-2 flex-wrap">
                         {inCart && (
                           <button
                             type="button"
@@ -1532,7 +1529,7 @@ export const POSView: React.FC = () => {
                               e.stopPropagation();
                               handleUpdateQuantityWithHaptics(product.id, inCart.quantity - 1, 'down');
                             }}
-                            className="px-2.5 py-2 min-h-[38px] rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 border border-rose-200/80 dark:border-rose-800/60"
+                            className="px-3 py-2.5 min-h-[42px] rounded-2xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 text-xs font-black transition-all active:scale-95 cursor-pointer flex items-center gap-1 border border-rose-200/80 dark:border-rose-800/60"
                             title="تنقيص قطعة واحدة (-1)"
                           >
                             <Minus className="w-3.5 h-3.5" />
@@ -1546,7 +1543,7 @@ export const POSView: React.FC = () => {
                             e.stopPropagation();
                             handleOpenProductDetails(product);
                           }}
-                          className="px-2.5 py-2 min-h-[38px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                          className="px-3 py-2.5 min-h-[42px] rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
                           title="عرض تفاصيل الصنف واختيار المتغيرات"
                         >
                           <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" />
@@ -1559,7 +1556,7 @@ export const POSView: React.FC = () => {
                             e.stopPropagation();
                             handleAddToCartWithHaptics(product, 1, false);
                           }}
-                          className="px-2.5 py-2 min-h-[38px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                          className="px-3 py-2.5 min-h-[42px] rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
                           title="إضافة قطعة واحدة"
                         >
                           <Package className="w-3.5 h-3.5" />
@@ -1569,7 +1566,7 @@ export const POSView: React.FC = () => {
                         <button
                           type="button"
                           onClick={(e) => handleAddCarton(product, e)}
-                          className="px-3 py-2 min-h-[38px] rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all active:scale-95 shadow-xs flex items-center gap-1 cursor-pointer"
+                          className="px-3.5 py-2.5 min-h-[42px] rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black transition-all active:scale-95 shadow-xs flex items-center gap-1.5 cursor-pointer"
                           title={`إضافة كرتونة (${multiplier} قطع)`}
                         >
                           <Boxes className="w-3.5 h-3.5" />
@@ -1692,7 +1689,7 @@ export const POSView: React.FC = () => {
                     </div>
 
                     {/* Add & Decrement Buttons (Col 2) */}
-                    <div className="sm:col-span-2 flex items-center justify-end sm:justify-center gap-1.5">
+                    <div className="sm:col-span-2 flex items-center justify-end sm:justify-center gap-2">
                       {inCart && (
                         <button
                           type="button"
@@ -1700,7 +1697,7 @@ export const POSView: React.FC = () => {
                             e.stopPropagation();
                             handleUpdateQuantityWithHaptics(product.id, inCart.quantity - 1, 'down');
                           }}
-                          className="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer min-h-[40px] border border-rose-200/80 dark:border-rose-800/60"
+                          className="px-3 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-300 text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs cursor-pointer min-h-[44px] border border-rose-200/80 dark:border-rose-800/60"
                           title="تنقيص المنتج من السلة (-1)"
                         >
                           <Minus className="w-4 h-4" />
@@ -1713,10 +1710,10 @@ export const POSView: React.FC = () => {
                           e.stopPropagation();
                           handleOpenProductDetails(product);
                         }}
-                        className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 min-h-[40px]"
+                        className="px-3 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 min-h-[44px]"
                         title="عرض تفاصيل الصنف واختيار المتغيرات"
                       >
-                        <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
+                        <SlidersHorizontal className="w-4 h-4 text-blue-500" />
                         <span className="hidden md:inline">{product.hasVariants && product.variants?.length ? `الخيارات (${product.variants.length})` : 'التفاصيل'}</span>
                       </button>
                       <button
@@ -1725,7 +1722,7 @@ export const POSView: React.FC = () => {
                           e.stopPropagation();
                           handleAddToCartWithHaptics(product);
                         }}
-                        className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer min-h-[40px]"
+                        className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center gap-2 transition-all active:scale-95 shadow-xs cursor-pointer min-h-[44px]"
                       >
                         <Plus className="w-4 h-4" />
                         <span>{language === 'ar' ? 'إضافة' : 'Add'}</span>
@@ -1755,7 +1752,7 @@ export const POSView: React.FC = () => {
         id="pos-cart-container"
         data-tour="pos-cart"
         className={`pos-cart-panel w-full lg:w-96 xl:w-[410px] apple-glass border-slate-200/80 dark:border-white/[0.08] flex flex-col h-full z-30 transition-transform ${cartOrderClass} ${
-          isMobileCartOpen ? 'fixed inset-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl' : 'hidden lg:flex'
+          isMobileCartOpen ? 'fixed inset-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl pb-24 lg:pb-0' : 'hidden lg:flex'
         }`}
       >
         {/* Clean Cart Header */}
@@ -2223,7 +2220,7 @@ export const POSView: React.FC = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {/* Exact Cash Button */}
                 <button
                   type="button"
@@ -2232,7 +2229,7 @@ export const POSView: React.FC = () => {
                     setPaymentModalInit({ method: 'cash', paidAmount: grandTotal });
                     setIsPaymentModalOpen(true);
                   }}
-                  className="px-2 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs"
+                  className="px-2.5 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs min-h-[46px]"
                   title="دفع نقد مضبوط بالضبط"
                 >
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{language === 'ar' ? 'نقد مضبوط' : 'Exact Cash'}</span>
@@ -2249,7 +2246,7 @@ export const POSView: React.FC = () => {
                       setPaymentModalInit({ method: 'cash', paidAmount: note.amount });
                       setIsPaymentModalOpen(true);
                     }}
-                    className="px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300 dark:hover:border-amber-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs"
+                    className="px-2.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300 dark:hover:border-amber-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center cursor-pointer shadow-2xs min-h-[46px]"
                     title={`استلام ورقة ${note.amount} — الباقي ${note.change}`}
                   >
                     <span className="font-mono">{note.amount.toLocaleString()}</span>
@@ -2263,7 +2260,7 @@ export const POSView: React.FC = () => {
           )}
 
           {/* Restaurant Quick KOT Kitchen Print Button + Main Pay Button */}
-          <div className={`flex items-center gap-2 pt-1 ${
+          <div className={`flex items-center gap-2.5 pt-1 ${
             buttonLayout?.posPayButtonAlignment === 'reversed' ? 'flex-row-reverse' : ''
           } ${
             buttonLayout?.posPayButtonAlignment === 'full' ? 'flex-col sm:flex-row' : ''
@@ -2279,7 +2276,7 @@ export const POSView: React.FC = () => {
                 }}
                 data-longpress-title={language === 'ar' ? 'إرسال للمطبخ (KOT)' : 'Send to Kitchen'}
                 data-longpress-desc={language === 'ar' ? 'طباعة أو إرسال تذكرة الطلب والملاحظات الخاصة بطاهي المطبخ فوراً.' : 'Print or dispatch kitchen order ticket to preparation line.'}
-                className={`py-3 px-3.5 rounded-2xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition-all active:scale-95 cursor-pointer ${
+                className={`py-3.5 px-4 min-h-[50px] rounded-2xl font-black text-xs flex items-center justify-center gap-2 border transition-all active:scale-95 cursor-pointer ${
                   cart.length === 0
                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed'
                     : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 shadow-xs'
@@ -2303,7 +2300,7 @@ export const POSView: React.FC = () => {
               }}
               data-longpress-title={language === 'ar' ? 'تقسيم الفاتورة (نقد + آجل)' : 'Split Cash & Credit'}
               data-longpress-desc={language === 'ar' ? 'فتح نافذة تقسيم سعر الفاتورة مباشرة بين دفعة نقدية والباقي دين آجل على العميل.' : 'Split invoice total between instant cash and deferred credit.'}
-              className={`py-3.5 px-3 min-h-[48px] rounded-2xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition-all active:scale-95 cursor-pointer shrink-0 ${
+              className={`py-3.5 px-3.5 min-h-[50px] rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all active:scale-95 cursor-pointer shrink-0 ${
                 cart.length === 0
                   ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed'
                   : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 shadow-xs'
@@ -2326,7 +2323,7 @@ export const POSView: React.FC = () => {
               }}
               data-longpress-title={language === 'ar' ? 'محاسبة ودفع الفاتورة' : 'Pay & Complete'}
               data-longpress-desc={language === 'ar' ? 'فتح نافذة الدفع، اختيار الدفع كاش أو شبكة أو آجل، وطباعة الفاتورة.' : 'Proceed to payment dialog, calculate change and issue invoice.'}
-              className={`flex-1 py-3.5 min-h-[48px] rounded-2xl text-white font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 cursor-pointer ${
+              className={`flex-1 py-3.5 px-4 min-h-[52px] rounded-2xl text-white font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 cursor-pointer ${
                 cart.length === 0
                   ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
                   : businessMode === 'restaurant'

@@ -15,6 +15,7 @@ export interface DraggableModalWrapperProps {
   draggable?: boolean;
   closeOnBackdrop?: boolean;
   containerClassName?: string;
+  zIndexClass?: string;
   ariaLabel?: string;
 }
 
@@ -32,6 +33,7 @@ export const DraggableModalWrapper: React.FC<DraggableModalWrapperProps> = ({
   draggable = true,
   closeOnBackdrop = true,
   containerClassName = '',
+  zIndexClass = 'z-[9999]',
   ariaLabel
 }) => {
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -121,7 +123,7 @@ export const DraggableModalWrapper: React.FC<DraggableModalWrapperProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto overflow-x-hidden animate-in fade-in duration-200 ${containerClassName}`}
+      className={`fixed inset-0 ${zIndexClass || 'z-[9999]'} bg-black/75 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto overflow-x-hidden animate-in fade-in duration-200 ${containerClassName}`}
       onClick={e => {
         if (closeOnBackdrop && e.target === e.currentTarget) {
           onClose();

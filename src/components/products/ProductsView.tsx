@@ -42,6 +42,7 @@ import { parsePriceInput, sanitizePriceInputString } from '../../utils/currencyU
 import { HoldToConfirmButton } from '../ui/HoldToConfirmButton';
 import { CheckIcon } from '@phosphor-icons/react/dist/ssr';
 import { soundEffects } from '../../services/audio';
+import { matchesProductSearch } from '../../utils/arabicSearch';
 
 export const ProductsView: React.FC = () => {
   const {
@@ -468,19 +469,15 @@ export const ProductsView: React.FC = () => {
       if (stockFilter === 'low_stock' && p.stock > p.minStock) return false;
       if (stockFilter === 'out_of_stock' && p.stock > 0) return false;
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesName = p.nameAr.toLowerCase().includes(query) || p.nameEn.toLowerCase().includes(query);
-        const matchesBarcode = p.barcode.toLowerCase().includes(query);
-        const matchesSku = p.sku.toLowerCase().includes(query);
-        const matchesIdentification = p.identificationCodes?.some(c => c.toLowerCase().includes(query));
-        if (!matchesName && !matchesBarcode && !matchesSku && !matchesIdentification) return false;
+        const cat = categories.find(c => c.id === p.categoryId);
+        return matchesProductSearch(p, searchQuery, cat?.nameAr);
       }
       return true;
     });
-  }, [products, selectedCat, stockFilter, searchQuery]);
+  }, [products, selectedCat, stockFilter, searchQuery, categories]);
 
   return (
-    <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-5 bg-transparent">
+    <div className="flex-1 p-3 sm:p-6 overflow-y-auto space-y-5 pb-28 lg:pb-8 bg-transparent">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
